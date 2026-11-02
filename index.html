@@ -377,6 +377,79 @@ footer::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;back
 @keyframes gd{0%,100%{transform:translateY(0);opacity:.2}50%{transform:translateY(-26px);opacity:1}}
 @media (max-width:560px){.waves{height:96px}.b4{width:260px;height:260px}.wsep{height:44px}}
 @media (prefers-reduced-motion:reduce){.waves svg,.wsep svg,.gt,.btn.p,footer::before,.glowdot{animation:none!important}}
+
+/* ───── Profil complet ───── */
+dialog.prof2{padding:0;overflow-x:hidden}
+.prof2>.ptabs,.prof2>.tab,.prof2>.btn.out{margin-left:28px;margin-right:28px}
+.prof2>.btn.out{width:calc(100% - 56px);margin-bottom:28px}
+.phero{position:relative;padding:0 28px 22px;margin-bottom:8px}
+.phero .x{position:absolute;top:12px;right:14px;z-index:2;background:rgba(0,0,0,.35);border-radius:50%;width:36px;height:36px;color:#fff}
+.pbanner{height:118px;margin:0 -28px;position:relative;overflow:hidden;background:linear-gradient(120deg,#2b1e5c,#5b3fa8 35%,#c2457a 70%,#e8734f);background-size:200% 100%;animation:gflow 9s ease-in-out infinite alternate}
+.pbanner i{position:absolute;left:-10%;width:120%;height:60px;border-radius:50%;bottom:-34px;background:rgba(255,255,255,.08);animation:pw 7s ease-in-out infinite alternate}
+.pbanner i:nth-child(2){bottom:-42px;background:rgba(255,107,157,.18);animation-duration:9s;animation-delay:-3s}
+.pbanner i:nth-child(3){bottom:-50px;background:rgba(16,16,19,.9);animation-duration:11s}
+@keyframes pw{to{transform:translateX(6%) scaleY(1.25)}}
+.pid{display:flex;gap:16px;align-items:flex-end;margin-top:-40px;position:relative}
+.pav{padding:3px;border-radius:50%;background:conic-gradient(from var(--ang),#c9c2ff,#ff6b9d,#ff8a5c,#8f86f2,#c9c2ff);animation:spinb 6s linear infinite;flex:none}
+.pav .av{width:80px;height:80px;font-size:32px;border:4px solid #101013;font-family:"Instrument Serif",Georgia,serif}
+.pidt{min-width:0;padding-bottom:4px}
+.pnm{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:22px;font-weight:600}
+.pnm .tagp{margin-left:0;font-size:12px;padding:4px 12px}
+.pidt .sm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pqa{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.pqa .btn{flex:1 1 auto;width:auto;padding:11px 18px}
+.pstats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.pst{border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:2px;background:linear-gradient(160deg,rgba(255,255,255,.04),transparent)}
+.pst b{font-family:"Instrument Serif",Georgia,serif;font-weight:400;font-size:32px;line-height:1.1;font-variant-numeric:tabular-nums;background:linear-gradient(100deg,#fff,#e2dcff 60%,#ffc2d6);-webkit-background-clip:text;background-clip:text;color:transparent}
+.pgrid{display:grid;grid-template-columns:1.2fr 1fr;gap:12px}
+.pbox{border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:12px;background:rgba(255,255,255,.02)}
+.ph{font-weight:600;margin-bottom:14px;display:flex;align-items:baseline;gap:8px}
+.pchart{display:flex;align-items:flex-end;gap:10px;height:130px}
+.pchart .cb{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
+.pchart .cb i{width:100%;max-width:34px;border-radius:8px 8px 4px 4px;background:linear-gradient(180deg,#ff6b9d,#8f86f2);min-height:4px;transform-origin:bottom;animation:growb .9s var(--ease) both}
+.pchart .cb.z i{background:#24242b}
+.pchart .cb b{font-size:12px;font-weight:600}
+.pchart .cb span{font-size:11px;color:var(--mute);text-transform:capitalize}
+@keyframes growb{from{transform:scaleY(0)}}
+.pcat{margin-bottom:12px}
+.pcat div{display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px}
+.pcat s{display:block;height:6px;border-radius:9px;background:#1d1d23;overflow:hidden;text-decoration:none}
+.pcat s i{display:block;height:100%;border-radius:9px;background:var(--grad);animation:growx .9s var(--ease) both;transform-origin:left}
+@keyframes growx{from{transform:scaleX(0)}}
+.pbadges{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.pbg{text-align:center;padding:14px 8px;border-radius:16px;border:1px solid var(--line);font-size:12px;line-height:1.35;color:var(--mute)}
+.pbg em{display:grid;place-items:center;width:44px;height:44px;margin:0 auto 8px;border-radius:50%;font-style:normal;font-size:20px;background:#17171c;filter:grayscale(1);opacity:.5}
+.pbg.on{color:var(--ink);border-color:rgba(255,107,157,.35);background:radial-gradient(120px 80px at 50% 0%,rgba(255,107,157,.14),transparent)}
+.pbg.on em{background:var(--grad);filter:none;opacity:1;box-shadow:0 6px 20px -6px rgba(255,107,157,.7)}
+.pbg strong{display:block;font-size:13px;margin-bottom:2px}
+.ptools{display:flex;gap:10px;margin-bottom:10px}
+.ptools input,.ptools select{flex:1;min-width:0;margin:0}
+.items .ip{font-family:"Instrument Serif",Georgia,serif;font-size:22px;flex:none;padding:0 6px}
+.items .itxt{flex-basis:100%;white-space:pre-wrap;font:14px/1.55 inherit;color:#cfcdd6;background:#0c0c0f;border:1px solid var(--line);border-radius:14px;padding:14px;margin:4px 0 0}
+.plock{margin-top:12px;padding:12px 14px;border-radius:14px;border:1px dashed #3a3a44}
+.plock a{color:#ffb3cb;text-decoration:underline}
+.pcur{border-radius:18px;padding:20px;margin-bottom:10px;background:linear-gradient(120deg,rgba(143,134,242,.18),rgba(255,107,157,.14) 60%,rgba(255,138,92,.12));border:1px solid rgba(255,107,157,.3)}
+.pcur b{font-family:"Instrument Serif",Georgia,serif;font-weight:400;font-size:30px;display:block;margin:2px 0 8px}
+.pcur ul{margin:0;padding-left:18px;color:#d8d6de;font-size:14px;line-height:1.7}
+.pdanger{border-color:#4a2a30}
+.pdanger .btn{border-color:#5a3a3f;color:#ff9aa5}
+#pmanage{margin-top:10px}
+@media (max-width:640px){
+ .phero{padding:0 18px 18px}.pbanner{margin:0 -18px;height:96px}
+ .prof2>.ptabs,.prof2>.tab,.prof2>.btn.out{margin-left:18px;margin-right:18px}.prof2>.btn.out{width:calc(100% - 36px)}
+ .pav .av{width:68px;height:68px;font-size:26px}.pnm{font-size:19px}
+ .pstats{grid-template-columns:1fr 1fr}.pst b{font-size:28px}
+ .pgrid{grid-template-columns:1fr}
+ .pbadges{grid-template-columns:repeat(3,1fr)}
+ .ptools{flex-direction:column}
+}
+.ptools input{width:100%;padding:13px 15px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.03);color:var(--ink);font:inherit;-webkit-appearance:none;appearance:none}
+.ptools input:focus{outline:none;border-color:#ff6b9d;box-shadow:0 0 0 3px rgba(255,107,157,.18)}
+.pnm,.pidt .sm{text-shadow:0 1px 8px rgba(0,0,0,.45)}
+.prof2 .usage{flex-direction:row;align-items:center}
+@media (max-width:640px){.prof2 .usage{gap:16px;padding:16px}.prof2 .usage svg{width:78px;height:78px;flex:none}.prof2 .big2{font-size:26px}
+ .prof2 .items li{gap:8px}.prof2 .items .btn{flex:1 1 0;padding:9px 6px;font-size:13px}.prof2 .items .ip{flex:none;font-size:20px;padding:0 4px 0 0}}
+@media (prefers-reduced-motion:reduce){.pbanner,.pbanner i,.pav,.pchart .cb i,.pcat s i{animation:none!important}}
 </style>
 </head>
 <body>
@@ -548,38 +621,70 @@ footer::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;back
 </main>
 <footer><div class="wrap"><div class="wm" aria-hidden="true">Déclic</div><div class="fl"><span>© Déclic</span><span>Mentions légales · Confidentialité · Conditions</span></div></div></footer>
 
-<dialog id="dProfile" class="big" aria-label="Mon profil">
-  <div class="dh"><strong>Mon profil</strong><button class="x" data-close aria-label="Fermer">✕</button></div>
+<dialog id="dProfile" class="big prof2" aria-label="Mon profil">
+  <div class="phero">
+    <button class="x" data-close aria-label="Fermer">✕</button>
+    <div class="pbanner" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="pid">
+      <span class="pav"><span class="av" id="av2"></span></span>
+      <div class="pidt">
+        <div class="pnm"><span id="pname"></span><span class="tagp" id="pbadge2"></span></div>
+        <div class="sm" id="pmail"></div>
+        <div class="sm" id="psince"></div>
+      </div>
+    </div>
+    <div class="pqa"><button class="btn p" type="button" id="pnew">+ Nouvelle annonce</button><button class="btn" type="button" id="pupg">Passer à Pro</button></div>
+  </div>
   <div class="ptabs" role="tablist"><button data-tab="apercu" aria-pressed="true">Aperçu</button><button data-tab="annonces" aria-pressed="false">Mes annonces</button><button data-tab="offre" aria-pressed="false">Abonnement</button><button data-tab="reglages" aria-pressed="false">Réglages</button></div>
+
   <div class="tab" id="t-apercu">
-    <div class="who"><span class="av" id="av2"></span><div><div id="pname" style="font-weight:600;font-size:18px"></div><div class="sm" id="pmail"></div><div class="sm" id="psince"></div></div><span class="tagp" id="pbadge2"></span></div>
     <div class="usage">
-      <svg viewBox="0 0 100 100" width="104" height="104" aria-hidden="true"><defs><linearGradient id="rgd"><stop offset="0" stop-color="#c9c2ff"/><stop offset="1" stop-color="#f6cdbc"/></linearGradient></defs><circle cx="50" cy="50" r="42" fill="none" stroke="#17171c" stroke-width="8"/><circle id="ringc" cx="50" cy="50" r="42" fill="none" stroke="url(#rgd)" stroke-width="8" stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="264" transform="rotate(-90 50 50)" style="transition:stroke-dashoffset 1.1s cubic-bezier(.22,1,.36,1)"/></svg>
+      <svg viewBox="0 0 100 100" width="104" height="104" aria-hidden="true"><defs><linearGradient id="rgd"><stop offset="0" stop-color="#c9c2ff"/><stop offset=".55" stop-color="#ff6b9d"/><stop offset="1" stop-color="#ff8a5c"/></linearGradient></defs><circle cx="50" cy="50" r="42" fill="none" stroke="#17171c" stroke-width="8"/><circle id="ringc" cx="50" cy="50" r="42" fill="none" stroke="url(#rgd)" stroke-width="8" stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="264" transform="rotate(-90 50 50)" style="transition:stroke-dashoffset 1.1s cubic-bezier(.22,1,.36,1)"/></svg>
       <div><div class="big2" id="pleft"></div><div class="sm" id="pused"></div><div class="sm" id="pnote"></div></div>
     </div>
-    <div class="stats"><div class="stat"><b id="s1">0</b><span class="sm">annonces ce mois-ci</span></div><div class="stat"><b id="s2">0</b><span class="sm">annonces enregistrées</span></div><div class="stat"><b id="s3">0</b><span class="sm">photos analysées</span></div></div>
+    <div class="pstats">
+      <div class="pst"><b id="s1">0</b><span class="sm">annonces ce mois-ci</span></div>
+      <div class="pst"><b id="s2">0</b><span class="sm">annonces au total</span></div>
+      <div class="pst"><b id="s3">0</b><span class="sm">photos analysées</span></div>
+      <div class="pst"><b id="s4">0 €</b><span class="sm">valeur de tes annonces</span></div>
+    </div>
+    <div class="pgrid">
+      <div class="pbox"><div class="ph">Activité <span class="sm">6 derniers mois</span></div><div class="pchart" id="pchart"></div></div>
+      <div class="pbox"><div class="ph">Tes catégories</div><div id="pcats"></div></div>
+    </div>
+    <div class="pbox"><div class="ph">Succès <span class="sm" id="pbcount"></span></div><div class="pbadges" id="pbadges"></div></div>
   </div>
+
   <div class="tab" id="t-annonces" hidden>
+    <div class="ptools"><input type="search" id="pq" placeholder="Rechercher une annonce…" aria-label="Rechercher une annonce"><select id="pcf" aria-label="Filtrer par catégorie"><option value="">Toutes les catégories</option></select></div>
+    <p class="sm" id="icount"></p>
     <ul class="items" id="items"></ul>
     <p class="sm" id="noitems">Tes annonces créées apparaîtront ici.</p>
+    <p class="sm plock" id="ilock" hidden>Avec l’offre Gratuit, seules tes 5 dernières annonces sont visibles. <a href="#" id="ilockgo">Passer à Pro</a> pour tout ton historique.</p>
   </div>
+
   <div class="tab" id="t-offre" hidden>
+    <div class="pcur" id="pcur"></div>
     <div class="prow"><div><strong>Gratuit</strong><div class="sm">0 € · 5 annonces par mois, Vinted, 2 photos</div></div><button class="btn" data-pplan="free"></button></div>
     <div class="prow"><div><strong>Pro</strong><div class="sm">11,99 € par mois · 60 annonces, Vinted et eBay, mots-clés, 4 photos</div></div><button class="btn p" data-pplan="plus"></button></div>
     <div class="prow ultrarow"><i class="spk s1"></i><i class="spk s2"></i><i class="spk s3"></i><div><strong>Ultra</strong> <span class="crown">Le plus complet</span><div class="sm">18,99 € par mois · illimité, analyse approfondie, 8 photos</div></div><button class="btn ultrab" data-pplan="pro"></button></div>
     <p class="sm">Paiement sécurisé par Stripe. Résiliable à tout moment.</p>
     <button class="btn" id="pmanage" type="button" hidden>Gérer mon abonnement et mes factures</button>
   </div>
+
   <div class="tab" id="t-reglages" hidden>
-    <form id="fSet" novalidate>
-      <label class="f" for="sname">Prénom</label><input type="text" id="sname">
-      <label class="f" for="smail">E-mail</label><input type="email" id="smail">
-      <label class="f">Plateforme affichée en premier</label><div class="chips2" id="spref"></div>
+    <form id="fSet" novalidate class="pbox">
+      <div class="ph">Informations</div>
+      <label class="f" for="sname">Prénom</label><input type="text" id="sname" maxlength="40" autocomplete="given-name">
+      <label class="f" for="smail">E-mail</label><input type="email" id="smail" autocomplete="email">
       <p class="err" id="serr" hidden>Indique ton prénom et un e-mail valide.</p>
-      <div class="row"><button class="btn p" type="submit">Enregistrer</button><button class="btn" type="button" id="preset">Effacer mon historique</button></div>
-      <p class="sm" style="margin-top:22px">Supprimer ton compte résilie ton abonnement et efface définitivement toutes tes données.</p>
-      <button class="btn" type="button" id="pdelete">Supprimer mon compte</button>
+      <div class="row"><button class="btn p" type="submit">Enregistrer</button></div>
     </form>
+    <div class="pbox"><div class="ph">Préférences</div><label class="f">Plateforme affichée en premier</label><div class="chips2" id="spref"></div></div>
+    <div class="pbox"><div class="ph">Mes données</div><p class="sm">Télécharge une copie de ton compte et de tes annonces, ou efface ton historique.</p>
+      <div class="row"><button class="btn" type="button" id="pexport">Télécharger mes données</button><button class="btn" type="button" id="preset">Effacer mon historique</button></div></div>
+    <div class="pbox pdanger"><div class="ph">Zone sensible</div><p class="sm">Supprimer ton compte résilie ton abonnement et efface définitivement toutes tes données.</p>
+      <button class="btn" type="button" id="pdelete">Supprimer mon compte</button></div>
   </div>
   <button class="btn out" id="logout">Déconnexion</button>
 </dialog>
@@ -785,26 +890,70 @@ async function setPlan(id){
  catch(x){toast(x&&x.code==="not_configured"?"Le paiement n’est pas encore activé.":"Le paiement est indisponible pour le moment. Réessaie plus tard.")}}
 function tab(t){ptab=t;document.querySelectorAll(".ptabs button").forEach(function(b){b.setAttribute("aria-pressed",b.dataset.tab===t)});["apercu","annonces","offre","reglages"].forEach(function(k){$("t-"+k).hidden=k!==t})}
 function openProfile(t){if(!U){openLogin("profile");return}tab(t||"apercu");profileUI();$("dProfile").showModal()}
+var BADGES=[
+ {t:"Premier déclic",d:"1re annonce",i:"✨",ok:function(c){return c.total>=1},p:function(c){return Math.min(c.total,1)+"/1"}},
+ {t:"Vendeur lancé",d:"10 annonces",i:"🚀",ok:function(c){return c.total>=10},p:function(c){return Math.min(c.total,10)+"/10"}},
+ {t:"Pro de la revente",d:"50 annonces",i:"🏆",ok:function(c){return c.total>=50},p:function(c){return Math.min(c.total,50)+"/50"}},
+ {t:"Œil de lynx",d:"100 photos",i:"📸",ok:function(c){return c.photos>=100},p:function(c){return Math.min(c.photos,100)+"/100"}},
+ {t:"Abonné",d:"offre payante",i:"💎",ok:function(c){return c.plan!=="free"},p:function(){return "Pro ou Ultra"}}];
+var PERKS={free:["5 annonces par mois","Version Vinted","2 photos par objet"],plus:["60 annonces par mois","Versions Vinted et eBay","Mots-clés de recherche","4 photos par objet","Historique complet"],pro:["Annonces illimitées","Analyse approfondie","Versions Vinted et eBay, mots-clés","8 photos par objet","Historique complet"]};
+function mk2(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
 function profileUI(){
- var p=P(),lim=p.lim,u=used(),left=lim===Infinity?null:Math.max(0,lim-u),it=ITEMS,id=planId();
- $("pbadge2").textContent="Offre "+p.n;
+ var p=P(),lim=p.lim,u=used(),left=lim===Infinity?null:Math.max(0,lim-u),it=ITEMS,id=planId(),A=ACC||{};
+ var total=Math.max(A.total||0,u),photos=A.photos||0;
+ $("pbadge2").textContent=p.n;
  $("pleft").textContent=lim===Infinity?"Annonces illimitées":left+" annonce"+(left>1?"s":"")+" restante"+(left>1?"s":"");
  $("pused").textContent=lim===Infinity?u+" annonce"+(u>1?"s":"")+" ce mois-ci":u+" sur "+lim+" utilisées ce mois-ci";
  $("ringc").style.strokeDashoffset=lim===Infinity?0:264*(1-Math.min(1,u/lim));
- $("s1").textContent=u;$("s2").textContent=it.length;$("s3").textContent=fmt(ACC&&ACC.photos||0);
+ var val=it.reduce(function(s,x){return s+(x.pr||0)},0);
+ $("s1").textContent=u;$("s2").textContent=fmt(total);$("s3").textContent=fmt(photos);$("s4").textContent=fmt(val)+" €";
  var nx=new Date();nx=new Date(nx.getFullYear(),nx.getMonth()+1,1);
  $("pnote").textContent="Le compteur repart à zéro le "+nx.toLocaleDateString("fr-FR",{day:"numeric",month:"long"})+".";
  if(U){$("psince").textContent="Membre depuis "+new Date(U.since||Date.now()).toLocaleDateString("fr-FR",{month:"long",year:"numeric"})}
+ var up=$("pupg");up.hidden=id==="pro";up.textContent=id==="free"?"Passer à Pro":"Passer à Ultra";
+ /* activité */
+ var ch=$("pchart"),hist=A.history||[],mx=Math.max.apply(null,[1].concat(hist.map(function(h){return h.count})));ch.textContent="";
+ hist.forEach(function(h,i){var c=mk2("div","cb"+(h.count?"":" z")),bar=mk2("i");bar.style.height=Math.max(4,h.count/mx*100)+"%";bar.style.animationDelay=i*70+"ms";
+  var d=new Date(h.month+"-15");c.appendChild(mk2("b",null,h.count));c.appendChild(bar);c.appendChild(mk2("span",null,d.toLocaleDateString("fr-FR",{month:"short"}).replace(".","")));c.title=h.count+" annonce(s)";ch.appendChild(c)});
+ if(!hist.length)ch.appendChild(mk2("p","sm","Ton activité apparaîtra ici."));
+ /* catégories */
+ var cc={};it.forEach(function(x){if(x.cat)cc[x.cat]=(cc[x.cat]||0)+1});var top=Object.keys(cc).sort(function(a,b){return cc[b]-cc[a]}).slice(0,4),pc=$("pcats");pc.textContent="";
+ if(!top.length)pc.appendChild(mk2("p","sm","Crée ta première annonce pour voir tes catégories."));
+ top.forEach(function(k,i){var r=mk2("div","pcat"),h=mk2("div");h.appendChild(mk2("span",null,k));h.appendChild(mk2("span","sm",cc[k]+" annonce"+(cc[k]>1?"s":"")));var bar=mk2("s"),f=mk2("i");f.style.width=cc[k]/cc[top[0]]*100+"%";f.style.animationDelay=i*90+"ms";bar.appendChild(f);r.appendChild(h);r.appendChild(bar);pc.appendChild(r)});
+ /* succès */
+ var st={total:total,photos:photos,plan:id},bx=$("pbadges"),n=0;bx.textContent="";
+ BADGES.forEach(function(g){var on=g.ok(st);if(on)n++;var e=mk2("div","pbg"+(on?" on":""));e.appendChild(mk2("em",null,g.i));e.appendChild(mk2("strong",null,g.t));e.appendChild(document.createTextNode(on?g.d:g.p(st)));bx.appendChild(e)});
+ $("pbcount").textContent=n+" / "+BADGES.length;
+ /* offre actuelle */
+ var pcur=$("pcur");pcur.textContent="";pcur.appendChild(mk2("span","sm","Ton offre actuelle"));pcur.appendChild(mk2("b",null,p.n));var ul=mk2("ul");(PERKS[id]||[]).forEach(function(t){ul.appendChild(mk2("li",null,t))});pcur.appendChild(ul);
  var sub=!!(ACC&&ACC.subscribed);
  document.querySelectorAll("[data-pplan]").forEach(function(b){var k=b.dataset.pplan,on=k===id;b.disabled=on||(k==="free"&&!sub);b.textContent=on?"Offre actuelle":k==="free"?"Résilier":(k==="pro"?"Passer à Ultra":"Choisir")});
  $("pmanage").hidden=!sub;
- var ul=$("items");ul.textContent="";$("noitems").hidden=it.length>0;
- it.slice(0,id==="free"?5:50).forEach(function(x){var li=document.createElement("li"),a=document.createElement("div");a.className="it";
-  var t=document.createElement("strong");t.textContent=x.title;var m=document.createElement("span");m.className="sm";m.textContent=x.cat+" · "+x.lo+" – "+x.hi+" € · "+new Date(x.created_at).toLocaleDateString("fr-FR",{day:"numeric",month:"short"});a.appendChild(t);a.appendChild(m);
-  var c=document.createElement("button");c.className="btn";c.textContent="Copier";c.onclick=async function(){try{await navigator.clipboard.writeText(x.txt);toast("Annonce copiée.")}catch(e){toast("Copie impossible.")}};
-  var r=document.createElement("button");r.className="btn";r.textContent="Supprimer";r.onclick=async function(){r.disabled=true;var q=await SB.from("items").delete().eq("id",x.id);if(q.error){r.disabled=false;toast("Suppression impossible.");return}ITEMS=ITEMS.filter(function(y){return y.id!==x.id});profileUI()};
-  li.appendChild(a);li.appendChild(c);li.appendChild(r);ul.appendChild(li)});
+ drawItems();
 }
+function drawItems(){
+ var id=planId(),q=($("pq").value||"").trim().toLowerCase(),cf=$("pcf").value,all=ITEMS.slice(0,id==="free"?5:50);
+ var sel=$("pcf"),cats={};ITEMS.forEach(function(x){if(x.cat)cats[x.cat]=1});
+ if(sel.options.length-1!==Object.keys(cats).length){var cur=sel.value;sel.length=1;Object.keys(cats).sort().forEach(function(k){var o=mk2("option",null,k);o.value=k;sel.appendChild(o)});sel.value=cats[cur]?cur:""}
+ var list=all.filter(function(x){return(!cf||x.cat===cf)&&(!q||(x.title+" "+x.txt).toLowerCase().indexOf(q)>-1)});
+ var ul=$("items");ul.textContent="";$("noitems").hidden=ITEMS.length>0;
+ $("icount").textContent=ITEMS.length?list.length+" annonce"+(list.length>1?"s":"")+(q||cf?" trouvée"+(list.length>1?"s":""):""):"";
+ $("ilock").hidden=!(id==="free"&&ITEMS.length>5);
+ list.forEach(function(x){var li=mk2("li"),a=mk2("div","it");
+  a.appendChild(mk2("strong",null,x.title));a.appendChild(mk2("span","sm",x.cat+" · "+x.lo+" – "+x.hi+" € · "+new Date(x.created_at).toLocaleDateString("fr-FR",{day:"numeric",month:"short"})));
+  var pr=mk2("span","ip",(x.pr||0)+" €"),v=mk2("button","btn","Voir"),c=mk2("button","btn","Copier"),r=mk2("button","btn","Supprimer"),pre=null;
+  v.type=c.type=r.type="button";
+  v.onclick=function(){if(pre){pre.remove();pre=null;v.textContent="Voir";return}pre=mk2("pre","itxt",x.txt);li.appendChild(pre);v.textContent="Masquer"};
+  c.onclick=async function(){try{await navigator.clipboard.writeText(x.txt);toast("Annonce copiée.")}catch(e){toast("Copie impossible.")}};
+  r.onclick=async function(){if(!confirm("Supprimer cette annonce de ton historique ?"))return;r.disabled=true;var q2=await SB.from("items").delete().eq("id",x.id);if(q2.error){r.disabled=false;toast("Suppression impossible.");return}ITEMS=ITEMS.filter(function(y){return y.id!==x.id});profileUI()};
+  li.appendChild(a);li.appendChild(pr);li.appendChild(v);li.appendChild(c);li.appendChild(r);ul.appendChild(li)});
+}
+$("pq").addEventListener("input",drawItems);$("pcf").addEventListener("change",drawItems);
+$("ilockgo").onclick=function(e){e.preventDefault();tab("offre")};
+$("pupg").onclick=function(){tab("offre")};
+$("pnew").onclick=function(){$("dProfile").close();var st=$("studio");if(st)st.scrollIntoView({behavior:RM?"auto":"smooth"})};
+$("pexport").onclick=function(){var data={exporte_le:new Date().toISOString(),compte:{prenom:U&&U.name,email:U&&U.email,membre_depuis:U&&U.since,offre:P().n,annonces_ce_mois:used(),annonces_au_total:ACC&&ACC.total,photos_analysees:ACC&&ACC.photos},annonces:ITEMS.map(function(x){return{titre:x.title,categorie:x.cat,prix:x.pr,fourchette:[x.lo,x.hi],cree_le:x.created_at,texte:x.txt}})};
+ var bl=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(bl);a.download="declic-mes-donnees.json";document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500);toast("Tes données sont téléchargées.")};
 document.querySelectorAll(".ptabs button").forEach(function(b){b.onclick=function(){tab(b.dataset.tab)}});
 document.querySelectorAll("[data-pplan]").forEach(function(b){b.onclick=function(){setPlan(b.dataset.pplan)}});
 $("pmanage").onclick=async function(){try{var r=await api("checkout",{plan:"manage"});location.href=r.url}catch(x){toast("L’espace de paiement est indisponible pour le moment.")}};
