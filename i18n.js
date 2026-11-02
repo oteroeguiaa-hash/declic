@@ -410,7 +410,16 @@
     ["Ajouter", "Add", "Añadir", "Hinzufügen", "Aggiungi"],
     [": l’icône Déclic apparaît sur ton téléphone.", ": the Déclic icon appears on your phone.", ": el icono de Déclic aparece en tu móvil.", ": Das Déclic-Symbol erscheint auf deinem Handy.", ": l’icona di Déclic appare sul telefono."],
     ["Sur iPhone, l’installation fonctionne depuis", "On iPhone, installing works from", "En iPhone, la instalación funciona desde", "Auf dem iPhone funktioniert die Installation über", "Su iPhone l’installazione funziona da"],
-    ["Ouvre le menu de ton navigateur, puis « Installer l’application » ou « Ajouter à l’écran d’accueil ».", "Open your browser menu, then “Install app” or “Add to Home screen”.", "Abre el menú del navegador y elige «Instalar aplicación» o «Añadir a pantalla de inicio».", "Öffne das Browsermenü und wähle „App installieren“ oder „Zum Startbildschirm hinzufügen“.", "Apri il menu del browser e scegli «Installa app» o «Aggiungi a schermata Home»."]
+    ["Ouvre le menu de ton navigateur, puis « Installer l’application » ou « Ajouter à l’écran d’accueil ».", "Open your browser menu, then “Install app” or “Add to Home screen”.", "Abre el menú del navegador y elige «Instalar aplicación» o «Añadir a pantalla de inicio».", "Öffne das Browsermenü und wähle „App installieren“ oder „Zum Startbildschirm hinzufügen“.", "Apri il menu del browser e scegli «Installa app» o «Aggiungi a schermata Home»."],
+    // ── Connexion par code
+    ["Un e-mail a été envoyé à", "An email has been sent to", "Se ha enviado un e-mail a", "Eine E-Mail wurde gesendet an", "È stata inviata un’e-mail a"],
+    ["Code reçu par e-mail", "Code from the email", "Código recibido por e-mail", "Code aus der E-Mail", "Codice ricevuto via e-mail"],
+    ["Valider le code", "Confirm code", "Validar el código", "Code bestätigen", "Conferma il codice"],
+    ["Tu peux aussi appuyer sur le lien de l’e-mail. Dans l’appli installée, utilise plutôt le code. Pense à regarder dans les courriers indésirables.", "You can also tap the link in the email. In the installed app, use the code instead. Remember to check your spam folder.", "También puedes tocar el enlace del e-mail. En la app instalada, usa mejor el código. Revisa también la carpeta de spam.", "Du kannst auch auf den Link in der E-Mail tippen. In der installierten App nutze lieber den Code. Schau auch im Spam-Ordner nach.", "Puoi anche toccare il link nell’e-mail. Nell’app installata usa invece il codice. Controlla anche la cartella spam."],
+    ["Entre le code à 6 chiffres reçu par e-mail.", "Enter the 6-digit code from the email.", "Introduce el código de 6 cifras del e-mail.", "Gib den 6-stelligen Code aus der E-Mail ein.", "Inserisci il codice di 6 cifre ricevuto via e-mail."],
+    ["Code incorrect ou expiré. Vérifie-le ou demande un nouvel e-mail.", "Wrong or expired code. Check it or request a new email.", "Código incorrecto o caducado. Revísalo o pide un nuevo e-mail.", "Falscher oder abgelaufener Code. Prüfe ihn oder fordere eine neue E-Mail an.", "Codice errato o scaduto. Controllalo o richiedi una nuova e-mail."],
+    ["Connexion impossible pour le moment. Réessaie.", "Can’t log in right now. Try again.", "No se puede iniciar sesión ahora. Inténtalo de nuevo.", "Anmeldung gerade nicht möglich. Versuche es erneut.", "Impossibile accedere ora. Riprova."]
+
   ];
 
   // Titre principal de l’accueil (mot à mot, deux lignes)

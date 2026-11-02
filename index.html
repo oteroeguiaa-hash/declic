@@ -651,6 +651,9 @@ html[data-theme="light"] .ios .ico{background:#f1ecf8}
 .itab.open{transform:none}
 .itab::before{content:"";position:absolute;left:-4px;top:50%;width:4px;height:22px;margin-top:-11px;border-radius:4px;background:var(--grad)}
 html[data-theme="light"] .itab{background:rgba(255,255,255,.96)}
+
+.otp{font-size:28px!important;letter-spacing:.45em;text-align:center;font-variant-numeric:tabular-nums;font-weight:700;padding:14px 10px!important}
+.otp::placeholder{letter-spacing:.3em;opacity:.35}
 </style>
 </head>
 <body>
@@ -919,8 +922,14 @@ html[data-theme="light"] .itab{background:rgba(255,255,255,.96)}
     <button class="btn p" id="lsend" type="submit" style="width:100%;margin-top:18px">Recevoir mon lien de connexion</button>
   </form>
   <div id="lsent" hidden>
-    <p>Un lien de connexion a été envoyé à <strong id="lsentmail" data-noi18n></strong>.</p>
-    <p class="sm">Ouvre-le pour te connecter. Pense à regarder dans les courriers indésirables.</p>
+    <p>Un e-mail a été envoyé à <strong id="lsentmail" data-noi18n></strong>.</p>
+    <form id="fCode" novalidate>
+      <label class="f" for="lcode">Code reçu par e-mail</label>
+      <input type="text" id="lcode" class="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="••••••" pattern="[0-9]*">
+      <p class="err" id="lcerr" hidden></p>
+      <button class="btn p" id="lcgo" type="submit" style="width:100%;margin-top:14px">Valider le code</button>
+    </form>
+    <p class="sm" style="margin-top:14px">Tu peux aussi appuyer sur le lien de l’e-mail. Dans l’appli installée, utilise plutôt le code. Pense à regarder dans les courriers indésirables.</p>
     <button class="btn" id="lback" type="button" style="width:100%;margin-top:18px">Changer d’adresse</button>
   </div>
 </dialog>
@@ -1072,8 +1081,16 @@ $("fLogin").addEventListener("submit",async function(e){e.preventDefault();
  try{try{sessionStorage.setItem("declic_after",after||"")}catch(x){}
   var r=await SB.auth.signInWithOtp({email:m,options:{emailRedirectTo:location.origin+location.pathname,data:n?{name:n.slice(0,40)}:undefined}});
   if(r.error)throw r.error;
-  $("lsentmail").textContent=m;$("fLogin").hidden=true;$("lsent").hidden=false}
+  $("lsentmail").textContent=m;$("fLogin").hidden=true;$("lsent").hidden=false;$("lcerr").hidden=true;setTimeout(function(){$("lcode").focus()},100)}
  catch(x){er.textContent=/rate|seconds|limit/i.test(x&&x.message||"")?"Trop de demandes. Attends une minute avant de réessayer.":"Impossible d’envoyer l’e-mail pour le moment. Réessaie plus tard.";er.hidden=false}
+ finally{b.disabled=false}});
+
+/* Connexion par code (indispensable dans l'appli installée : le lien s'ouvrirait dans Safari) */
+$("lcode").addEventListener("input",function(){var v=this.value.replace(/\D/g,"").slice(0,8);if(v!==this.value)this.value=v;if(v.length===6||v.length===8)setTimeout(function(){if($("lcode").value===v)$("fCode").requestSubmit()},250)});
+$("fCode").addEventListener("submit",async function(e){e.preventDefault();var code=$("lcode").value.trim(),er=$("lcerr"),b=$("lcgo");
+ if(!/^\d{6,8}$/.test(code)){er.textContent=I18N.T("Entre le code à 6 chiffres reçu par e-mail.");er.hidden=false;return}er.hidden=true;b.disabled=true;
+ try{var r=await SB.auth.verifyOtp({email:$("lsentmail").textContent,token:code,type:"email"});if(r.error)throw r.error;$("lcode").value=""}
+ catch(x){er.textContent=I18N.T(/expired|invalid/i.test(x&&x.message||"")?"Code incorrect ou expiré. Vérifie-le ou demande un nouvel e-mail.":"Connexion impossible pour le moment. Réessaie.");er.hidden=false}
  finally{b.disabled=false}});
 $("lback").onclick=function(){$("lsent").hidden=true;$("fLogin").hidden=false};
 $("logout").onclick=async function(){try{await SB.auth.signOut()}catch(x){}$("dProfile").close();toast("Tu es déconnecté.")};
