@@ -348,6 +348,35 @@ header.sc{background:rgba(8,8,10,.9)}
 .mods{list-style:none;margin:14px 0 0;padding:0}.mods li{display:flex;gap:10px;align-items:center;padding:14px 0;border-top:1px solid var(--line)}.mods .mi{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}.mods .btn{padding:8px 14px;flex:none}
 .rev .q{font-size:16px;line-height:1.55}
 [hidden]{display:none!important}
+
+/* ───── Vagues : touches roses et rouges, dégradés, petites animations ───── */
+:root{--rose:#ff6b9d;--red:#ff4d6d;--coral:#ff8a5c;--grad:linear-gradient(120deg,var(--a),var(--b) 35%,var(--rose) 68%,var(--coral));--grad2:linear-gradient(90deg,var(--b),var(--rose),var(--red),var(--coral),var(--b))}
+.b2{background:var(--rose);opacity:.26}
+.b4{width:420px;height:420px;background:var(--red);opacity:.18;top:42%;right:18%;animation-delay:-12s}
+.gt{background:linear-gradient(100deg,#c9c2ff,#8f86f2 25%,var(--rose) 50%,var(--coral) 70%,#c9c2ff);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:gflow 6s ease-in-out infinite alternate}
+@keyframes gflow{to{background-position:100% 0}}
+.btn.p{background:var(--grad);background-size:220% 100%;animation:gflow 5s ease-in-out infinite alternate;box-shadow:0 8px 28px -8px rgba(255,107,157,.55)}
+.btn.p:hover{box-shadow:0 12px 36px -8px rgba(255,77,109,.7)}
+.hero{position:relative}
+.waves{position:absolute;left:0;right:0;bottom:-2px;height:150px;overflow:hidden;pointer-events:none;z-index:0;-webkit-mask:linear-gradient(180deg,transparent,#000 45%);mask:linear-gradient(180deg,transparent,#000 45%)}
+.waves svg{position:absolute;bottom:0;left:0;width:200%;height:100%}
+.waves .w1{animation:wv 18s linear infinite;opacity:.55}
+.waves .w2{animation:wv 12s linear infinite reverse;opacity:.4}
+.waves .w3{animation:wv 26s linear infinite;opacity:.9}
+@keyframes wv{to{transform:translateX(-50%)}}
+.hero .wrap{position:relative;z-index:1}
+.wsep{position:relative;height:60px;overflow:hidden;pointer-events:none;margin:-10px 0}
+.wsep svg{position:absolute;inset:0;width:200%;height:100%;animation:wv 14s linear infinite}
+.wsep path{fill:none;stroke-width:2;stroke-linecap:round;filter:drop-shadow(0 0 6px rgba(255,107,157,.55))}
+.wsep path+path{stroke-width:1;opacity:.45}
+.card:hover{border-color:rgba(255,107,157,.45);box-shadow:0 26px 60px rgba(0,0,0,.45),0 0 0 1px rgba(255,107,157,.18),0 0 48px -12px rgba(255,107,157,.45)}
+.card:hover h3{background:linear-gradient(100deg,#fff,#c9c2ff 45%,var(--rose));-webkit-background-clip:text;background-clip:text;color:transparent}
+footer{position:relative}
+footer::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:var(--grad2);background-size:200% 100%;animation:gflow 6s linear infinite alternate;opacity:.8}
+.glowdot{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--rose);box-shadow:0 0 12px 3px rgba(255,107,157,.7);animation:gd 7s ease-in-out infinite;pointer-events:none}
+@keyframes gd{0%,100%{transform:translateY(0);opacity:.2}50%{transform:translateY(-26px);opacity:1}}
+@media (max-width:560px){.waves{height:96px}.b4{width:260px;height:260px}.wsep{height:44px}}
+@media (prefers-reduced-motion:reduce){.waves svg,.wsep svg,.gt,.btn.p,footer::before,.glowdot{animation:none!important}}
 </style>
 </head>
 <body>
@@ -370,7 +399,7 @@ header.sc{background:rgba(8,8,10,.9)}
 </div></header>
 
 <main id="top">
-<section class="hero"><div class="aur"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div><div class="ring" aria-hidden="true"></div>
+<section class="hero"><div class="aur"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div><i class="glowdot" style="left:12%;top:30%"></i><i class="glowdot" style="left:78%;top:22%;animation-delay:-2s"></i><i class="glowdot" style="left:55%;top:70%;animation-delay:-4s;background:#ff8a5c"></i></div><div class="ring" aria-hidden="true"></div>
 <div class="wrap">
   <h1 class="sp"><span class="w"><span style="--i:0">Tu</span></span> <span class="w"><span style="--i:1">prends</span></span> <span class="w"><span style="--i:2">la</span></span> <span class="w"><span style="--i:3">photo.</span></span><br><span class="w"><span class="gt" style="--i:4">L’annonce</span></span> <span class="w"><span class="gt" style="--i:5">est</span></span> <span class="w"><span class="gt" style="--i:6">prête.</span></span></h1>
   <p class="lead rv d2">L’objet est reconnu, son prix estimé et l’annonce rédigée. Il ne reste qu’à publier.</p>
@@ -380,7 +409,14 @@ header.sc{background:rgba(8,8,10,.9)}
     <div class="hbars"><i class="bar" style="width:86%;animation-delay:.1s"></i><i class="bar" style="width:62%;animation-delay:.35s"></i><i class="bar" style="width:74%;animation-delay:.6s"></i></div>
     <div class="hpl"><i style="animation-delay:.9s"></i><i style="animation-delay:1.05s"></i><i style="animation-delay:1.2s"></i></div>
     <div class="hbt"><span>Vinted</span><span>eBay</span></div></div></div>
-</div></section>
+</div><div class="waves" aria-hidden="true"><svg viewBox="0 0 2880 150" preserveAspectRatio="none"><defs>
+<linearGradient id="wg1" x1="0" x2="1"><stop offset="0" stop-color="#8f86f2"/><stop offset=".5" stop-color="#ff6b9d"/><stop offset="1" stop-color="#8f86f2"/></linearGradient>
+<linearGradient id="wg2" x1="0" x2="1"><stop offset="0" stop-color="#ff4d6d"/><stop offset=".5" stop-color="#ff8a5c"/><stop offset="1" stop-color="#ff4d6d"/></linearGradient>
+<linearGradient id="wg3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a1430"/><stop offset="1" stop-color="#08080a"/></linearGradient></defs>
+<path class="w1" fill="url(#wg1)" d="M0 70 C240 30 480 30 720 70 S1200 110 1440 70 S1920 30 2160 70 S2640 110 2880 70 V150 H0Z"/>
+<path class="w2" fill="url(#wg2)" d="M0 95 C240 60 480 130 720 95 S1200 60 1440 95 S1920 130 2160 95 S2640 60 2880 95 V150 H0Z"/>
+<path class="w3" fill="url(#wg3)" d="M0 115 C240 95 480 135 720 115 S1200 95 1440 115 S1920 135 2160 115 S2640 95 2880 115 V150 H0Z"/>
+</svg></div></section>
 <div class="marq" aria-hidden="true"><div id="mq"></div></div>
 <div class="marq rev2" aria-hidden="true"><div id="mq2"></div></div>
 
@@ -405,6 +441,7 @@ header.sc{background:rgba(8,8,10,.9)}
   </div>
 </div></section>
 
+<div class="wsep" aria-hidden="true"><svg viewBox="0 0 2880 60" preserveAspectRatio="none"><defs><linearGradient id="sg0" x1="0" x2="1"><stop offset="0" stop-color="#8f86f2" stop-opacity="0"/><stop offset=".25" stop-color="#ff6b9d"/><stop offset=".5" stop-color="#ff4d6d"/><stop offset=".75" stop-color="#ff8a5c"/><stop offset="1" stop-color="#8f86f2" stop-opacity="0"/></linearGradient></defs><path stroke="url(#sg0)" d="M0 30 C240 8 480 8 720 30 S1200 52 1440 30 S1920 8 2160 30 S2640 52 2880 30"/><path stroke="url(#sg0)" d="M0 38 C240 20 480 56 720 38 S1200 20 1440 38 S1920 56 2160 38 S2640 20 2880 38"/></svg></div>
 <section class="studio" id="studio"><div class="wrap">
   <h2 class="sp">Crée ton annonce.</h2>
   <div class="box rv">
@@ -461,6 +498,7 @@ header.sc{background:rgba(8,8,10,.9)}
   </div>
 </div></section>
 
+<div class="wsep" aria-hidden="true"><svg viewBox="0 0 2880 60" preserveAspectRatio="none"><defs><linearGradient id="sg1" x1="0" x2="1"><stop offset="0" stop-color="#8f86f2" stop-opacity="0"/><stop offset=".25" stop-color="#ff6b9d"/><stop offset=".5" stop-color="#ff4d6d"/><stop offset=".75" stop-color="#ff8a5c"/><stop offset="1" stop-color="#8f86f2" stop-opacity="0"/></linearGradient></defs><path stroke="url(#sg1)" d="M0 30 C240 8 480 8 720 30 S1200 52 1440 30 S1920 8 2160 30 S2640 52 2880 30"/><path stroke="url(#sg1)" d="M0 38 C240 20 480 56 720 38 S1200 20 1440 38 S1920 56 2160 38 S2640 20 2880 38"/></svg></div>
 <section id="tarifs"><div class="wrap">
   <h2 class="sp">Des offres simples.</h2>
   <p class="lead rv">Sans engagement. Tu changes d’offre quand tu veux.</p>
@@ -478,6 +516,7 @@ header.sc{background:rgba(8,8,10,.9)}
   <div class="stripe rv"><span>Paiement sécurisé avec</span><b>stripe</b><span>· Carte bancaire · Résiliable à tout moment</span></div>
 </div></section>
 
+<div class="wsep" aria-hidden="true"><svg viewBox="0 0 2880 60" preserveAspectRatio="none"><defs><linearGradient id="sg2" x1="0" x2="1"><stop offset="0" stop-color="#8f86f2" stop-opacity="0"/><stop offset=".25" stop-color="#ff6b9d"/><stop offset=".5" stop-color="#ff4d6d"/><stop offset=".75" stop-color="#ff8a5c"/><stop offset="1" stop-color="#8f86f2" stop-opacity="0"/></linearGradient></defs><path stroke="url(#sg2)" d="M0 30 C240 8 480 8 720 30 S1200 52 1440 30 S1920 8 2160 30 S2640 52 2880 30"/><path stroke="url(#sg2)" d="M0 38 C240 20 480 56 720 38 S1200 20 1440 38 S1920 56 2160 38 S2640 20 2880 38"/></svg></div>
 <section id="avis"><div class="wrap">
   <h2 class="sp">Avis clients</h2>
   <div class="rnav"><button id="rprev" aria-label="Avis précédents">←</button><button id="rnext" aria-label="Avis suivants">→</button></div>
