@@ -128,3 +128,10 @@ create policy "un avis en attente par compte" on public.reviews
 revoke all on public.reviews from anon, authenticated;
 grant select on public.reviews to anon, authenticated;
 grant insert (name, stars, body, cat) on public.reviews to authenticated;
+
+-- ───────────── Droits du serveur (clé service_role) ─────────────
+-- Explicites, pour fonctionner même si « Automatically expose new tables » est décoché.
+grant usage on schema public to anon, authenticated, service_role;
+grant all on public.profiles, public.monthly_usage, public.items, public.reviews to service_role;
+grant execute on function public.consume_credit(uuid, text, int, int) to service_role;
+grant execute on function public.refund_credit(uuid, text, int) to service_role;
