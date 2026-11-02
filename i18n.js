@@ -29,7 +29,7 @@
     ["Principal", "Main", "Principal", "Hauptmenü", "Principale"],
     ["Menu", "Menu", "Menú", "Menü", "Menu"],
     ["Mon compte", "My account", "Mi cuenta", "Mein Konto", "Il mio account"],
-    ["Déclic — Une photo, l’annonce est prête", "Déclic — One photo, your listing is ready", "Déclic — Una foto y tu anuncio está listo", "Déclic — Ein Foto, die Anzeige ist fertig", "Déclic — Una foto, l’annuncio è pronto"],
+    ["Déclic : une photo, l’annonce est prête", "Déclic: one photo, your listing is ready", "Déclic: una foto y tu anuncio está listo", "Déclic: ein Foto, die Anzeige ist fertig", "Déclic: una foto, l’annuncio è pronto"],
 
     // ── Accueil
     ["L’objet est reconnu, son prix estimé et l’annonce rédigée. Il ne reste qu’à publier.", "The item is recognised, its price estimated and the listing written. All that’s left is to post it.", "Se reconoce el objeto, se estima su precio y se redacta el anuncio. Solo te queda publicarlo.", "Der Artikel wird erkannt, der Preis geschätzt und die Anzeige geschrieben. Du musst sie nur noch veröffentlichen.", "L’oggetto viene riconosciuto, il prezzo stimato e l’annuncio scritto. Non resta che pubblicarlo."],
@@ -213,6 +213,9 @@
     ["Oui, à tout moment depuis ton profil, onglet Abonnement. La résiliation prend effet à la fin du mois déjà payé.", "Yes, anytime from your profile, Subscription tab. Cancellation takes effect at the end of the month already paid.", "Sí, cuando quieras desde tu perfil, pestaña Suscripción. La cancelación se aplica al final del mes ya pagado.", "Ja, jederzeit in deinem Profil im Tab „Abo“. Die Kündigung gilt zum Ende des bereits bezahlten Monats.", "Sì, in qualsiasi momento dal profilo, scheda Abbonamento. La disdetta vale alla fine del mese già pagato."],
     ["Faut-il un compte ?", "Do I need an account?", "¿Necesito una cuenta?", "Brauche ich ein Konto?", "Serve un account?"],
     ["Oui, pour lancer une analyse. La connexion se fait par un lien reçu par e-mail, sans mot de passe. L’offre gratuite donne 5 annonces par mois.", "Yes, to run an analysis. You log in with a link sent by email, no password needed. The free plan gives 5 listings per month.", "Sí, para lanzar un análisis. Inicias sesión con un enlace que recibes por e-mail, sin contraseña. El plan gratis incluye 5 anuncios al mes.", "Ja, um eine Analyse zu starten. Du meldest dich über einen Link per E-Mail an, ohne Passwort. Der kostenlose Tarif bietet 5 Anzeigen pro Monat.", "Sì, per avviare un’analisi. Accedi con un link ricevuto via e-mail, senza password. Il piano gratuito include 5 annunci al mese."],
+    ["Mentions légales", "Legal notice", "Aviso legal", "Impressum", "Note legali"],
+    ["Confidentialité", "Privacy", "Privacidad", "Datenschutz", "Privacy"],
+    ["Conditions", "Terms", "Condiciones", "AGB", "Condizioni"],
     ["Mentions légales · Confidentialité · Conditions", "Legal notice · Privacy · Terms", "Aviso legal · Privacidad · Condiciones", "Impressum · Datenschutz · AGB", "Note legali · Privacy · Condizioni"],
     ["Haut de page", "Back to top", "Volver arriba", "Nach oben", "Torna su"],
     ["Fermer", "Close", "Cerrar", "Schließen", "Chiudi"],
@@ -355,7 +358,7 @@
     ["Un objet", "One item", "Un objeto", "Ein Artikel", "Un oggetto"],
     ["📦 Plusieurs objets", "📦 Several items", "📦 Varios objetos", "📦 Mehrere Artikel", "📦 Più oggetti"],
     ["Mode", "Mode", "Modo", "Modus", "Modalità"],
-    ["✨ Améliorer automatiquement mes photos", "✨ Auto-enhance my photos", "✨ Mejorar mis fotos automáticamente", "✨ Meine Fotos automatisch verbessern", "✨ Migliora automaticamente le foto"],
+    ["Améliorer automatiquement mes photos", "Auto-enhance my photos", "Mejorar mis fotos automáticamente", "Meine Fotos automatisch verbessern", "Migliora automaticamente le foto"],
     ["Mode lot", "Batch mode", "Modo lote", "Stapelmodus", "Modalità multipla"],
     ["Une photo par objet. L’IA reconnaît chaque objet, choisit sa catégorie et rédige toutes les annonces à la suite.", "One photo per item. The AI recognises each item, picks its category and writes every listing in a row.", "Una foto por objeto. La IA reconoce cada objeto, elige su categoría y redacta todos los anuncios seguidos.", "Ein Foto pro Artikel. Die KI erkennt jeden Artikel, wählt die Kategorie und schreibt alle Anzeigen nacheinander.", "Una foto per oggetto. L’IA riconosce ogni oggetto, sceglie la categoria e scrive tutti gli annunci di fila."],
     ["Pro · Ultra", "Pro · Ultra", "Pro · Ultra", "Pro · Ultra", "Pro · Ultra"],
