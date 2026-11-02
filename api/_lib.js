@@ -7,7 +7,7 @@ for (const [k, v] of Object.entries(process.env)) {
   if (typeof v === "string" && v !== v.trim()) process.env[k] = v.trim();
 }
 
-const ULTRA_CAP = Number(process.env.ULTRA_MONTHLY_CAP) || 300;
+const ULTRA_CAP = Number(process.env.ULTRA_MONTHLY_CAP) || 150;
 
 // Source de vérité des offres. Le navigateur a sa propre copie, uniquement pour l'affichage.
 export const PLANS = {

@@ -27,7 +27,7 @@ Site « photo → annonce » pour Vinted et eBay.
 |---|---|---|---|---|---|
 | Gratuit | 0 € | 5 | 2 | non | Sonnet 5.5 |
 | Pro | 11,99 € | 60 | 4 | oui | Sonnet 5.5 |
-| Ultra | 18,99 € | « illimité » (plafond anti-abus `ULTRA_MONTHLY_CAP`, 300 par défaut) | 8 | oui | Opus 5.5 |
+| Ultra | 18,99 € | « illimité » (plafond anti-abus `ULTRA_MONTHLY_CAP`, 150 par défaut) | 8 | oui | Opus 5.5 |
 
 ## Mise en ligne, étape par étape
 
