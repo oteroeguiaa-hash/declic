@@ -13,7 +13,7 @@ Site « photo → annonce » pour Vinted et eBay.
 | `api/stripe-webhook.js` | Seul endroit où l'offre d'un compte change, sur confirmation signée de Stripe. |
 | `api/reviews-admin.js` | Validation des avis clients (réservée à `ADMIN_EMAILS`). |
 | `api/delete-account.js` | Suppression du compte et de toutes ses données (RGPD). |
-| `api/translate.js` | Traduction d'une annonce en anglais, espagnol, allemand ou italien (offres payantes). |
+| `api/translate.js` | Traduction d’une annonce en anglais, espagnol, allemand ou italien (gratuite pour tous les comptes). |
 | `i18n.js` | Traductions du site (FR, EN, ES, DE, IT). |
 | `supabase/schema.sql` | Tables, règles de sécurité (RLS) et fonctions de la base. |
 

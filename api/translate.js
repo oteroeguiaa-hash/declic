@@ -1,7 +1,7 @@
 // Traduction d’une annonce (titre + description) pour vendre à l’étranger.
-// Réservée aux offres payantes ; ne consomme pas d’analyse (texte seul, très peu coûteux).
+// Ouverte à tous les comptes connectés ; ne consomme pas d’analyse (texte seul, quelques millièmes d’euro).
 import Anthropic from "@anthropic-ai/sdk";
-import { PLANS, allow, getProfile, getUser, send } from "./_lib.js";
+import { allow, getUser, send } from "./_lib.js";
 
 export const config = { maxDuration: 30 };
 const anthropic = new Anthropic();
@@ -19,9 +19,6 @@ export default async function handler(req, res) {
   if (!LANGS[to] || !titre) return send(res, 400, { error: "invalid" });
 
   try {
-    const profile = await getProfile(user);
-    if (!PLANS[profile.plan] || profile.plan === "free") return send(res, 403, { error: "plan" });
-
     const msg = await anthropic.beta.messages.create({
       model: "claude-sonnet-5-5",
       max_tokens: 4000,

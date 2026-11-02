@@ -747,7 +747,7 @@ html.lowmo .lth.run::after{animation:none!important}
     </div>
     <div id="kwbox"><label class="f">Mots-clés</label><div class="kw" id="kw" data-noi18n></div></div>
     <p class="sm" id="kwlock" hidden>Mots-clés : offre Pro ou Ultra.</p>
-    <div id="trbox"><label class="f">Vendre à l’étranger</label><div class="gseg trs" id="tr"><button type="button" data-l="fr" aria-pressed="true">🇫🇷 Original</button><button type="button" data-l="en">🇬🇧 EN</button><button type="button" data-l="es">🇪🇸 ES</button><button type="button" data-l="de">🇩🇪 DE</button><button type="button" data-l="it">🇮🇹 IT</button></div><p class="sm" id="trlock" hidden>Traduction de l’annonce : offre Pro ou Ultra.</p></div>
+    <div id="trbox"><label class="f">Vendre à l’étranger</label><div class="gseg trs" id="tr"><button type="button" data-l="fr" aria-pressed="true">🇫🇷 Original</button><button type="button" data-l="en">🇬🇧 EN</button><button type="button" data-l="es">🇪🇸 ES</button><button type="button" data-l="de">🇩🇪 DE</button><button type="button" data-l="it">🇮🇹 IT</button></div></div>
     <div class="row"><button class="btn p" id="copy">Copier l’annonce</button><button class="btn" id="savep" type="button">📥 Enregistrer les photos</button></div>
     <p class="sm" style="margin:12px 0 0">Colle ensuite les champs dans le formulaire de vente et ajoute tes photos.</p>
   </div>
@@ -1258,10 +1258,9 @@ var TRO=null;
 function markTr(l){[].forEach.call($("tr").children,function(b){b.setAttribute("aria-pressed",b.dataset.l===l)})}
 $("tr").onclick=async function(e){var b=e.target.closest("button");if(!b||b.disabled)return;var l=b.dataset.l;
  if(l==="fr"){if(TRO){$("titre").value=TRO.t;$("desc").value=TRO.d}markTr("fr");return}
- if(planId()==="free"){$("trlock").hidden=false;toast("Traduction de l’annonce : offre Pro ou Ultra.");return}
  if(!TRO)TRO={t:$("titre").value,d:$("desc").value};var old=b.textContent;b.disabled=true;b.textContent="…";
  try{var r=await api("translate",{titre:TRO.t,description:TRO.d,to:l});$("titre").value=r.titre;$("desc").value=r.description;markTr(l);toast(I18N.T("Annonce traduite."))}
- catch(x){toast(x&&x.code==="plan"?"Traduction de l’annonce : offre Pro ou Ultra.":"Traduction impossible pour le moment.")}
+ catch(x){toast("Traduction impossible pour le moment.")}
  finally{b.disabled=false;b.textContent=old}};
 
 /* ───── Enregistrer les photos (améliorées) dans la galerie ───── */
