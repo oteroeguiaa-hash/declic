@@ -394,7 +394,23 @@
     ["jours", "days", "días", "Tage", "giorni"],
     ["jour", "day", "día", "Tag", "giorno"],
     ["En ligne depuis", "Online for", "En línea desde hace", "Online seit", "Online da"],
-    ["conseil : baisse à", "tip: lower to", "consejo: baja a", "Tipp: senke auf", "consiglio: abbassa a"]
+    ["conseil : baisse à", "tip: lower to", "consejo: baja a", "Tipp: senke auf", "consiglio: abbassa a"],
+    // ── Appli installable
+    ["📱 Installer l’appli", "📱 Install the app", "📱 Instalar la app", "📱 App installieren", "📱 Installa l’app"],
+    ["Installe l’appli Déclic", "Install the Déclic app", "Instala la app Déclic", "Installiere die Déclic-App", "Installa l’app Déclic"],
+    ["Plus rapide, en plein écran, sur ton écran d’accueil.", "Faster, full screen, right on your home screen.", "Más rápida, a pantalla completa, en tu pantalla de inicio.", "Schneller, im Vollbild, direkt auf deinem Startbildschirm.", "Più veloce, a schermo intero, nella schermata Home."],
+    ["Installer", "Install", "Instalar", "Installieren", "Installa"],
+    ["Installer l’appli", "Install the app", "Instalar la app", "App installieren", "Installa l’app"],
+    ["Appuie sur le bouton", "Tap the", "Toca el botón", "Tippe unten in Safari auf", "Tocca il pulsante"],
+    ["Partager", "Share", "Compartir", "Teilen", "Condividi"],
+    ["en bas de Safari.", "button at the bottom of Safari.", "en la parte inferior de Safari.", ".", "in basso in Safari."],
+    ["Fais défiler et choisis", "Scroll down and choose", "Desplázate y elige", "Scrolle nach unten und wähle", "Scorri e scegli"],
+    ["« Sur l’écran d’accueil »", "“Add to Home Screen”", "«Añadir a pantalla de inicio»", "„Zum Home-Bildschirm“", "«Aggiungi alla schermata Home»"],
+    ["Appuie sur", "Tap", "Toca", "Tippe auf", "Tocca"],
+    ["Ajouter", "Add", "Añadir", "Hinzufügen", "Aggiungi"],
+    [": l’icône Déclic apparaît sur ton téléphone.", ": the Déclic icon appears on your phone.", ": el icono de Déclic aparece en tu móvil.", ": Das Déclic-Symbol erscheint auf deinem Handy.", ": l’icona di Déclic appare sul telefono."],
+    ["Sur iPhone, l’installation fonctionne depuis", "On iPhone, installing works from", "En iPhone, la instalación funciona desde", "Auf dem iPhone funktioniert die Installation über", "Su iPhone l’installazione funziona da"],
+    ["Ouvre le menu de ton navigateur, puis « Installer l’application » ou « Ajouter à l’écran d’accueil ».", "Open your browser menu, then “Install app” or “Add to Home screen”.", "Abre el menú del navegador y elige «Instalar aplicación» o «Añadir a pantalla de inicio».", "Öffne das Browsermenü und wähle „App installieren“ oder „Zum Startbildschirm hinzufügen“.", "Apri il menu del browser e scegli «Installa app» o «Aggiungi a schermata Home»."]
   ];
 
   // Titre principal de l’accueil (mot à mot, deux lignes)
