@@ -11,6 +11,7 @@ export default async function handler(req, res) {
   const want = req.body?.plan; // "plus", "pro", ou "manage" pour l'espace client
   if (!["plus", "pro", "manage"].includes(want)) return send(res, 400, { error: "invalid" });
 
+  const locale = ["fr", "en", "es", "de", "it"].includes(req.body?.lang) ? req.body.lang : "fr";
   try {
     const profile = await getProfile(user);
     const site = siteUrl(req);
@@ -20,7 +21,7 @@ export default async function handler(req, res) {
       const portal = await stripe().billingPortal.sessions.create({
         customer: profile.stripe_customer_id,
         return_url: `${site}/?paiement=retour`,
-        locale: "fr",
+        locale,
       });
       return send(res, 200, { url: portal.url });
     }
@@ -34,7 +35,7 @@ export default async function handler(req, res) {
       line_items: [{ price: PRICE[want], quantity: 1 }],
       subscription_data: { metadata: { user_id: user.id } },
       allow_promotion_codes: true,
-      locale: "fr",
+      locale,
       success_url: `${site}/?paiement=ok`,
       cancel_url: `${site}/?paiement=annule`,
     });

@@ -9,13 +9,16 @@ const anthropic = new Anthropic(); // lit ANTHROPIC_API_KEY
 
 const CATS = ["Vêtements", "Chaussures", "Électronique", "Mobilier", "Maison & déco", "Sport & loisirs", "Jeux & jouets", "Livres & médias", "Autre"];
 const ETATS = ["Neuf avec étiquette", "Neuf sans étiquette", "Très bon état", "Bon état", "Satisfaisant", "Abîmé"];
+const LANGS = { fr: "français", en: "anglais", es: "espagnol", de: "allemand", it: "italien" };
 const MAX_IMAGE_CHARS = 1_400_000; // ~1 Mo par photo une fois décodée (le site les réduit avant l'envoi)
 
 const clean = (v, max) => String(v ?? "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, max);
 
-function buildPrompt({ cat, details, etat, hint }, withEbay) {
+function buildPrompt({ cat, details, etat, hint, lang }, withEbay) {
+  const L = LANGS[lang] || LANGS.fr;
   return (
-    "Tu es un expert de la revente d’occasion en France. À partir des photos, identifie l’objet, estime son prix d’occasion et rédige l’annonce en français.\n" +
+    `Tu es un expert de la revente d’occasion en Europe. À partir des photos, identifie l’objet, estime son prix d’occasion en euros et rédige l’annonce en ${L}.\n` +
+    `Langue de l’annonce : ${L}. Le titre, la description, l’objet, la couleur et les mots-clés doivent être en ${L} (le champ « etat » reste une des valeurs françaises imposées).\n` +
     `Catégorie choisie par le vendeur : ${cat}. Informations du vendeur : ${details || "aucune"}. ` +
     (etat ? `État indiqué : ${etat}.` : "État à estimer d’après les photos.") + "\n" +
     (hint ? `Précisions du vendeur (prioritaires) : ${hint}\n` : "") +
@@ -96,6 +99,7 @@ export default async function handler(req, res) {
       etat,
       details: clean(body.details, 400),
       hint: clean(body.hint, 300),
+      lang: LANGS[body.lang] ? body.lang : "fr",
     };
     const content = data.map((b64) => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64 } }));
     content.push({ type: "text", text: buildPrompt(fields, plan.eb) });
