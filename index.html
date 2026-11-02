@@ -643,6 +643,14 @@ body.ibar-on .gpanel{bottom:calc(152px + env(safe-area-inset-bottom,0px))}
 @media (display-mode:standalone){header{padding-top:env(safe-area-inset-top,0px)}}
 html[data-theme="light"] .ibar{background:rgba(255,255,255,.96)}
 html[data-theme="light"] .ios .ico{background:#f1ecf8}
+
+/* Onglet d'installation rangé sur le bord droit (après fermeture du bandeau) */
+.itab{position:fixed;right:0;top:58%;z-index:94;display:flex;align-items:center;gap:10px;padding:7px 14px 7px 7px;border-radius:16px 0 0 16px;border:1px solid rgba(255,107,157,.4);border-right:0;background:rgba(16,16,19,.94);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);color:var(--ink);font-weight:700;font-size:14px;white-space:nowrap;box-shadow:-8px 10px 30px -12px rgba(255,107,157,.55);transform:translateX(calc(100% - 46px));transition:transform .45s var(--ease)}
+.itab[hidden]{display:none}
+.itab img{border-radius:9px;flex:none}
+.itab.open{transform:none}
+.itab::before{content:"";position:absolute;left:-4px;top:50%;width:4px;height:22px;margin-top:-11px;border-radius:4px;background:var(--grad)}
+html[data-theme="light"] .itab{background:rgba(255,255,255,.96)}
 </style>
 </head>
 <body>
@@ -919,6 +927,7 @@ html[data-theme="light"] .ios .ico{background:#f1ecf8}
 <button class="top" id="top2" aria-label="Haut de page">↑</button>
 <div class="toast" id="toast" role="status"></div>
 <div class="ibar" id="ibar" hidden><img src="/icons/icon-192.png" alt="" width="40" height="40"><div><strong>Installe l’appli Déclic</strong><span class="sm">Plus rapide, en plein écran, sur ton écran d’accueil.</span></div><button class="btn p" type="button" id="ibtn">Installer</button><button class="x" type="button" id="ix" aria-label="Fermer">✕</button></div>
+<button class="itab" id="itab" type="button" hidden aria-label="Installer l’appli"><img src="/icons/icon-192.png" alt="" width="30" height="30"><span>Installer l’appli</span></button>
 <dialog id="dIos" aria-label="Installer l’appli">
   <div class="dh"><strong>Installer l’appli</strong><button class="x" data-close aria-label="Fermer">✕</button></div>
   <ol class="ios">
@@ -1417,19 +1426,23 @@ drawPhotos();render();
  var $=function(i){return document.getElementById(i)},T=window.I18N?I18N.T:function(s){return s};
  var standalone=(window.matchMedia&&matchMedia("(display-mode: standalone)").matches)||navigator.standalone===true;
  var ua=navigator.userAgent,ios=/iphone|ipad|ipod/i.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1),mobile=ios||/android/i.test(ua);
- var deferred=null,KEY="declic_ibar";
- function dismissed(){try{return +localStorage.getItem(KEY)>Date.now()}catch(e){return false}}
- function hideBar(snooze){$("ibar").hidden=true;document.body.classList.remove("ibar-on");if(snooze)try{localStorage.setItem(KEY,Date.now()+14*864e5)}catch(e){}}
- function showBar(){if(standalone||dismissed()||!mobile)return;setTimeout(function(){$("ibar").hidden=false;document.body.classList.add("ibar-on")},4000)}
- function install(){if(deferred){deferred.prompt();deferred.userChoice.then(function(c){if(c.outcome==="accepted")hideBar(false);deferred=null});return}
+ var deferred=null,KEY="declic_ibar2",shown=false;
+ function folded(){try{return localStorage.getItem(KEY)==="tab"}catch(e){return false}}
+ function showTab(){$("itab").hidden=false}
+ function hideBar(fold){$("ibar").hidden=true;document.body.classList.remove("ibar-on");if(fold){try{localStorage.setItem(KEY,"tab")}catch(e){}showTab()}}
+ function hideAll(){hideBar(false);$("itab").hidden=true}
+ function showBar(){if(standalone||!mobile||shown)return;shown=true;if(folded()){showTab();return}setTimeout(function(){$("ibar").hidden=false;document.body.classList.add("ibar-on")},4000)}
+ function install(){if(deferred){deferred.prompt();deferred.userChoice.then(function(c){if(c.outcome==="accepted")hideAll();deferred=null});return}
   if(ios){$("dIos").showModal();return}
   alert(T("Ouvre le menu de ton navigateur, puis « Installer l’application » ou « Ajouter à l’écran d’accueil »."))}
  if(standalone)return;
  $("mInstall").hidden=!(mobile||"onbeforeinstallprompt" in window);
  window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();deferred=e;$("mInstall").hidden=false;showBar()});
- window.addEventListener("appinstalled",function(){hideBar(false);$("mInstall").hidden=true});
- if(ios)showBar();
+ window.addEventListener("appinstalled",function(){hideAll();$("mInstall").hidden=true});
+ if(ios||(mobile&&folded()))showBar();
  $("ibtn").onclick=install;$("mInstall").onclick=install;$("ix").onclick=function(){hideBar(true)};
+ /* onglet : 1er toucher = il sort du bord, 2e toucher = installer ; il se range tout seul après 4 s */
+ var tt=null;$("itab").onclick=function(){var t=$("itab");if(!t.classList.contains("open")){t.classList.add("open");clearTimeout(tt);tt=setTimeout(function(){t.classList.remove("open")},4000);return}t.classList.remove("open");install()};
  var d=$("dIos");d.addEventListener("click",function(e){if(e.target===d)d.close()});d.querySelector("[data-close]").onclick=function(){d.close()};
 })();
 </script>
