@@ -19,7 +19,10 @@ function buildPrompt({ cat, details, etat, hint, lang }, withEbay) {
   return (
     `Tu es un expert de la revente d’occasion en Europe. À partir des photos, identifie l’objet, estime son prix d’occasion en euros et rédige l’annonce en ${L}.\n` +
     `Langue de l’annonce : ${L}. Le titre, la description, l’objet, la couleur et les mots-clés doivent être en ${L} (le champ « etat » reste une des valeurs françaises imposées).\n` +
-    `Catégorie choisie par le vendeur : ${cat}. Informations du vendeur : ${details || "aucune"}. ` +
+    (cat === "auto"
+      ? `Catégorie : à déterminer d’après les photos, parmi : ${CATS.join(", ")}. `
+      : `Catégorie choisie par le vendeur : ${cat}. `) +
+    `Informations du vendeur : ${details || "aucune"}. ` +
     (etat ? `État indiqué : ${etat}.` : "État à estimer d’après les photos.") + "\n" +
     (hint ? `Précisions du vendeur (prioritaires) : ${hint}\n` : "") +
     "N’invente aucun détail invisible : si une info est incertaine, mets une chaîne vide. Intègre les informations du vendeur dans les descriptions.\n" +
@@ -29,7 +32,7 @@ function buildPrompt({ cat, details, etat, hint, lang }, withEbay) {
   );
 }
 
-function schema(withEbay) {
+function schema(withEbay, auto) {
   const version = {
     type: "object",
     additionalProperties: false,
@@ -48,6 +51,7 @@ function schema(withEbay) {
     vinted: version,
   };
   if (withEbay) properties.ebay = version;
+  if (auto) properties.categorie = { type: "string", enum: CATS };
   return { type: "object", additionalProperties: false, required: Object.keys(properties), properties };
 }
 
@@ -59,7 +63,7 @@ export default async function handler(req, res) {
 
   const body = req.body || {};
   const images = Array.isArray(body.images) ? body.images : [];
-  const cat = CATS.includes(body.cat) ? body.cat : "";
+  const cat = CATS.includes(body.cat) || body.cat === "auto" ? body.cat : "";
   const etat = ETATS.includes(body.etat) ? body.etat : "";
   if (!cat || images.length === 0) return send(res, 400, { error: "invalid" });
 
@@ -109,7 +113,7 @@ export default async function handler(req, res) {
       max_tokens: 16000,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default", // si le modèle décline, l'API réessaie sur le modèle de secours recommandé
-      output_config: { effort: plan.deep ? "high" : "medium", format: { type: "json_schema", schema: schema(plan.eb) } },
+      output_config: { effort: plan.deep ? "high" : "medium", format: { type: "json_schema", schema: schema(plan.eb, cat === "auto") } },
       messages: [{ role: "user", content }],
     });
 

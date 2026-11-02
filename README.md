@@ -13,6 +13,8 @@ Site « photo → annonce » pour Vinted et eBay.
 | `api/stripe-webhook.js` | Seul endroit où l'offre d'un compte change, sur confirmation signée de Stripe. |
 | `api/reviews-admin.js` | Validation des avis clients (réservée à `ADMIN_EMAILS`). |
 | `api/delete-account.js` | Suppression du compte et de toutes ses données (RGPD). |
+| `api/translate.js` | Traduction d'une annonce en anglais, espagnol, allemand ou italien (offres payantes). |
+| `i18n.js` | Traductions du site (FR, EN, ES, DE, IT). |
 | `supabase/schema.sql` | Tables, règles de sécurité (RLS) et fonctions de la base. |
 
 - **Comptes** : Supabase, connexion par lien reçu par e-mail (sans mot de passe).
@@ -32,6 +34,7 @@ Site « photo → annonce » pour Vinted et eBay.
 ### 1. Supabase (comptes et base de données)
 1. Crée un projet sur [supabase.com](https://supabase.com) (région : Europe).
 2. **SQL Editor** → New query → colle le contenu de `supabase/schema.sql` → **Run**.
+   - Projet déjà créé avant le suivi des ventes ? Exécute aussi `supabase/002_ventes.sql` (une seule fois).
 3. **Authentication → URL Configuration** : *Site URL* = l'adresse de ton site (ex. `https://declic.fr`), et ajoute-la dans *Redirect URLs*.
 4. **Authentication → Emails → SMTP Settings** : branche un vrai service d'envoi d'e-mails (Resend, Brevo, Postmark…). **Indispensable** : sans ça, Supabase n'envoie que quelques e-mails par heure et seulement aux membres de ton équipe.
 5. (Conseillé) Traduis le modèle d'e-mail « Magic Link » en français dans **Authentication → Emails → Templates**.

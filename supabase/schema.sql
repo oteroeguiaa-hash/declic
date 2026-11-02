@@ -94,6 +94,8 @@ create table if not exists public.items (
   cat text not null default '' check (char_length(cat) <= 40),
   lo int, hi int, pr int,
   txt text not null check (char_length(txt) <= 6000),
+  sold_at timestamptz,
+  sold_price int check (sold_price is null or sold_price between 0 and 1000000),
   created_at timestamptz not null default now()
 );
 create index if not exists items_user_created on public.items (user_id, created_at desc);
@@ -103,6 +105,7 @@ drop policy if exists "annonces du titulaire" on public.items;
 create policy "annonces du titulaire" on public.items
   for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 grant select, insert, delete on public.items to authenticated;
+grant update (sold_at, sold_price) on public.items to authenticated;
 
 -- ───────────── Avis clients ─────────────
 create table if not exists public.reviews (
