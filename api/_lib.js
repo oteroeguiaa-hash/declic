@@ -1,6 +1,12 @@
 // Outils partagés par les fonctions serveur. Le "_" au début du nom empêche Vercel d'en faire une route.
 import { createClient } from "@supabase/supabase-js";
 
+// Nettoie les variables d'environnement : un espace ou un retour à la ligne collé par erreur
+// dans Vercel ne doit rien casser.
+for (const [k, v] of Object.entries(process.env)) {
+  if (typeof v === "string" && v !== v.trim()) process.env[k] = v.trim();
+}
+
 const ULTRA_CAP = Number(process.env.ULTRA_MONTHLY_CAP) || 300;
 
 // Source de vérité des offres. Le navigateur a sa propre copie, uniquement pour l'affichage.
