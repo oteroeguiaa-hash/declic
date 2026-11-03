@@ -55,28 +55,27 @@ export class World {
     // ---- Biomes ----
     // Montagnes alpines : une ou deux chaînes, crêtes réalistes (bruit « ridged »), jusqu'à ~250 m
     const mreg = fbm(this.nM, X / 1700 + 4.2, Z / 1700 - 7.7, 2) * 0.5 + 0.5;
-    const M = smoothstep(0.5, 0.74, mreg) * smoothstep(0.84, 0.5, d);
+    const M = smoothstep(0.42, 0.7, mreg) * smoothstep(0.86, 0.45, d);
     if (M > 0) {
       // Domaine fortement déformé : silhouettes irrégulières, pas de cônes
       const qx = wx + fbm(this.nM, X / 420 + 3, Z / 420 - 8, 3) * 140;
       const qz = wz + fbm(this.nM, X / 420 - 6, Z / 420 + 2, 3) * 140;
       // Grand massif aux sommets arrondis (jusqu'à ~500 m), versants longs et réguliers
-      const core = Math.pow(smoothstep(0.5, 0.76, mreg), 1.2);
-      const main = ridged(this.nM, qx / 1500, qz / 1500, 5);                    // grandes crêtes, larges
+      // Massif large aux versants longs et réguliers, plusieurs sommets secondaires (cf. montagnes des Alpes basses)
+      const core = smoothstep(0.4, 0.9, mreg);
+      const dome = core * core * (3 - 2 * core);
+      // Profil de montagne « réelle » : versants longs et réguliers, crête principale avec plusieurs sommets
+      // arrondis, épaulements ; pas d'arêtes en lame ni de falaises géantes.
+      const ridgeN = 1 - Math.abs(fbm(this.nM, qx / 1400, qz / 1400, 3));        // ligne de crête douce (0..1)
+      const ridgeLine = ridgeN * ridgeN * (3 - 2 * ridgeN);
       const broad = fbm(this.nM, X / 900 + 9, Z / 900 - 3, 2) * 0.5 + 0.5;
-      let hm = 22 + core * (240 * (0.55 + 0.45 * broad) + 260 * Math.pow(main, 1.6));
-      // Arêtes secondaires douces
-      const hi = smoothstep(100, 350, hm);
-      hm += ridged(this.nM, qx / 420 + 5.3, qz / 420 - 1.1, 3) * 16 * (0.3 + hi);
-      // Ravines et couloirs (crevasses) qui entaillent les versants
-      const gully = 1 - Math.abs(fbm(this.nM, qx / 230 + 17, qz / 230 + 4, 3));
-      hm -= Math.pow(gully, 9) * 30 * smoothstep(40, 120, hm);
-      // Paliers rocheux (strates) : petites falaises successives
-      const st = 8.5, fr = hm / st - Math.floor(hm / st);
-      const terr = (Math.floor(hm / st) + smoothstep(0.25, 0.85, fr)) * st;
-      hm = lerp(hm, terr, 0.45 * smoothstep(50, 110, hm));
+      const bumps = fbm(this.nM, qx / 320 + 2, qz / 320 - 6, 4) * 0.5 + 0.5;    // sommets secondaires, épaulements
+      let hm = 16 + dome * (150 * (0.6 + 0.4 * broad) + 135 * ridgeLine) + dome * dome * bumps * 55;
+      // Ravines peu profondes qui descendent les versants (donnent le relief strié de la photo)
+      const gully = 1 - Math.abs(fbm(this.nM, qx / 140 + 17, qz / 140 + 4, 3));
+      hm -= Math.pow(gully, 6) * 9 * smoothstep(60, 160, hm);
       // Rugosité fine
-      hm += fbm(this.nM, x / 28, z / 28, 3) * 2.2 * smoothstep(40, 120, hm);
+      hm += fbm(this.nM, x / 28, z / 28, 3) * 2.0 * smoothstep(40, 120, hm);
       hm = 500 * Math.tanh(hm / 500);                                           // plafond naturel ~500 m
       const k = M * M * (3 - 2 * M);
       h = lerp(h, Math.max(h, hm), k);
@@ -455,10 +454,10 @@ vec3 tri(vec3 p, vec3 n, float s){
   return texture2D(tDetail, p.zy * s).rgb * w.x + texture2D(tDetail, p.xz * s).rgb * w.y + texture2D(tDetail, p.xy * s).rgb * w.z;
 }
 vec3 rockColor(vec3 p, vec3 n, vec4 bio){
-  vec3 t1 = tri(p, n, 0.23), t2 = tri(p, n, 0.045), t3 = tri(p, n, 0.9);
+  vec3 t1 = tri(p, n, 0.07), t2 = tri(p, n, 0.017), t3 = tri(p, n, 0.29);
   // Teinte : granite gris, parfois plus chaud (grès) selon la zone
   vec3 base = mix(srgb(vec3(0.50, 0.49, 0.46)), srgb(vec3(0.56, 0.48, 0.38)), smoothstep(0.4, 0.7, t2.g));
-  base *= 0.55 + 0.6 * t1.r * (0.7 + 0.3 * t3.g);
+  base *= 0.7 + 0.45 * t1.r * (0.85 + 0.15 * t3.g);
   // Strates géologiques horizontales
   float strata = sin(p.y * 1.7 + t2.b * 5.0) * 0.5 + 0.5;
   base *= 0.82 + 0.22 * strata;
@@ -507,11 +506,13 @@ vec3 terrainColor(){
   c = mix(c, sand * 0.55, 1.0 - smoothstep(-0.3, 0.5, h));
   // Roche seulement sur les vraies falaises (plus tôt en montagne), neige sur les sommets
   float rockStart = mix(0.5, 0.6, bio.r);
-  float rockAmt = smoothstep(rockStart, rockStart + 0.14, slope + (d1.g - 0.5) * 0.12) + smoothstep(400.0, 450.0, h + d2.r * 30.0) * 0.6;
+  // Affleurements rocheux épars sur les versants de montagne (le reste reste vert)
+  float outcrop = bio.r * smoothstep(0.3, 0.48, slope) * smoothstep(0.7, 0.8, d2.b * 0.7 + d3.r * 0.5);
+  float rockAmt = outcrop + smoothstep(rockStart, rockStart + 0.14, slope + (d1.g - 0.5) * 0.12) + smoothstep(400.0, 450.0, h + d2.r * 30.0) * 0.6;
   // Éboulis : gravier clair au pied des falaises en montagne
   float scree = smoothstep(rockStart - 0.18, rockStart - 0.02, slope) * bio.r * (1.0 - smoothstep(0.1, 0.3, stream));
   vec3 gravel = srgb(vec3(0.55, 0.53, 0.49)) * (0.6 + 0.6 * d1.r * d1.g + 0.2 * d1.b);
-  c = mix(c, gravel, scree * smoothstep(0.35, 0.65, d1.b + d2.r * 0.4) * 0.85);
+  c = mix(c, gravel, scree * smoothstep(0.55, 0.8, d2.b + d3.g * 0.4) * 0.35);
   gRock = clamp(rockAmt, 0.0, 1.0) * (1.0 - smoothstep(0.1, 0.3, stream));
   c = mix(c, rock, gRock);
   float snow = smoothstep(440.0, 480.0, h + (d2.r - 0.5) * 30.0) * (1.0 - smoothstep(0.62, 0.82, slope));
