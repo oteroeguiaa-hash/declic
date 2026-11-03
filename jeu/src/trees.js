@@ -460,12 +460,12 @@ export function makeTreeImpostor(kind) {
     }
     trunk(0.3, 2, 0x4a3828);
   } else if (kind === "birch") {
-    const crown = new THREE.IcosahedronGeometry(1, 2);
+    const crown = new THREE.IcosahedronGeometry(1, 1);
     crown.scale(1.8, 2.6, 1.8); crown.translate(0, 6.4, 0);
     add(crown, tint(0x4a6628), 8);
     trunk(0.18, 5, 0xd8d4c8);
   } else if (kind === "young") {
-    const crown = new THREE.IcosahedronGeometry(1, 2);
+    const crown = new THREE.IcosahedronGeometry(1, 1);
     crown.scale(3.3, 2.5, 3.3); crown.translate(0, 5.9, 0);
     add(crown, tint(0x34501e), 8);
     trunk(0.38, 3.6, 0x4a3828);
@@ -476,7 +476,7 @@ export function makeTreeImpostor(kind) {
     trunk(0.4, 19, 0x8a5a3a);
   } else {
     const oak = kind === "oak";
-    const crown = new THREE.IcosahedronGeometry(1, 2);
+    const crown = new THREE.IcosahedronGeometry(1, 1);
     crown.scale(oak ? 8.5 : 7, oak ? 6.5 : 7.5, oak ? 8.5 : 7); crown.translate(0, oak ? 19.5 : 22.5, 0);
     add(crown, tint(oak ? 0x34481e : 0x3c5622), 28);
     trunk(oak ? 0.6 : 0.5, oak ? 14 : 17, oak ? 0x5a4632 : 0x8a8880);

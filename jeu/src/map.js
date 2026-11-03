@@ -27,9 +27,9 @@ export class MapView {
           r += (176 - r) * bi.p * 0.5; gg += (160 - gg) * bi.p * 0.5;  // prairie dorée
           r += (40 - r) * can * 0.85; gg += (78 - gg) * can * 0.85; b += (34 - b) * can * 0.85; // forêt
           r += (190 - r) * bi.a * can * 0.45; gg += (110 - gg) * bi.a * can * 0.35;              // automne
-          const rock = smoothstep(0.35, 0.55, W.slopeAt(x, z)) + smoothstep(120, 150, h);
+          const rock = smoothstep(0.35, 0.55, W.slopeAt(x, z)) + smoothstep(390, 440, h);
           r += (128 - r) * Math.min(1, rock); gg += (124 - gg) * Math.min(1, rock); b += (116 - b) * Math.min(1, rock);
-          const snow = smoothstep(140, 165, h);
+          const snow = smoothstep(440, 480, h);
           r += (240 - r) * snow; gg += (244 - gg) * snow; b += (250 - b) * snow;
           // Ombrage du relief (lumière venant du nord-ouest)
           const dx = H(Math.min(S - 1, i + 1), j) - H(Math.max(0, i - 1), j), dz = H(i, Math.min(S - 1, j + 1)) - H(i, Math.max(0, j - 1));

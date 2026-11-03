@@ -50,6 +50,10 @@ export class Reflection {
   // level : altitude de la surface de l'eau la plus proche, ou null si pas d'eau à proximité.
   render(scene, camera, level) {
     if (!this.enabled || level == null) { reflUniforms.uReflOn.value = 0; return; }
+    // Une image sur deux : le reflet bouge peu, ça divise son coût par deux
+    this.frame = (this.frame || 0) + 1;
+    if (this.frame % 2 === 1 && this.lastLevel === level) { reflUniforms.uReflOn.value = 1; return; }
+    this.lastLevel = level;
     const r = this.renderer;
     const c = this.cam;
     c.copy(camera, false);

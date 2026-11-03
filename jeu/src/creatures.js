@@ -75,7 +75,7 @@ export class Creatures {
       const d = dMin + this.rand() * (dMax - dMin);
       const x = near.x + Math.cos(a) * d, z = near.z + Math.sin(a) * d;
       const h = this.world.heightAt(x, z);
-      if (h < 2.5 || h > 60 || this.world.slopeAt(x, z) > 0.3 || this.world.streamAt(x, z) > 0.1) continue;
+      if (h < 2.5 || h > 300 || this.world.slopeAt(x, z) > 0.3 || this.world.streamAt(x, z) > 0.1) continue;
       if (type === "moose" && this.world.moisture(x, z) < 0.45) continue;
       return this.create(type, x, z, opts);
     }
@@ -85,7 +85,7 @@ export class Creatures {
   create(type, x, z, opts = {}) {
     const sp = SPECIES[type];
     const parts = buildAnimal({ ...sp.model, seed: (this.rand() * 1e6) | 0 });
-    if (type === "deer" && this.rand() < 0.45) parts.head.children.slice(-4).forEach((m) => (m.visible = false)); // biches sans bois
+    if (type === "deer" && this.rand() < 0.45) parts.head.children.forEach((m) => { if (m.userData.antler) m.visible = false; }); // biches sans bois
     const s = opts.scale || 0.9 + this.rand() * 0.2;
     parts.group.scale.setScalar(s);
     parts.group.position.set(x, this.world.heightAt(x, z), z);
@@ -257,7 +257,7 @@ export class Creatures {
       c.body.rotation.x = THREE.MathUtils.lerp(c.body.rotation.x, -Math.atan2(ahead - c.pos.y, 1) * 0.8, dt * 5);
 
       // Animation
-      const close = dist < 60;
+      const close = dist < 28;
       if (c.meshes[0].castShadow !== close) c.meshes.forEach((m) => (m.castShadow = close));
       const size = c.height;
       c.phase += dt * c.speed * (sp.hop ? 2.4 / Math.max(0.15, size) : 1.6 / Math.max(0.4, size));

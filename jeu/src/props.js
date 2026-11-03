@@ -288,10 +288,10 @@ export class Props {
       if (rand() < 0.012 && slope < 0.3) { this.add("flint", x, z, 0.8 + rand() * 0.6, rand); continue; }
 
       // Arbres : forêt presque continue, avec de rares clairières, des rives et des sommets plus dégagés
-      if (h > 3.2 && h < 135 && slope < (bi.m > 0.3 ? 0.52 : 0.36)) {
+      if (h > 3.2 && h < 400 && slope < (bi.m > 0.3 ? 0.66 : 0.4)) {
         const clearing = smoothstep(0.64, 0.74, forest) * (bank ? 0.3 : 1);
         // limite des arbres vers 120 m ; prairies presque sans arbres ; marais clairsemés
-        const dens = (1 - clearing) * smoothstep(3.2, 6.5, h) * (1 - smoothstep(110, 132, h)) * (0.82 + 0.18 * moist) * (1 - 0.94 * bi.p) * (1 - 0.7 * bi.w);
+        const dens = (1 - clearing) * smoothstep(3.2, 6.5, h) * (1 - smoothstep(330, 395, h)) * (0.82 + 0.18 * moist) * (1 - 0.94 * bi.p) * (1 - 0.7 * bi.w);
         if (r < dens * 0.97) {
           // Forêt tempérée : hêtres, chênes et pins sylvestres de 20 à 30 m ; épicéas en altitude
           let t;
@@ -464,7 +464,7 @@ float rtri(vec3 p, vec3 n){ vec3 w = pow(abs(n), vec3(4.0)); w /= w.x + w.y + w.
     const far2 = this.quality.viewDistance ** 2;
     const counts = {};
     for (const k in this.meshes) counts[k] = [0, 0, 0];
-    const mid2 = (300 * this.quality.lodScale) ** 2;   // modèle simplifié loin, silhouette seulement très loin
+    const mid2 = (190 * this.quality.lodScale) ** 2;   // modèle simplifié loin, silhouette seulement très loin
     this.slot.fill(-1);
     for (let i = 0; i < this.list.length; i++) {
       const p = this.list[i];
@@ -476,6 +476,8 @@ float rtri(vec3 p, vec3 n){ vec3 w = pow(abs(n), vec3(4.0)); w /= w.x + w.y + w.
       const key = this.renderKey(p);
       const meshes = this.meshes[key];
       const lod = d2 < def.near * def.near * this.quality.lodScale || meshes.length === 1 ? 0 : meshes.length === 2 || d2 < mid2 ? 1 : 2;
+      // Au loin, un arbre sur deux suffit (le sol prend déjà la teinte de la forêt) : beaucoup moins de triangles
+      if (lod === 2 && ((i * 2654435761) >>> 0) % 100 < (d2 > far2 * 0.36 ? 60 : 35)) continue;
       const im = meshes[lod];
       const n = counts[key][lod]++;
       im.instanceMatrix.array.set(this.matrices.subarray(i * 16, i * 16 + 16), n * 16);
