@@ -4,8 +4,9 @@ import { clamp } from "./noise.js";
 
 // Arbres grimpables : hauteur du tronc jusqu'aux grosses branches, et rayon de la plateforme de branches
 const CLIMB = {
-  beech: { top: 14.5, plat: 3.0 }, oak: { top: 11.5, plat: 3.6 }, scots: { top: 17, plat: 2.0 },
-  pine: { top: 4.2, plat: 1.4 }, birch: { top: 3.4, plat: 1.3 }, young: { top: 2.4, plat: 1.6 },
+  beech: { top: 10, plat: 3.0 }, oak: { top: 5.5, plat: 3.6 }, ancient: { top: 6.5, plat: 5.0 }, scots: { top: 13.5, plat: 2.0 },
+  pine: { top: 3.0, plat: 1.4 }, fir: { top: 3.0, plat: 1.4 }, birch: { top: 6.0, plat: 1.2 }, poplar: { top: 5.0, plat: 1.2 },
+  willow: { top: 3.8, plat: 3.0 }, young: { top: 2.2, plat: 1.2 },
 };
 const climbInfo = (p) => { const c = CLIMB[p.t]; return c ? { top: p.y - 0.25 + c.top * p.s, plat: c.plat * p.s } : null; };
 

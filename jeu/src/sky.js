@@ -7,7 +7,7 @@ import { vegUniforms } from "./trees.js";
 const C = (r, g, b) => new THREE.Color(r, g, b);
 const FOG_NIGHT = C(0.018, 0.026, 0.05);
 const FOG_DUSK = C(0.62, 0.42, 0.32);
-const FOG_DAY = C(0.56, 0.72, 0.95);   // perspective aérienne bleutée (pas de voile gris)
+const FOG_DAY = C(0.55, 0.70, 0.93);   // perspective aérienne bleutée (pas de voile gris)
 const SUN_LOW = C(1.0, 0.55, 0.3);
 const SUN_HIGH = C(1.0, 0.96, 0.9);
 const MOON = C(0.55, 0.65, 0.95);
@@ -29,12 +29,15 @@ export class Environment {
     u.mieDirectionalG.value = 0.86;
     // Nuit : le shader d'origine éclaircit les tons sombres (ciel gris). On le fond vers un vrai ciel nocturne.
     u.uDay = { value: 1 };
+    u.uHaze = { value: new THREE.Color() };
     this.sky.material.fragmentShader = this.sky.material.fragmentShader
-      .replace("uniform vec3 up;", "uniform vec3 up;\nuniform float uDay;")
+      .replace("uniform vec3 up;", "uniform vec3 up;\nuniform float uDay;\nuniform vec3 uHaze;")
       .replace("gl_FragColor = vec4( retColor, 1.0 );", `
       vec3 nightSky = mix(vec3(0.010, 0.016, 0.035), vec3(0.0015, 0.003, 0.011), smoothstep(0.0, 0.6, direction.y));
       // Journée : bleu plus profond vers le zénith, horizon clair mais pas laiteux
       retColor = mix(retColor, retColor * vec3(0.62, 0.86, 1.32), uDay * smoothstep(-0.02, 0.45, direction.y));
+      // Horizon : se fond dans la brume de la perspective aérienne (pas de bande entre ciel et relief lointain)
+      retColor = mix(retColor, uHaze, (1.0 - smoothstep(-0.02, 0.1, direction.y)) * 0.55 * uDay);
       gl_FragColor = vec4( mix(nightSky, retColor, uDay), 1.0 );`);
     this.sky.material.needsUpdate = true;
     scene.add(this.sky);
@@ -55,8 +58,9 @@ export class Environment {
       this.sun.shadow.mapSize.set(s, s);
       const r = quality.shadowRange;
       Object.assign(this.sun.shadow.camera, { left: -r, right: r, top: r, bottom: -r, near: 1, far: 500 });
-      this.sun.shadow.bias = -0.0004;
-      this.sun.shadow.normalBias = 0.04;
+      this.sun.shadow.bias = -0.0003;
+      this.sun.shadow.normalBias = 0.05;
+      this.sun.shadow.radius = quality.shadowSoft ?? 2;   // bords d'ombre adoucis
       this.shadowTexel = (2 * r) / s;
     }
     scene.add(this.sun, this.sun.target);
@@ -64,7 +68,10 @@ export class Environment {
     this.hemi = new THREE.HemisphereLight(0xbfd8ff, 0x4a4030, 0.5);
     scene.add(this.hemi);
 
-    scene.fog = new THREE.Fog(FOG_DAY.clone(), quality.viewDistance * 0.6, quality.viewDistance * 2.6);
+    // Brouillard calculé en post-traitement (perspective aérienne selon l'altitude) : pas de brouillard par matériau
+    scene.fog = null;
+    this.fogColor = FOG_DAY.clone();
+    this.fog = { color: this.fogColor, sun: new THREE.Color(), dens: 2.2e-4, fall: 1 / 380 };
 
     this.buildStars();
     this.buildMoon();
@@ -186,18 +193,23 @@ export class Environment {
     const night = (hours < 4.5 || hours > 21.5) ? 0.3 : 0;
     this.sunInfo.mist = Math.max(morning * 0.85, evening, night);
     this.sunInfo.mistColor = this.sunInfo.mistColor || new THREE.Color();
-    this.sunInfo.mistColor.copy(this.scene.fog.color).multiplyScalar(1.15).lerp(this.sunInfo.color, 0.12 * sunK);
+    this.sunInfo.mistColor.copy(this.fogColor).multiplyScalar(1.15).lerp(this.sunInfo.color, 0.12 * sunK);
+    this.sunInfo.fog = this.fog;
     vegUniforms.uSunDir.value.copy(this.lightDir);
-    vegUniforms.uSunCol.value.copy(this.sun.color).multiplyScalar(this.sun.intensity * 0.32);
+    vegUniforms.uSunCol.value.copy(this.sun.color).multiplyScalar(this.sun.intensity * 0.3);
 
     // Lumière du ciel bleutée dans les ombres, rebond chaud du sol
-    this.hemi.intensity = 0.12 + 0.5 * dayK;
+    this.hemi.intensity = 0.14 + 0.62 * dayK;
     this.hemi.color.setRGB(0.25 + 0.38 * dayK, 0.32 + 0.5 * dayK, 0.55 + 0.45 * dayK);
     this.hemi.groundColor.setRGB(0.06 + 0.24 * dayK, 0.06 + 0.2 * dayK, 0.08 + 0.12 * dayK);
 
-    const fog = this.scene.fog;
-    fog.color.copy(FOG_NIGHT).lerp(FOG_DAY, dayK).lerp(FOG_DUSK, duskK * 0.7);
-    this.renderer.toneMappingExposure = 0.6 + (1 - dayK) * 0.12;
+    const fc = this.fogColor;
+    fc.copy(FOG_NIGHT).lerp(FOG_DAY, dayK).lerp(FOG_DUSK, duskK * 0.7);
+    u.uHaze.value.copy(fc).multiplyScalar(1.05);
+    // lumière diffusée vers le soleil (halo chaud dans la brume)
+    this.fog.sun.copy(fc).lerp(this.sunInfo.color, 0.55 * sunK).multiplyScalar(1 + 0.6 * sunK);
+    this.fog.dens = (1.15e-4 + 1.2e-4 * duskK + 0.8e-4 * (1 - dayK)) * (this.fogScale ?? 1);
+    this.renderer.toneMappingExposure = 0.62 + (1 - dayK) * 0.14;
 
     this.starMat.opacity = 1 - smoothstep(-0.2, 0.02, sunY);
     this.stars.position.copy(camPos);
@@ -232,7 +244,7 @@ export class Environment {
       const old = this.envRT;
       this.envRT = this.pmrem.fromScene(this.envScene, 0, 0.1, 1000);
       this.scene.environment = this.envRT.texture;
-      this.scene.environmentIntensity = 0.55;
+      this.scene.environmentIntensity = 0.7;
       if (old) old.dispose();
     }
   }

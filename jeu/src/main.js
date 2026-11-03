@@ -1,8 +1,10 @@
 // Lisière : boucle principale, chargement, interactions, sauvegarde.
 import * as THREE from "three";
 import { World, makeDetailTexture, makeWaterNormalTexture } from "./world.js";
+import { makeTerrainTextures } from "./textures.js";
 import { Environment } from "./sky.js";
-import { Props, Grass, Undergrowth, PROP_TYPES } from "./props.js";
+import { Props, PROP_TYPES } from "./props.js";
+import { Grass, Undergrowth } from "./ground.js";
 import { Creatures } from "./creatures.js";
 import { Structures } from "./structures.js";
 import { Player } from "./player.js";
@@ -19,8 +21,8 @@ import { MapView } from "./map.js";
 import { Birds } from "./birds.js";
 import { Insects } from "./insects.js";
 
-const SAVE_KEY = "lisiere-save-v7";        // v6 : forêts variées, montagnes et rochers refaits
-const OLD_SAVE_KEYS = ["lisiere-save-v6", "lisiere-save-v5", "lisiere-save-v4", "lisiere-save-v3", "lisiere-save-v2", "lisiere-save-v1"];
+const SAVE_KEY = "lisiere-save-v8";        // v8 : île de 4 km, forêts denses, nouveau relief
+const OLD_SAVE_KEYS = ["lisiere-save-v7", "lisiere-save-v6", "lisiere-save-v5", "lisiere-save-v4", "lisiere-save-v3", "lisiere-save-v2", "lisiere-save-v1"];
 const SETTINGS_KEY = "lisiere-settings";
 const $ = (id) => document.getElementById(id);
 
@@ -30,10 +32,11 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch {} },
 };
 
+// treeNear : arbres détaillés · treeFar : au-delà, imposteurs (toute l'île reste visible)
 const PRESETS = {
-  low:    { reflections: 0, msaa: 0, raySamples: 24, rayScale: 0.25, terrainCells: 256, shadows: true, shadowSize: 1024, shadowRange: 34, viewDistance: 330, grassCount: 6000, grassRadius: 15, undergrowth: 2600, undergrowthRadius: 20, treeCandidates: 120000, lodScale: 0.55, envInterval: 20, maxDeer: 5, maxSquirrels: 3, maxWolves: 4, maxCreatures: 12, antialias: false, maxPixelRatio: 1.0 },
-  medium: { reflections: 0.25, msaa: 0, raySamples: 40, rayScale: 0.4, terrainCells: 384, shadows: true, shadowSize: 2048, shadowRange: 48, viewDistance: 480, grassCount: 13000, grassRadius: 21, undergrowth: 5000, undergrowthRadius: 28, treeCandidates: 120000, lodScale: 0.85, envInterval: 10, maxDeer: 6, maxSquirrels: 4, maxWolves: 5, maxCreatures: 15, antialias: true, maxPixelRatio: 1.6 },
-  high:   { reflections: 0.35, msaa: 2, raySamples: 40, rayScale: 0.4, terrainCells: 512, shadows: true, shadowSize: 2048, shadowRange: 58, viewDistance: 620, grassCount: 22000, grassRadius: 26, undergrowth: 8000, undergrowthRadius: 36, treeCandidates: 120000, lodScale: 1.25, envInterval: 6, maxDeer: 8, maxSquirrels: 5, maxWolves: 6, maxCreatures: 20, antialias: true, maxPixelRatio: 1.6 },
+  low:    { reflections: 0, msaa: 0, fxaa: true, ssao: 0, raySamples: 24, rayScale: 0.25, shadows: true, shadowSize: 1024, shadowRange: 32, shadowSoft: 1, viewDistance: 330, treeNear: 20, treeFar: 95, cullCos: 0.2, grassCount: 9000, grassRadius: 16, undergrowth: 2400, undergrowthRadius: 22, lodScale: 0.6, envInterval: 20, atlasScale: 0.5, impostorTile: 96, impostorThin: 1, terrainTex: 256, maxDeer: 5, maxSquirrels: 3, maxWolves: 4, maxCreatures: 12, antialias: false, maxPixelRatio: 1.0 },
+  medium: { reflections: 0.25, msaa: 0, fxaa: true, ssao: 1, raySamples: 36, rayScale: 0.35, shadows: true, shadowSize: 2048, shadowRange: 50, shadowSoft: 2, viewDistance: 480, treeNear: 30, treeFar: 150, cullCos: 0.12, grassCount: 24000, grassRadius: 24, undergrowth: 5000, undergrowthRadius: 32, lodScale: 0.9, envInterval: 10, atlasScale: 1, impostorTile: 128, impostorThin: 0, terrainTex: 512, maxDeer: 6, maxSquirrels: 4, maxWolves: 5, maxCreatures: 15, antialias: true, maxPixelRatio: 1.5 },
+  high:   { reflections: 0.35, msaa: 4, fxaa: false, ssao: 2, raySamples: 48, rayScale: 0.4, shadows: true, shadowSize: 4096, shadowRange: 70, shadowSoft: 2, viewDistance: 620, treeNear: 45, treeFar: 220, cullCos: 0.08, grassCount: 42000, grassRadius: 30, undergrowth: 8500, undergrowthRadius: 42, lodScale: 1.25, envInterval: 6, atlasScale: 1, impostorTile: 128, impostorThin: 0, terrainTex: 512, maxDeer: 8, maxSquirrels: 5, maxWolves: 6, maxCreatures: 20, antialias: true, maxPixelRatio: 1.6 },
 };
 
 function detectQuality() {
@@ -45,7 +48,7 @@ function detectQuality() {
 }
 
 const DEFAULTS = {
-  quality: "auto", shadows: "auto", grass: "auto", viewDist: "auto", rays: true, bloom: true, mist: true, reflections: true, dynres: true,
+  quality: "auto", shadows: "auto", grass: "auto", viewDist: "auto", ssao: true, rays: true, bloom: true, mist: true, reflections: true, dynres: true,
   difficulty: "normal", dayMinutes: 16, hints: true,
   sens: 1, invertY: false, fov: 72, headBob: true,
   volume: 80,
@@ -60,7 +63,8 @@ export const DIFFS = {
   normal:    { label: "Normal",    predators: true,  damage: 1,   hunger: 1,   wolves: 1, bears: 1 },
   difficile: { label: "Difficile", predators: true,  damage: 1.5, hunger: 1.4, wolves: 1.6, bears: 2 },
 };
-const VIEW = { proche: 260, normale: 450, loin: 650, tresloin: 900 };
+// Distance des arbres en 3D (au-delà : imposteurs ; le paysage reste entier jusqu'à l'horizon)
+const VIEW = { proche: 0.7, normale: 1, loin: 1.35, tresloin: 1.75 };
 
 const qualityName = settings.quality === "auto" ? detectQuality() : settings.quality;
 const Q = { ...PRESETS[qualityName], name: qualityName };
@@ -70,9 +74,9 @@ else if (settings.shadows === "fine") Object.assign(Q, { shadows: true, shadowSi
 if (settings.grass === "low") Object.assign(Q, { grassCount: Math.round(Q.grassCount * 0.5), grassRadius: Q.grassRadius * 0.8 });
 else if (settings.grass === "normal") Object.assign(Q, { grassCount: PRESETS.medium.grassCount, grassRadius: PRESETS.medium.grassRadius });
 else if (settings.grass === "high") Object.assign(Q, { grassCount: Math.round(Q.grassCount * 1.6), grassRadius: Q.grassRadius * 1.15 });
-const baseView = Q.viewDistance;
-if (VIEW[settings.viewDist]) Q.viewDistance = VIEW[settings.viewDist];
-const RELOAD_KEYS = ["quality", "shadows", "grass"];
+const baseTreeFar = Q.treeFar;
+if (VIEW[settings.viewDist]) Q.treeFar = Math.round(baseTreeFar * VIEW[settings.viewDist]);
+const RELOAD_KEYS = ["quality", "shadows", "grass", "viewDist"];
 const initialReload = Object.fromEntries(RELOAD_KEYS.map((k) => [k, settings[k]]));
 
 const opt = (pairs) => pairs.map(([v, l]) => ({ v, l }));
@@ -81,7 +85,8 @@ const SCHEMA = [
     { k: "quality", l: "Qualité générale", o: opt([["auto", "Automatique"], ["low", "Rapide"], ["medium", "Équilibrée"], ["high", "Belle"]]) },
     { k: "shadows", l: "Ombres", o: opt([["auto", "Selon la qualité"], ["off", "Désactivées"], ["normal", "Normales"], ["fine", "Fines"]]) },
     { k: "grass", l: "Densité de l'herbe", o: opt([["auto", "Selon la qualité"], ["low", "Faible"], ["normal", "Normale"], ["high", "Élevée"]]) },
-    { k: "viewDist", l: "Distance de vue", o: opt([["auto", "Selon la qualité"], ["proche", "Proche"], ["normale", "Normale"], ["loin", "Loin"], ["tresloin", "Très loin"]]) },
+    { k: "viewDist", l: "Arbres détaillés jusqu'à", h: "Au-delà, la forêt reste visible jusqu'à l'horizon", o: opt([["auto", "Selon la qualité"], ["proche", "Proche"], ["normale", "Normale"], ["loin", "Loin"], ["tresloin", "Très loin"]]) },
+    { k: "ssao", l: "Occlusion ambiante", h: "Ombres de contact sous les arbres et dans les creux", t: "toggle" },
     { k: "rays", l: "Rayons de soleil", t: "toggle" },
     { k: "bloom", l: "Halo lumineux", t: "toggle" },
     { k: "mist", l: "Brume du matin", t: "toggle" },
@@ -111,7 +116,10 @@ const SCHEMA = [
 ];
 
 const loadBar = $("loadBar"), loadText = $("loadText");
+let stepT = performance.now(), stepName = "début";
 const step = async (pct, text) => {
+  if (location.search.includes("perf")) console.info(`Lisière : ${stepName} ${Math.round(performance.now() - stepT)} ms`);
+  stepT = performance.now(); stepName = text;
   loadBar.style.width = pct + "%";
   loadText.textContent = text;
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
@@ -149,21 +157,29 @@ class Game {
     renderer.shadowMap.type = THREE.PCFShadowMap;
 
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(settings.fov, this.viewW / this.viewH, 0.08, 9000);
+    this.camera = new THREE.PerspectiveCamera(settings.fov, this.viewW / this.viewH, 0.1, 12000);
     this.scene.add(this.camera);
 
-    await step(15, "Formation de l'île…");
+    await step(8, "Formation de l'île…");
+    const t0 = performance.now();
     this.world = new World(this.seed);
-    await step(35, "Les forêts poussent…");
+    await this.world.generate((k) => { loadBar.style.width = (8 + k * 27) + "%"; loadText.textContent = `Formation de l'île… ${Math.round(k * 100)} %`; });
+    const t1 = performance.now();
+    await step(36, "Les forêts poussent…");
     this.props = new Props(this.scene, this.world, Q, this.seed, renderer);
     this.world.applyCanopy(this.props.list, (p) => (PROP_TYPES[p.t].kind === "tree" ? PROP_TYPES[p.t].crown * p.s : 0));
+    const t2 = performance.now();
 
     await step(55, "Érosion et rivages…");
     const detail = makeDetailTexture(renderer, 7);
-    this.props.rockUniforms.tDetail.value = detail;
+    const terrainTex = makeTerrainTextures(renderer, Q.terrainTex);
+    Object.assign(this.props.rockUniforms, { tDetail: { value: detail }, tAlb: { value: terrainTex.albedo }, tNrm: { value: terrainTex.normal } });
     const waterN = makeWaterNormalTexture(renderer, 3);
     this.world.buildHeightTexture();
-    this.scene.add(this.world.buildTerrain(detail));
+    this.world.shadowRange.value = Q.shadows ? Q.shadowRange : 0;
+    this.scene.add(this.world.buildTerrain({ detail, ...terrainTex }, Q));
+    this.loadTimes = { relief: Math.round(t1 - t0), forests: Math.round(t2 - t1), trees: this.props.treeIds.length, props: this.props.list.length };
+    console.info("Lisière : chargement", JSON.stringify(this.loadTimes));
     this.scene.add(this.world.buildWater(waterN));
     this.scene.add(this.world.buildStreams(waterN));
     this.grass = new Grass(this.scene, this.world, Q);
@@ -208,13 +224,14 @@ class Game {
     await step(90, "Compilation des shaders…");
     this.env.update(this.hours, 0.016, this.camera.position, this.player.pos);
     this.player.update(0, this.input, this.ctx(0, 0));
-    this.props.rebuild(this.player.pos);
-    this.world.updateTerrain(this.player.pos, Q.viewDistance, Q.lodScale);
+    this.camera.getWorldDirection(this._camDir = new THREE.Vector3());
+    this.props.rebuild(this.camera.position, this._camDir);
+    this.world.updateTerrain(this.camera, Q.viewDistance);
     this.scene.traverse((o) => { if (o.isLight) o.layers.enable(1); });
     this.post = new Post(renderer, Q);
     this.post.setSize(this.viewW * this.pixelRatio, this.viewH * this.pixelRatio);
     this.refl = new Reflection(renderer, Q);
-    this.refl.hidden = [this.grass.mesh, this.under.mesh, this.world.streamMesh, this.world.seaMesh];
+    this.refl.hidden = [this.grass.mesh, ...this.under.meshes, this.world.streamMesh, this.world.seaMesh];
     this.refl.setSize(this.viewW * this.pixelRatio, this.viewH * this.pixelRatio);
     if (this.refl.enabled) this.refl.render(this.scene, this.camera, this.world.waterLevelAt(this.player.pos.x, this.player.pos.z)); // précompile les shaders avec découpe
     renderer.compile(this.scene, this.camera);
@@ -263,17 +280,12 @@ class Game {
     document.documentElement.style.setProperty("--ui", settings.uiScale);
     document.body.classList.toggle("nocompass", !settings.compass);
     document.body.classList.toggle("nocross", !settings.crosshair);
-    if (this.post) { this.post.rays = settings.rays; this.post.bloom = settings.bloom; this.post.mist = settings.mist; }
+    if (this.post) { this.post.rays = settings.rays; this.post.bloom = settings.bloom; this.post.mist = settings.mist; this.post.ssao = settings.ssao && Q.ssao > 0; }
     if (!settings.dynres && this.post) {
       const max = Math.min(devicePixelRatio, Q.maxPixelRatio);
       if (this.pixelRatio !== max) { this.pixelRatio = max; this.renderer.setPixelRatio(max); this.renderer.setSize(this.viewW, this.viewH, false); this.post.setSize(this.viewW * max, this.viewH * max); }
     }
-    const vd = VIEW[settings.viewDist] || baseView;
-    if (vd !== Q.viewDistance) {
-      Q.viewDistance = vd;
-      this.scene.fog.near = vd * 0.6; this.scene.fog.far = vd * 2.6;
-      this.props.dirty = true;
-    }
+
   }
 
   renderSettings(tab = this.setTab || 0) {
@@ -330,6 +342,16 @@ class Game {
     $("btnNew").onclick = () => this.openNewGame();
     $("btnSettings").onclick = () => { this.renderSettings(); this.openPanel("settings"); };
     $("btnHelp").onclick = () => this.openPanel("howto");
+    // Réglages rapides de l'accueil
+    const markSeg = (id, v) => document.querySelectorAll(`#${id} button`).forEach((b) => b.classList.toggle("sel", String(b.dataset.v) === String(v)));
+    markSeg("qQuality", settings.quality);
+    document.querySelectorAll("#qQuality button").forEach((b) => (b.onclick = () => { this.setSetting("quality", b.dataset.v); markSeg("qQuality", b.dataset.v); $("qReload").classList.toggle("hidden", settings.quality === initialReload.quality); }));
+    const nearT = () => [7, 11, 18.5].reduce((a, b) => (Math.abs(b - this.hours) < Math.abs(a - this.hours) ? b : a));
+    markSeg("qTime", nearT());
+    document.querySelectorAll("#qTime button").forEach((b) => (b.onclick = () => { this.advanceTime(((+b.dataset.v - this.hours) % 24 + 24) % 24); this.env.forceEnvUpdate(); this.updateHomeInfo(); markSeg("qTime", b.dataset.v); }));
+    $("qSound").classList.toggle("on", settings.volume > 0);
+    $("qSound").onclick = () => { this.setSetting("volume", settings.volume > 0 ? 0 : 80); $("qSound").classList.toggle("on", settings.volume > 0); };
+    $("qReload").onclick = () => { this.save(); location.reload(); };
     $("btnReload").onclick = () => { this.save(); location.reload(); };
     document.querySelectorAll("[data-back]").forEach((b) => (b.onclick = () => this.openPanel(null)));
     $("howKeys").innerHTML = touch
@@ -862,7 +884,7 @@ class Game {
           const away = new THREE.Vector3(p.x - this.player.pos.x, 0, p.z - this.player.pos.z);
           this.props.remove(id, this.totalHours, 96, away);
           this.sounds.treeFall();
-          const wood = Math.max(2, Math.round(def.wood * (p.t === "pine" || p.t === "birch" ? p.s / 2 : p.s)));
+          const wood = Math.max(2, Math.round(def.wood * p.s));
           setTimeout(() => { this.give("bois", wood); this.give("branche", 2); }, 900);
         }
       } else if (Math.random() < 0.45) this.give("branche", 1);
@@ -1062,13 +1084,14 @@ class Game {
     if (!settings.dynres) return;
     // D'abord on allège les effets coûteux (image toujours nette), puis seulement un peu la résolution
     this.perfLevel = this.perfLevel || 0;
-    if (avg > 1 / 50 && this.perfLevel < 5) {
+    if (avg > 1 / 50 && this.perfLevel < 6) {
       this.perfLevel++;
-      if (this.perfLevel === 1) this.post.rays = false;
-      if (this.perfLevel === 2) this.refl.enabled = false;
-      if (this.perfLevel === 3) this.post.bloom = false;
-      if (this.perfLevel === 4) { this.renderer.shadowMap.enabled = false; this.scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; }); }
-      if (this.perfLevel === 5) this.grass.mesh.visible = false;
+      if (this.perfLevel === 1) this.post.ssao = false;
+      if (this.perfLevel === 2) this.post.rays = false;
+      if (this.perfLevel === 3) this.refl.enabled = false;
+      if (this.perfLevel === 4) this.post.bloom = false;
+      if (this.perfLevel === 5) { this.renderer.shadowMap.enabled = false; this.scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; }); }
+      if (this.perfLevel === 6) this.under.meshes.slice(2).forEach((m) => (m.visible = false));
       return;
     }
     const minPr = Math.max(0.85, max * 0.75);
@@ -1165,8 +1188,9 @@ class Game {
       p.yaw = this.camera.rotation.y;
     }
 
-    this.props.update(dt, p.pos, this.totalHours);
-    this.world.updateTerrain(this.camera.position, Q.viewDistance, Q.lodScale);
+    this.camera.getWorldDirection(this._camDir);
+    this.props.update(dt, this.camera.position, this.totalHours, this._camDir);
+    this.world.updateTerrain(this.camera, Q.viewDistance);
     this.grass.update(dt, this.camera.position);
     this.under.update(this.camera.position);
     this.world.waterUniforms.uTime.value += dt;
