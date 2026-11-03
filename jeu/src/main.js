@@ -38,7 +38,7 @@ function detectQuality() {
 }
 
 const DEFAULTS = {
-  quality: "auto", shadows: "auto", grass: "auto", viewDist: "auto", rays: true, bloom: true, dynres: true,
+  quality: "auto", shadows: "auto", grass: "auto", viewDist: "auto", rays: true, bloom: true, mist: true, dynres: true,
   difficulty: "normal", dayMinutes: 16, hints: true,
   sens: 1, invertY: false, fov: 72, headBob: true,
   volume: 80,
@@ -77,6 +77,7 @@ const SCHEMA = [
     { k: "viewDist", l: "Distance de vue", o: opt([["auto", "Selon la qualité"], ["proche", "Proche"], ["normale", "Normale"], ["loin", "Loin"], ["tresloin", "Très loin"]]) },
     { k: "rays", l: "Rayons de soleil", t: "toggle" },
     { k: "bloom", l: "Halo lumineux", t: "toggle" },
+    { k: "mist", l: "Brume du matin", t: "toggle" },
     { k: "dynres", l: "Résolution dynamique", h: "Baisse la netteté si le jeu ralentit", t: "toggle" },
   ]],
   ["Jeu", [
@@ -238,7 +239,7 @@ class Game {
     document.documentElement.style.setProperty("--ui", settings.uiScale);
     document.body.classList.toggle("nocompass", !settings.compass);
     document.body.classList.toggle("nocross", !settings.crosshair);
-    if (this.post) { this.post.rays = settings.rays; this.post.bloom = settings.bloom; }
+    if (this.post) { this.post.rays = settings.rays; this.post.bloom = settings.bloom; this.post.mist = settings.mist; }
     if (!settings.dynres && this.post) {
       const max = Math.min(devicePixelRatio, Q.maxPixelRatio);
       if (this.pixelRatio !== max) { this.pixelRatio = max; this.renderer.setPixelRatio(max); this.renderer.setSize(this.viewW, this.viewH, false); this.post.setSize(this.viewW * max, this.viewH * max); }
@@ -448,6 +449,22 @@ class Game {
   craft(id) {
     const r = RECIPES.find((x) => x.id === id);
     if (!r || !this.inv.canCraft(r)) return;
+    if (r.place === "canoe") {
+      const f = this.player.forward; f.y = 0; f.normalize();
+      let spot = null;
+      for (let d = 2; d <= 9; d += 0.5) {
+        const x = this.player.pos.x + f.x * d, z = this.player.pos.z + f.z * d;
+        if (this.world.waterLevelAt(x, z) - this.world.heightAt(x, z) > 0.8) { spot = [x, z]; break; }
+      }
+      if (!spot) { this.ui.toast("Mets-toi face à une rivière, un lac ou la mer pour construire le canoë.", true); this.sounds.error(); return; }
+      this.inv.craft(r);
+      this.structures.addCanoe(spot[0], spot[1], this.player.yaw);
+      this.ui.toast("🛶 Canoë à l'eau ! Approche-toi et monte dedans.");
+      this.toggleBag(false);
+      this.sounds.craft();
+      this.save();
+      return;
+    }
     if (r.place) {
       const f = this.player.forward; f.y = 0; f.normalize();
       const x = this.player.pos.x + f.x * 2.6, z = this.player.pos.z + f.z * 2.6;
@@ -517,6 +534,7 @@ class Game {
         const act = this.inv.count("viande_crue") ? "Cuire la viande" : this.inv.count("bois") ? (s.lit ? "Ajouter du bois" : "Rallumer (1 bois)") : s.lit ? "Se réchauffer" : "Il faut du bois";
         return [`<b>Feu de camp</b><small>${st}<br>${use} ${act}</small>`, true];
       }
+      if (s.kind === "boat") return [`<b>Canoë</b><small>${use} Monter dedans</small>`, true];
       return [`<b>Abri</b><small>${use} ${this.isNight() ? "Dormir jusqu'au matin" : "Définir comme point de réapparition"}</small>`, true];
     }
     const p = t.prop, def = PROP_TYPES[p.t];
@@ -539,6 +557,18 @@ class Game {
       return [`<b>Tronc couché</b><small>${ok ? `${hit} Débiter (bois)` : "Il faut une hache"}</small>`, ok];
     }
     return ["", false];
+  }
+
+  // Point de rive sèche le plus proche (pour débarquer du canoë).
+  findShore(pos) {
+    let best = null, bd = 1e9;
+    for (let r = 1.5; r <= 5; r += 0.7) for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2;
+      const x = pos.x + Math.cos(a) * r, z = pos.z + Math.sin(a) * r;
+      const h = this.world.heightAt(x, z);
+      if (h > this.world.waterLevelAt(x, z) + 0.05 && this.world.slopeAt(x, z) < 0.45 && r < bd) { bd = r; best = [x, z]; }
+    }
+    return best;
   }
 
   isNight() { return this.hours >= 20.5 || this.hours < 5.5; }
@@ -624,6 +654,7 @@ class Game {
         else this.ui.toast("Tu te réchauffes près du feu.");
         return;
       }
+      if (s.kind === "boat") { this.player.board(s); this.ui.toast("🛶 Pagaie avec avancer/reculer, tourne à gauche/droite. Action pour débarquer."); return; }
       p.spawnPoint.set(s.pos.x, s.pos.y, s.pos.z);
       if (this.isNight()) this.sleep();
       else this.ui.toast("⛺ Point de réapparition enregistré");
@@ -784,11 +815,16 @@ class Game {
       const frozenInput = this.bagOpen ? { consumeLook: () => ({ x: 0, y: 0 }), axis: () => ({ x: 0, y: 0 }), sprint: false, crouch: false, jump: false } : input;
       p.update(dt, frozenInput, ctx);
 
-      const target = this.bagOpen ? null : this.findTarget();
-      const [html, active] = this.describeTarget(target);
-      this.ui.setTarget(html, active);
       this.attackCd -= dt;
-      if (!this.bagOpen) {
+      if (p.boat) {
+        // En canoë : la seule action est de débarquer, sur la rive la plus proche
+        const shore = this.findShore(p.boat.pos);
+        this.ui.setTarget(shore ? `<b>Canoë</b><small>${this.input.touch ? "✋" : "[E]"} Débarquer</small>` : `<b>Canoë</b><small>Approche-toi d'une rive pour débarquer</small>`, !!shore);
+        if (!this.bagOpen && input.was("KeyE") && shore) { p.leave(shore[0], shore[1]); this.sounds.step("water"); }
+      }
+      const target = this.bagOpen || p.boat ? null : this.findTarget();
+      if (!p.boat) { const [html, active] = this.describeTarget(target); this.ui.setTarget(html, active); }
+      if (!this.bagOpen && !p.boat) {
         if ((input.was("Attack") || input.attackHeld) && this.attackCd <= 0) this.attack(target);
         if (input.was("KeyE")) this.interact(target);
       }

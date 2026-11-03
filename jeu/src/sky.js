@@ -177,6 +177,13 @@ export class Environment {
     this.sunInfo.color.copy(SUN_LOW).lerp(SUN_HIGH, smoothstep(0.05, 0.5, sunY));
     this.sunInfo.strength = sunK * (0.35 + duskK * 1.0);
     this.sunInfo.warm = duskK;
+    // Brume du matin dans les vallées (forte à l'aube, disparaît vers 10 h), un peu le soir et la nuit
+    const morning = smoothstep(4.5, 6.2, hours) * (1 - smoothstep(8.2, 10.8, hours));
+    const evening = smoothstep(19, 21.5, hours) * 0.35;
+    const night = (hours < 4.5 || hours > 21.5) ? 0.3 : 0;
+    this.sunInfo.mist = Math.max(morning * 0.85, evening, night);
+    this.sunInfo.mistColor = this.sunInfo.mistColor || new THREE.Color();
+    this.sunInfo.mistColor.copy(this.scene.fog.color).multiplyScalar(1.15).lerp(this.sunInfo.color, 0.12 * sunK);
     vegUniforms.uSunDir.value.copy(this.lightDir);
     vegUniforms.uSunCol.value.copy(this.sun.color).multiplyScalar(this.sun.intensity * 0.32);
 

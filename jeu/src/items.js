@@ -59,6 +59,7 @@ export const RECIPES = [
   { id: "gourde",      group: "survie", out: { gourde: 1 }, needs: { peau: 1, fibre: 2 } },
   { id: "manteau",     group: "survie", out: { manteau: 1 }, needs: { fourrure: 2, fibre: 3 } },
   { id: "feu",  group: "construction", out: {}, place: "feu", needs: { bois: 4, pierre: 4 }, name: "Feu de camp", icon: "🔥", desc: "Cuit la viande, réchauffe, éloigne les loups et les ours. Se rallume avec du bois." },
+  { id: "canoe", group: "construction", out: {}, place: "canoe", needs: { bois: 8, peau: 2, fibre: 4 }, name: "Canoë", icon: "🛶", desc: "À fabriquer face à une rivière, un lac ou la mer. Monte dedans pour naviguer." },
   { id: "abri", group: "construction", out: {}, place: "abri", needs: { bois: 10, branche: 6, peau: 1 }, name: "Abri", icon: "⛺", desc: "Dors-y pour passer la nuit. Tu y réapparais si tu meurs." },
 ];
 

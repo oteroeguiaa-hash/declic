@@ -410,7 +410,7 @@ export class Creatures {
       const nx = c.pos.x + Math.sin(c.yaw) * c.speed * dt;
       const nz = c.pos.z + Math.cos(c.yaw) * c.speed * dt;
       const nh = this.world.heightAt(nx, nz);
-      if (nh < 1.2 || nh - c.pos.y > 1.2 * Math.max(dt * c.speed, 0.05) + 0.3) {
+      if (nh < 1.2 || nh - c.pos.y > 1.2 * Math.max(dt * c.speed, 0.05) + 0.3 || this.world.waterLevelAt(nx, nz) - nh > 0.7) {
         c.heading = c.yaw + Math.PI * (0.6 + this.rand() * 0.8);
         c.speed *= 0.5;
       } else { c.pos.x = nx; c.pos.z = nz; }

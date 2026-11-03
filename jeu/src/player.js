@@ -113,6 +113,15 @@ export class Player {
       if (k !== "main") m.rotation.set(-0.35, 0.15, -0.15);
       this.hand.add(m);
     }
+    // Pagaie (en canoë)
+    const paddle = new THREE.Group();
+    paddle.add(mk(new THREE.CylinderGeometry(0.018, 0.018, 1.5, 6), wood, 0, 0, 0));
+    for (const s of [-1, 1]) paddle.add(mk(new THREE.BoxGeometry(0.16, 0.36, 0.02), wood, 0, s * 0.85, 0));
+    paddle.visible = false;
+    paddle.traverse((o) => { if (o.isMesh) o.renderOrder = 10; });
+    this.camera.add(paddle);
+    this.paddle = paddle;
+
     this.torchLight = new THREE.PointLight(0xffb066, 0, 20, 1.4);
     this.torchLight.position.set(0.35, 0.35, -0.6);
     this.camera.add(this.torchLight);
@@ -147,14 +156,17 @@ export class Player {
     this.yaw -= look.x;
     this.pitch = clamp(this.pitch - look.y * (this.invertY ? -1 : 1), -1.5, 1.5);
 
+    if (this.boat) { this.updateBoat(dt, input, ctx); this.survive(dt, ctx); return; }
+
     const ax = input.axis();
     const len = Math.hypot(ax.x, ax.y);
     if (len > 1) { ax.x /= len; ax.y /= len; }
     this.crouching = input.crouch;
     const ground = this.world.heightAt(this.pos.x, this.pos.z);
-    const waterDepth = -ground;
-    this.swimming = waterDepth > 1.35 && this.pos.y < 0.2 - 1.2;
+    // Nage dans la mer, les lacs et les rivières (pas dans les petits ruisseaux, trop peu profonds)
     const wl = this.world.waterLevelAt(this.pos.x, this.pos.z);
+    const waterDepth = wl - ground;
+    this.swimming = waterDepth > 1.35 && this.pos.y < wl - 1.2;
     const wading = !this.swimming && this.pos.y < wl - 0.1;
     this.inStream = wading && wl > 0.5;
 
@@ -184,7 +196,7 @@ export class Player {
     if (this.swimming && this.stamina <= 0) this.health -= dt * 6; // noyade
 
     if (this.swimming) {
-      const surfaceY = -1.35;
+      const surfaceY = wl - 1.35;
       this.vel.y += (surfaceY - this.pos.y) * dt * 6 - this.vel.y * dt * 3;
       if (input.jump) this.vel.y += dt * 6;
       this.onGround = false;
@@ -251,7 +263,7 @@ export class Player {
     const bobAmt = (this.onGround ? Math.min(1, hs / 5) : 0) * (this.bobScale ?? 1);
     const cam = this.camera;
     cam.position.set(this.pos.x, this.pos.y + this.eyeY + Math.sin(this.bob * 2) * 0.045 * bobAmt, this.pos.z);
-    if (this.swimming) cam.position.y = Math.max(cam.position.y, 0.25 + Math.sin(performance.now() * 0.002) * 0.06);
+    if (this.swimming) cam.position.y = Math.max(cam.position.y, wl + 0.25 + Math.sin(performance.now() * 0.002) * 0.06);
     cam.rotation.order = "YXZ";
     cam.rotation.y = this.yaw;
     cam.rotation.x = this.pitch;
@@ -268,7 +280,76 @@ export class Player {
       this.torchFlame.scale.set(0.15 + Math.random() * 0.02, 0.22 + Math.sin(performance.now() * 0.02) * 0.04 + Math.random() * 0.03, 1);
     }
 
-    // Survie
+    this.survive(dt, ctx);
+  }
+
+  // ---------- Canoë ----------
+  board(boat) {
+    this.boat = boat;
+    boat.speed = 0; boat.yawVel = 0;
+    this.yaw = boat.yaw;
+    this.vel.set(0, 0, 0);
+    this.swimming = false;
+    for (const k in this.models) this.models[k].visible = false;
+    this.paddle.visible = true;
+    this.torchLight.intensity = 0;
+  }
+
+  leave(x, z) {
+    const b = this.boat;
+    this.boat = null;
+    b.speed = 0;
+    this.paddle.visible = false;
+    this.pos.set(x, this.world.heightAt(x, z), z);
+    this.setTool(this.tool);
+  }
+
+  updateBoat(dt, input, ctx) {
+    const b = this.boat;
+    const ax = input.axis();
+    // Gauche/droite : tourner ; avant/arrière : pagayer. Le canoë garde de l'élan (inertie).
+    b.yawVel += (-ax.x * 0.9 - b.yawVel) * Math.min(1, dt * 2.5);
+    b.yaw += b.yawVel * dt * (0.5 + Math.min(1, Math.abs(b.speed) / 2.5));
+    const sprint = input.sprint && this.stamina > 2 && ax.y > 0.3;
+    let target = ax.y * (sprint ? 6.2 : 4.0);
+    if (ax.y < 0) target *= 0.5;
+    if (sprint) this.stamina -= dt * 9; else this.stamina = Math.min(100, this.stamina + dt * 8);
+    b.speed += (target - b.speed) * Math.min(1, dt * (Math.abs(target) > Math.abs(b.speed) ? 0.9 : 0.35));
+    const fx = -Math.sin(b.yaw), fz = -Math.cos(b.yaw);
+    const nx = b.pos.x + fx * b.speed * dt, nz = b.pos.z + fz * b.speed * dt;
+    const wl = this.world.waterLevelAt(nx, nz), gh = this.world.heightAt(nx, nz);
+    if (wl - gh < 0.35) { b.speed *= -0.25; }        // on touche la rive
+    else { b.pos.x = nx; b.pos.z = nz; }
+    const lim = this.world.half * 0.98;
+    b.pos.x = clamp(b.pos.x, -lim, lim); b.pos.z = clamp(b.pos.z, -lim, lim);
+    const t = performance.now() * 0.001;
+    const wlHere = this.world.waterLevelAt(b.pos.x, b.pos.z);
+    b.pos.y = wlHere + 0.02 + Math.sin(t * 1.3) * 0.02;
+    b.group.position.copy(b.pos);
+    b.group.rotation.set(Math.sin(t * 1.1) * 0.012 + b.speed * 0.004, b.yaw, Math.sin(t * 0.9) * 0.02 - b.yawVel * 0.06, "YXZ");
+    this.pos.set(b.pos.x, b.pos.y - 0.6, b.pos.z);
+
+    // Caméra assise, regard libre
+    const cam = this.camera;
+    const back = 0.35;
+    cam.position.set(b.pos.x - fx * back, b.pos.y + 0.95, b.pos.z - fz * back);
+    cam.rotation.order = "YXZ";
+    cam.rotation.y = this.yaw;
+    cam.rotation.x = this.pitch;
+    cam.rotation.z = b.group.rotation.z * 0.6;
+
+    // Pagaie : un coup à gauche, un coup à droite
+    const moving = Math.abs(ax.y) > 0.1 || Math.abs(ax.x) > 0.1;
+    this.paddlePhase = (this.paddlePhase || 0) + dt * (moving ? (sprint ? 5.5 : 3.8) : 0);
+    const ph = this.paddlePhase;
+    this.paddle.position.set(Math.sin(ph) * 0.18, -0.42 + Math.abs(Math.cos(ph)) * 0.05, -0.55 - Math.cos(ph * 2) * 0.08 * (moving ? 1 : 0));
+    this.paddle.rotation.set(-0.5 + Math.cos(ph * 2) * 0.25 * (moving ? 1 : 0), 0, Math.PI / 2 - 0.25 + Math.sin(ph) * 0.6);
+    this.stepAcc += dt * (moving ? 1 : 0);
+    if (moving && this.stepAcc > (sprint ? 0.55 : 0.8)) { this.stepAcc = 0; ctx.sounds.step("water"); }
+    this.sprinting = false; this.swimming = false; this.crouching = false;
+  }
+
+  survive(dt, ctx) {
     const hours = ctx.gameDtHours;
     const hk = ctx.hunger ?? 1;
     this.food -= hours * (this.sprinting ? 5.5 : 3.6) * hk;
