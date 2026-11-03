@@ -2,6 +2,7 @@
 // Le terrain est découpé en morceaux (chunks) avec plusieurs niveaux de détail selon la distance.
 import * as THREE from "three";
 import { createNoise2D, fbm, smoothstep, lerp, clamp, mulberry32 } from "./noise.js";
+import { reflUniforms, REFL_PARS, REFL_APPLY } from "./reflection.js";
 
 export const WORLD_SIZE = 3500;      // mètres de côté (île 2,5 × plus grande)
 export const SEA_LEVEL = 0;
@@ -70,7 +71,7 @@ export class World {
     if (region > 0 && h > 2.5 && h < 46) {
       const f = (X, Z) => fbm(this.nS, X / 380, Z / 380, 3);
       const v = f(wx, wz);
-      if (Math.abs(v) < 0.06) {
+      if (Math.abs(v) < 0.25) {
         // Distance (en mètres) à la ligne du ruisseau : valeur / pente du bruit → largeur régulière
         const gx = f(wx + 1, wz) - v, gz = f(wx, wz + 1) - v;
         const g = Math.hypot(gx, gz) + 1e-6;
@@ -101,12 +102,12 @@ export class World {
     // Grandes rivières navigables : 2 ou 3 sur l'île, dans des vallées boisées, jusqu'à la mer.
     const rz = (1 - smoothstep(0.35, 0.7, massif)) * smoothstep(0.35, 0.7, cont);
     if (rz > 0) {
-      const fr = (X, Z) => fbm(this.nV, X / 1100, Z / 1100, 2);
+      const fr = (X, Z) => fbm(this.nV, X / 800, Z / 800, 2);
       const v = fr(wx, wz);
-      if (Math.abs(v) < 0.09) {
+      if (Math.abs(v) < 0.6) {
         const gx = (fr(wx + 2, wz) - v) / 2, gz = (fr(wx, wz + 2) - v) / 2;
         const dist = Math.abs(v) / (Math.hypot(gx, gz) + 1e-7);
-        const half = 9 + 5 * (fbm(this.nV, x / 300 + 50, z / 300, 1) * 0.5 + 0.5); // 9 à 14 m
+        const half = 6 + 6 * (fbm(this.nV, x / 300 + 50, z / 300, 1) * 0.5 + 0.5); // 6 à 12 m (12 à 24 m de large)
         if (dist < half + 210) {
           // Niveau de l'eau : descend doucement de l'intérieur des terres vers la mer
           const Wr = (0.4 + 7 * smoothstep(0.85, 0.25, dN)) * smoothstep(0.35, 0.8, cont);
@@ -220,11 +221,11 @@ export class World {
   }
 
   // Ombre des arbres sur le sol (canopée), rastérisée sur la grille : sol de sous-bois, moins d'herbe.
-  applyCanopy(props) {
+  applyCanopy(props, crownOf) {
     const V = this.V, C = (this.canopy = new Float32Array(V * V));
     for (const p of props) {
-      if (p.t !== "pine" && p.t !== "oak" && p.t !== "birch") continue;
-      const r = (p.t === "oak" ? 4.2 : p.t === "birch" ? 2.6 : 3.2) * p.s;
+      const r = crownOf(p);
+      if (!r) continue;
       const gi = (p.x + this.half) / this.step, gj = (p.z + this.half) / this.step, rc = r / this.step;
       for (let j = Math.max(0, Math.floor(gj - rc)); j <= Math.min(this.N, Math.ceil(gj + rc)); j++)
         for (let i = Math.max(0, Math.floor(gi - rc)); i <= Math.min(this.N, Math.ceil(gi + rc)); i++) {
@@ -251,7 +252,7 @@ export class World {
         g *= smoothstep(0.15, 0.55, m) * 0.85 + 0.15;
         g *= 1 - smoothstep(0.02, 0.15, this.stream[k]);
         const can = this.canopy ? this.canopy[k] : 0;
-        g *= 1 - 0.7 * can;
+        g *= 1 - 0.88 * can;
         data[k * 4] = toHalf(h);
         data[k * 4 + 1] = toHalf(g);
         data[k * 4 + 2] = toHalf(this.stream[k]);
@@ -386,8 +387,10 @@ vec3 terrainColor(){
   c = mix(c, srgb(vec3(0.46, 0.44, 0.22)) * (0.8 + 0.4 * d1.g), smoothstep(0.55, 0.75, d3.r + d2.g * 0.3) * 0.35);
   c = mix(c, srgb(vec3(0.26, 0.28, 0.12)) * (0.7 + 0.5 * d1.b), smoothstep(0.6, 0.8, d3.b) * 0.3);
   // Sous-bois : feuilles mortes, aiguilles et mousse sous les arbres
-  vec3 litter = mix(srgb(vec3(0.30, 0.24, 0.14)), srgb(vec3(0.20, 0.25, 0.10)), smoothstep(0.35, 0.65, d2.g + d1.b * 0.3)) * (0.7 + 0.5 * d1.r);
-  c = mix(c, litter, smoothstep(0.15, 0.7, canopy) * 0.8);
+  vec3 leaves = mix(srgb(vec3(0.36, 0.22, 0.11)), srgb(vec3(0.48, 0.33, 0.17)), d1.r) * (0.75 + 0.4 * d1.b);
+  vec3 moss = mix(srgb(vec3(0.22, 0.38, 0.08)), srgb(vec3(0.36, 0.50, 0.12)), d1.g) * (0.8 + 0.3 * d1.r);
+  vec3 litter = mix(leaves, moss, smoothstep(0.45, 0.62, d2.g * 0.7 + d1.b * 0.45));
+  c = mix(c, litter, smoothstep(0.15, 0.65, canopy) * 0.9);
   c = mix(c, srgb(vec3(0.17, 0.24, 0.09)) * (0.8 + 0.4 * d1.g), smoothstep(0.0, 0.08, stream) * 0.7); // berges moussues
   c = mix(c, mud, smoothstep(0.15, 0.45, stream));                                                    // lit du ruisseau
   float beach = 1.0 - smoothstep(1.4, 3.0 + d2.g * 1.6, h);
@@ -431,13 +434,15 @@ vec3 terrainColor(){
       sh.uniforms.uHM = { value: this.hmTransform };
       sh.uniforms.uTexel = { value: 1 / V };
       sh.uniforms.tWaterN = { value: waterNormalTex };
+      Object.assign(sh.uniforms, reflUniforms);
       sh.vertexShader = sh.vertexShader
         .replace("#include <common>", "#include <common>\nvarying vec3 vWPos;")
         .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWPos = transformed;");
       sh.fragmentShader = sh.fragmentShader
         .replace("#include <common>", `#include <common>
 uniform float uTime; uniform sampler2D tHeight; uniform vec2 uHM; uniform float uTexel; uniform sampler2D tWaterN;
-varying vec3 vWPos;`)
+varying vec3 vWPos;
+${REFL_PARS}`)
         .replace("#include <color_fragment>", `#include <color_fragment>
   vec2 huv = vWPos.xz * uHM.x + uHM.y;
   float ground = texture2D(tHeight, huv).r;
@@ -457,10 +462,17 @@ varying vec3 vWPos;`)
   vec3 n2 = texture2D(tWaterN, vWPos.xz * 0.8 + flow * uTime * 0.5 + 0.37).xyz * 2.0 - 1.0;
   vec2 nxy = (n1.xy + n2.xy) * 0.45;
   vec3 wn = normalize(vec3(nxy.x, 1.0, -nxy.y));
-  normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);`);
+  normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);
+  // Écume blanche là où le ruisseau descend vite (petites cascades)
+  float steep = smoothstep(0.7, 2.2, length(vec2(gx, gz))) * (1.0 - river);
+  float foamW = smoothstep(0.35, 0.75, texture2D(tWaterN, vWPos.xz * 0.6 + flow * uTime * 1.2).b + steep * 0.45);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.95, 0.95), steep * foamW);
+  diffuseColor.a = max(diffuseColor.a, steep * foamW * 0.95);`)
+        .replace("#include <opaque_fragment>", REFL_APPLY);
     };
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = 2;
+    this.streamMesh = mesh;
     return mesh;
   }
 
@@ -475,13 +487,15 @@ varying vec3 vWPos;`)
       sh.uniforms.tHeight = { value: this.heightTex };
       sh.uniforms.uHM = { value: this.hmTransform };
       sh.uniforms.tWaterN = { value: waterNormalTex };
+      Object.assign(sh.uniforms, reflUniforms);
       sh.vertexShader = sh.vertexShader
         .replace("#include <common>", "#include <common>\nvarying vec3 vWPos;")
         .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed,1.0)).xyz;");
       sh.fragmentShader = sh.fragmentShader
         .replace("#include <common>", `#include <common>
 uniform float uTime; uniform sampler2D tHeight; uniform vec2 uHM; uniform sampler2D tWaterN;
-varying vec3 vWPos;`)
+varying vec3 vWPos;
+${REFL_PARS}`)
         .replace("#include <color_fragment>", `#include <color_fragment>
   float ground = texture2D(tHeight, vWPos.xz * uHM.x + uHM.y).r;
   float depth = max(0.0, -ground);
@@ -497,9 +511,11 @@ varying vec3 vWPos;`)
   vec3 n2 = texture2D(tWaterN, vWPos.xz * 0.12 - vec2(uTime * 0.013, -uTime * 0.021)).xyz * 2.0 - 1.0;
   vec2 nxy = (n1.xy + n2.xy) * 0.55;
   vec3 wn = normalize(vec3(nxy.x, 1.0, -nxy.y));
-  normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);`);
+  normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);`)
+        .replace("#include <opaque_fragment>", REFL_APPLY);
     };
     const mesh = new THREE.Mesh(geo, mat);
+    this.seaMesh = mesh;
     mesh.position.y = SEA_LEVEL;
     mesh.receiveShadow = false;
     mesh.renderOrder = 2;

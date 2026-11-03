@@ -333,28 +333,117 @@ export function makeLeafBush(withBerries, seed = 9) {
 }
 
 // Silhouette très lointaine (3ᵉ niveau de détail) : une forme simple, couleur feuillage.
+// ---------- Grands arbres de forêt tempérée (20 à 30 m) ----------
+// Hêtre / chêne : long fût nu, grosses branches maîtresses, large couronne tout en haut.
+export function makeTallBroadleaf(lod, seed, kind = "beech") {
+  const rand = mulberry32(seed);
+  const b = new Builder();
+  const oak = kind === "oak";
+  const H = oak ? 11 : 14;                       // hauteur du fût jusqu'aux premières branches
+  const steps = lod ? 3 : 10;
+  const pts = trunkPoints(H + 3, steps, oak ? 1.2 : 0.6, rand);
+  const barkTint = oak ? tint(0xd8c4b0) : tint(0xc4c2bc, 1.05);   // hêtre : écorce grise et lisse
+  b.tube(pts, flare(steps, oak ? 0.68 : 0.55, oak ? 0.36 : 0.3), lod ? 6 : 12, UV.bark, barkTint, oak ? 0.25 : 0.12);
+  const top = pts[pts.length - 1];
+  const crown = V(top.x, H + 8.5, top.z);
+  const R = oak ? V(8.5, 6.5, 8.5) : V(7, 7.5, 7);
+  if (lod < 2) {
+    const nl = oak ? 6 : 5;
+    for (let i = 0; i < nl; i++) {
+      const a = (i / nl) * Math.PI * 2 + rand() * 0.5;
+      const sy = H - 1.5 + rand() * 3;
+      const s0 = V(top.x * (sy / (H + 3)), sy, top.z * (sy / (H + 3)));
+      const out = (oak ? 0.75 : 0.55) * (0.7 + rand() * 0.3);
+      const e = V(crown.x + Math.cos(a) * R.x * out, crown.y + (rand() - 0.15) * R.y * 0.6, crown.z + Math.sin(a) * R.z * out);
+      const m = s0.clone().lerp(e, 0.45); m.y += oak ? 0.5 : 1.5;
+      b.tube([s0, m, e], [oak ? 0.3 : 0.24, oak ? 0.18 : 0.15, 0.06], lod ? 4 : 7, UV.bark, barkTint.clone().multiplyScalar(0.95), 0.3);
+      if (!lod) for (let k = 0; k < 2; k++) {
+        const e2 = e.clone().add(V((rand() - 0.5) * 4, 1 + rand() * 2.5, (rand() - 0.5) * 4));
+        b.tube([m.clone().lerp(e, 0.6), e2], [0.08, 0.03], 5, UV.bark, barkTint, 0.4);
+      }
+    }
+  }
+  const leafTint = oak ? tint(0x9ab462) : tint(0xb4d070);
+  const n = lod === 0 ? 58 : 16;
+  const size = lod === 0 ? 3.5 : 6.2;
+  for (let i = 0; i < n; i++) {
+    const dir = V(rand() * 2 - 1, rand() * 1.6 - 0.6, rand() * 2 - 1);
+    if (dir.length() > 1) { i--; continue; }
+    dir.normalize().multiplyScalar(0.4 + 0.6 * Math.cbrt(rand()));
+    const p = V(crown.x + dir.x * R.x, crown.y + dir.y * R.y, crown.z + dir.z * R.z);
+    b.cluster(p, size * (0.8 + rand() * 0.4), UV.leaves, leafTint.clone().multiplyScalar(0.8 + rand() * 0.35), crown, rand, lod ? 2 : 3);
+  }
+  return b.build();
+}
+
+// Pin sylvestre : très haut fût, écorce brun-gris en bas et orangée en haut, houppier en « nuages ».
+export function makeScotsPine(lod, seed) {
+  const rand = mulberry32(seed);
+  const b = new Builder();
+  const H = 24;
+  const steps = lod ? 3 : 10;
+  const pts = trunkPoints(H, steps, 0.9, rand);
+  const half = Math.ceil(steps * 0.55);
+  b.tube(pts.slice(0, half + 1), flare(half, 0.46, 0.3), lod ? 6 : 10, UV.bark, tint(0xb8aa9c), 0.25);
+  b.tube(pts.slice(half), Array.from({ length: steps - half + 1 }, (_, i) => 0.3 - (i / (steps - half)) * 0.2), lod ? 5 : 8, UV.bark, tint(0xe0a070), 0.3);
+  const needle = tint(0x9cb878);
+  const clouds = lod === 0 ? 8 : 4;
+  for (let c = 0; c < clouds; c++) {
+    const y = 16 + (c / clouds) * 8 + rand() * 1.2;
+    const a = rand() * Math.PI * 2, r = 1.2 + rand() * 2.8 * (1 - c / clouds * 0.5);
+    const tp = pts[Math.min(pts.length - 1, Math.round((y / H) * steps))];
+    const cc = V(tp.x + Math.cos(a) * r, y + 0.6, tp.z + Math.sin(a) * r);
+    if (lod < 2) b.tube([V(tp.x, y - 0.8, tp.z), cc], [0.1, 0.04], 4, UV.bark, tint(0xd09060), 0.4);
+    const nf = lod === 0 ? 7 : 4;
+    for (let k = 0; k < nf; k++) {
+      const fa = (k / nf) * Math.PI * 2 + rand() * 0.5;
+      const L = 1.8 + rand() * 0.9;
+      const dir = V(Math.cos(fa), 0.12 + rand() * 0.2, Math.sin(fa)).normalize();
+      const side = V(-Math.sin(fa), 0, Math.cos(fa));
+      b.card(cc.clone().addScaledVector(dir, L * 0.45), dir, side, L, L * 0.7, UV.needles, needle.clone().multiplyScalar(0.8 + rand() * 0.3), V(cc.x, cc.y - 1, cc.z), 0.7);
+      if (!lod) b.card(cc.clone().addScaledVector(dir, L * 0.45), dir, V(0, 1, 0), L, L * 0.45, UV.needles, needle.clone().multiplyScalar(0.75), V(cc.x, cc.y - 1, cc.z), 0.7);
+    }
+  }
+  return b.build();
+}
+
+// Silhouette très lointaine (3ᵉ niveau de détail) : une forme simple, couleur feuillage.
 export function makeTreeImpostor(kind) {
   const b = new Builder();
-  const add = (geo, color) => {
+  const add = (geo, color, top) => {
     const g = geo.index ? geo.toNonIndexed() : geo;
     const p = g.attributes.position, n = g.attributes.normal;
     for (let i = 0; i < p.count; i++) {
       const v = V(p.getX(i), p.getY(i), p.getZ(i));
-      b.v(v, V(n.getX(i), n.getY(i), n.getZ(i)), UV.white[0], UV.white[1], color.clone().multiplyScalar(0.55 + 0.45 * Math.min(1, v.y / 8)));
+      b.v(v, V(n.getX(i), n.getY(i), n.getZ(i)), UV.white[0], UV.white[1], color.clone().multiplyScalar(0.55 + 0.45 * Math.min(1, v.y / top)));
     }
   };
+  const trunk = (r0, h, col) => { const tr = new THREE.CylinderGeometry(r0 * 0.5, r0, h, 4, 1, true); tr.translate(0, h / 2, 0); add(tr, tint(col), h); };
   if (kind === "pine") {
     const cone = new THREE.ConeGeometry(2.7, 8.6, 7, 1, true); cone.translate(0, 1.6 + 4.3, 0);
-    add(cone, tint(0x2f4a28));
-    const tr = new THREE.CylinderGeometry(0.15, 0.3, 2, 4, 1, true); tr.translate(0, 0.8, 0);
-    add(tr, tint(0x4a3828));
-  } else {
-    const birch = kind === "birch";
+    add(cone, tint(0x2f4a28), 8);
+    trunk(0.3, 2, 0x4a3828);
+  } else if (kind === "birch") {
     const crown = new THREE.IcosahedronGeometry(1, 0);
-    crown.scale(birch ? 1.8 : 3.3, birch ? 2.6 : 2.5, birch ? 1.8 : 3.3); crown.translate(0, birch ? 6.4 : 5.9, 0);
-    add(crown, tint(birch ? 0x5a7a30 : 0x3e5a24));
-    const tr = new THREE.CylinderGeometry(0.12, birch ? 0.18 : 0.38, birch ? 5 : 3.6, 4, 1, true); tr.translate(0, birch ? 2.4 : 1.7, 0);
-    add(tr, tint(birch ? 0xd8d4c8 : 0x4a3828));
+    crown.scale(1.8, 2.6, 1.8); crown.translate(0, 6.4, 0);
+    add(crown, tint(0x5a7a30), 8);
+    trunk(0.18, 5, 0xd8d4c8);
+  } else if (kind === "young") {
+    const crown = new THREE.IcosahedronGeometry(1, 0);
+    crown.scale(3.3, 2.5, 3.3); crown.translate(0, 5.9, 0);
+    add(crown, tint(0x3e5a24), 8);
+    trunk(0.38, 3.6, 0x4a3828);
+  } else if (kind === "scots") {
+    const crown = new THREE.IcosahedronGeometry(1, 0);
+    crown.scale(4, 3.2, 4); crown.translate(0, 20.5, 0);
+    add(crown, tint(0x34502a), 24);
+    trunk(0.4, 19, 0x8a5a3a);
+  } else {
+    const oak = kind === "oak";
+    const crown = new THREE.IcosahedronGeometry(1, 1);
+    crown.scale(oak ? 8.5 : 7, oak ? 6.5 : 7.5, oak ? 8.5 : 7); crown.translate(0, oak ? 19.5 : 22.5, 0);
+    add(crown, tint(oak ? 0x3e5a24 : 0x48682a), 28);
+    trunk(oak ? 0.6 : 0.5, oak ? 14 : 17, oak ? 0x5a4632 : 0x8a8880);
   }
   return b.build();
 }
@@ -420,9 +509,10 @@ export function makeVegetationMaterial(atlas) {
   ip = vec3(instanceMatrix[3]);
 #endif
   float hgt = max(0.0, position.y - 1.5);
+  float sway = min(hgt, 6.0) * 0.03 + max(0.0, hgt - 6.0) * 0.012;   // les grands arbres oscillent doucement
   float w = sin(uTime * 1.2 + ip.x * 0.13 + ip.z * 0.07) + 0.45 * sin(uTime * 2.6 + ip.z * 0.3);
-  transformed.x += w * 0.03 * hgt;
-  transformed.z += cos(uTime * 1.05 + ip.z * 0.11) * 0.022 * hgt;
+  transformed.x += w * sway;
+  transformed.z += cos(uTime * 1.05 + ip.z * 0.11) * sway * 0.75;
   // frémissement des feuilles
   float fl = sin(uTime * 7.0 + position.x * 3.1 + position.y * 2.3 + position.z * 2.7 + ip.x);
   transformed += normal * fl * 0.035 * vLeaf;`)
