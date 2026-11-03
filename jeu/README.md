@@ -6,7 +6,7 @@ Jeu de survie en 3D dans le navigateur : une île générée au hasard, un cycle
 
 ## Ce qu'il y a dedans
 
-- **Île procédurale** de 1,4 km de côté : plages, collines, forêts, montagnes rocheuses enneigées. Chaque « Nouvelle île » est différente.
+- **Île procédurale** de 2,2 km de côté, avec une carte (touche M) et une mini-carte : plages, collines, forêts, montagnes rocheuses enneigées. Chaque « Nouvelle île » est différente.
 - **Ciel physique** (diffusion atmosphérique), soleil et lune, étoiles, nuages, brouillard qui suit l'heure, reflets du ciel sur l'eau, écume sur le rivage.
 - **Végétation** : ~18 000 arbres, rochers, buissons et objets au sol ; jusqu'à 70 000 brins d'herbe animés par le vent ; arbres qui se balancent et tombent quand on les abat.
 - **Survie** : santé, faim, soif, endurance, chaleur. Boire à la rivière, manger des baies, chasser, cuire la viande.

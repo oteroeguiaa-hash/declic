@@ -1,29 +1,78 @@
-// Vie sous-marine : bancs de poissons et tortues de mer, autour du joueur quand il y a de l'eau profonde.
+// Vie aquatique : 10 espèces de poissons (eau douce et mer) en bancs, tortues de mer, particules.
+// Chaque espèce est un maillage instancié sculpté (loft) ; la queue ondule dans le shader.
 import * as THREE from "three";
-import { mergeGeometries } from "../vendor/addons/BufferGeometryUtils.js";
 import { mulberry32 } from "./noise.js";
 
-function colorize(geo, fn) {
-  const g = geo.index ? geo.toNonIndexed() : geo;
-  g.deleteAttribute("uv");
-  const p = g.attributes.position, col = new Float32Array(p.count * 3), c = new THREE.Color();
-  for (let i = 0; i < p.count; i++) { fn(p.getX(i), p.getY(i), p.getZ(i), c); col.set([c.r, c.g, c.b], i * 3); }
-  g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  return g;
-}
-
-function fishGeometry() {
-  const body = new THREE.SphereGeometry(1, 10, 6);
-  body.scale(0.055, 0.1, 0.26);
-  const b = colorize(body, (x, y, z, c) => c.setRGB(0.25, 0.3, 0.35).lerp(new THREE.Color(0.95, 0.95, 0.9), y < 0 ? 0.8 : 0.1 + (y + 0.1) * 0));
-  const tail = new THREE.BufferGeometry();
-  tail.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, -0.22, 0, 0.09, -0.36, 0, -0.09, -0.36], 3));
-  tail.computeVertexNormals();
-  const t = colorize(tail, (x, y, z, c) => c.setRGB(0.4, 0.45, 0.5));
-  const g = mergeGeometries([b, t]);
+// Corps de poisson : sections le long de z (tête en +z), nageoires dorsale, caudale, pectorales.
+function fishGeo(s) {
+  const L = s.len, H = s.h, W = s.w;
+  const pos = [], col = [], idx = [];
+  const C = new THREE.Color();
+  const ring = 12, prof = [[-0.5, 0.05, 0.06], [-0.42, 0.22, 0.2], [-0.25, 0.62, 0.55], [0, 0.95, 0.9], [0.18, 1, 1], [0.33, 0.85, 0.85], [0.44, 0.55, 0.55], [0.5, 0.12, 0.15]];
+  const color = (z, y, side) => {
+    const t = (z / L) + 0.5, v = y / H;                 // t 0 queue → 1 tête ; v -0.5 ventre → 0.5 dos
+    C.set(s.belly).lerp(new THREE.Color(s.side), Math.min(1, Math.max(0, (v + 0.3) * 2.2)));
+    C.lerp(new THREE.Color(s.back), Math.min(1, Math.max(0, (v - 0.05) * 3)));
+    if (s.bars && v > -0.2 && Math.sin(t * s.bars * Math.PI * 2) > 0.45) C.multiplyScalar(0.45);
+    if (s.stripe && Math.abs(v - 0.02) < 0.06) C.lerp(new THREE.Color(s.stripe), 0.8);
+    if (s.spots && Math.sin(z * 90) * Math.sin(y * 110) > 0.6 && v > -0.1) C.lerp(new THREE.Color(s.spots), 0.7);
+    if (s.wavy && v > 0.1 && Math.sin(z * 60 + Math.sin(y * 50) * 2) > 0.3) C.multiplyScalar(0.5);
+    if (s.band && t > 0.78 && t < 0.83 && v > -0.1) C.set(s.band);
+    if (t > 0.86) C.multiplyScalar(0.85);
+    return C;
+  };
+  for (const [zf, hf, wf] of prof) {
+    const z = zf * L;
+    for (let k = 0; k < ring; k++) {
+      const a = (k / ring) * Math.PI * 2;
+      const x = Math.cos(a) * W * 0.5 * wf, y = Math.sin(a) * H * 0.5 * hf;
+      pos.push(x, y, z);
+      const c = color(z, y, x); col.push(c.r, c.g, c.b);
+    }
+  }
+  const n = prof.length;
+  for (let i = 0; i < n - 1; i++) for (let k = 0; k < ring; k++) {
+    const a = i * ring + k, b = i * ring + ((k + 1) % ring), c = a + ring, d = b + ring;
+    idx.push(a, b, c, b, d, c);
+  }
+  const fin = (pts, cc) => { const b0 = pos.length / 3; for (const p of pts) { pos.push(...p); const c = new THREE.Color(cc); col.push(c.r, c.g, c.b); } idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 1); if (pts.length === 4) idx.push(b0, b0 + 2, b0 + 3, b0, b0 + 3, b0 + 2); };
+  const fc = s.fin;
+  // caudale (fourchue)
+  fin([[0, 0, -0.46 * L], [0, H * (s.fork ? 0.75 : 0.55), -0.62 * L], [0, 0, -0.55 * L], [0, -H * (s.fork ? 0.75 : 0.55), -0.62 * L]], fc);
+  // dorsale(s)
+  fin([[0, H * 0.45, 0.1 * L], [0, H * (0.45 + s.dorsal), -0.02 * L], [0, H * 0.42, -0.15 * L]], fc);
+  if (s.dorsal2) fin([[0, H * 0.35, -0.22 * L], [0, H * 0.55, -0.27 * L], [0, H * 0.3, -0.33 * L]], fc);
+  // anale, pectorales
+  fin([[0, -H * 0.4, -0.18 * L], [0, -H * 0.62, -0.25 * L], [0, -H * 0.32, -0.32 * L]], fc);
+  for (const sx of [-1, 1]) fin([[sx * W * 0.35, -H * 0.1, 0.2 * L], [sx * W * 0.9, -H * 0.3, 0.1 * L], [sx * W * 0.4, -H * 0.2, 0.06 * L]], fc);
+  // œil
+  for (const sx of [-1, 1]) {
+    const b0 = pos.length / 3, ez = 0.38 * L, ey = H * 0.12, ex = sx * W * 0.3, r = Math.max(0.004, H * 0.07);
+    for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; pos.push(ex + sx * 0.001, ey + Math.sin(a) * r, ez + Math.cos(a) * r); col.push(0.02, 0.02, 0.02); }
+    pos.push(ex + sx * 0.002, ey, ez); col.push(0.01, 0.01, 0.01);
+    for (let k = 0; k < 6; k++) sx > 0 ? idx.push(b0 + 6, b0 + k, b0 + ((k + 1) % 6)) : idx.push(b0 + 6, b0 + ((k + 1) % 6), b0 + k);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
   g.computeVertexNormals();
   return g;
 }
+
+// habitat : "douce" (rivières, lacs) ou "mer"
+export const FISH = {
+  truite:    { name: "Truite fario", hab: "douce", len: 0.38, h: 0.09, w: 0.05, back: 0x5a6a42, side: 0xb8a878, belly: 0xece4d0, spots: 0xb03a2a, fin: 0x8a8a60, dorsal: 0.25, n: [3, 6], sp: 1.6 },
+  saumon:    { name: "Saumon", hab: "douce", len: 0.7, h: 0.16, w: 0.08, back: 0x4a5a6a, side: 0xc8ccd0, belly: 0xf0f0f0, spots: 0x2a2a2a, fin: 0x6a7480, dorsal: 0.2, fork: true, n: [2, 4], sp: 2.0 },
+  perche:    { name: "Perche", hab: "douce", len: 0.28, h: 0.1, w: 0.045, back: 0x4a5a2a, side: 0xa8aa5a, belly: 0xe8e4c8, bars: 6, fin: 0xd86a2a, dorsal: 0.35, dorsal2: true, n: [5, 10], sp: 1.3 },
+  brochet:   { name: "Brochet", hab: "douce", len: 0.95, h: 0.13, w: 0.08, back: 0x3a4a2a, side: 0x7a8a4a, belly: 0xe0dcc0, spots: 0xc8c890, fin: 0x6a6a3a, dorsal: 0.25, n: [1, 1], sp: 1.0 },
+  carpe:     { name: "Carpe", hab: "douce", len: 0.6, h: 0.22, w: 0.11, back: 0x5a4a2a, side: 0xb8902a, belly: 0xe8d8a8, fin: 0x8a6a3a, dorsal: 0.22, n: [2, 3], sp: 0.8 },
+  gardon:    { name: "Gardon", hab: "douce", len: 0.22, h: 0.08, w: 0.035, back: 0x3a4a5a, side: 0xc8cccc, belly: 0xf0f0ee, fin: 0xc8402a, dorsal: 0.3, fork: true, n: [8, 14], sp: 1.5 },
+  maquereau: { name: "Maquereau", hab: "mer", len: 0.35, h: 0.07, w: 0.05, back: 0x2a6a6a, side: 0xb8c8c8, belly: 0xf4f4f4, wavy: true, fin: 0x5a7a7a, dorsal: 0.2, dorsal2: true, fork: true, n: [8, 14], sp: 2.4 },
+  bar:       { name: "Bar", hab: "mer", len: 0.6, h: 0.15, w: 0.07, back: 0x5a6670, side: 0xc4ccd2, belly: 0xf0f2f4, fin: 0x7a848c, dorsal: 0.25, dorsal2: true, fork: true, n: [3, 6], sp: 1.8 },
+  daurade:   { name: "Daurade royale", hab: "mer", len: 0.42, h: 0.17, w: 0.06, back: 0x7a8490, side: 0xc8ccd0, belly: 0xf0f0f0, band: 0xe8c040, fin: 0x8a8a90, dorsal: 0.25, fork: true, n: [4, 8], sp: 1.4 },
+  sardine:   { name: "Sardine", hab: "mer", len: 0.18, h: 0.04, w: 0.028, back: 0x2a5a8a, side: 0xd0dce4, belly: 0xf6f8fa, spots: 0x1a3a5a, fin: 0x8aa0b0, dorsal: 0.25, fork: true, n: [16, 28], sp: 2.2 },
+};
 
 function turtleModel() {
   const shell = new THREE.MeshStandardMaterial({ color: 0x4a5a32, roughness: 0.6 });
@@ -54,33 +103,35 @@ function turtleModel() {
   return { group: g, flippers };
 }
 
-const SPECIES = [
-  [0.75, 0.78, 0.82], // argenté
-  [1.0, 0.75, 0.25],  // doré
-  [0.35, 0.55, 0.95], // bleu
-  [1.0, 0.45, 0.2],   // orangé
-  [0.55, 0.7, 0.45],  // vert (truite)
-];
-
 export class Fish {
   constructor(scene, world, quality) {
     this.world = world;
     this.rand = mulberry32(777);
-    this.perSchool = quality.name === "low" ? 10 : 16;
+    this.uTime = { value: 0 };
+    this.meshes = {};
     this.schools = [];
-    const count = this.perSchool * 6;
-    this.mesh = new THREE.InstancedMesh(fishGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.3 }), count);
-    this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3).fill(1), 3);
-    this.mesh.frustumCulled = false;
-    this.mesh.count = 0;
-    scene.add(this.mesh);
-    for (let s = 0; s < 6; s++) {
-      const members = [];
-      for (let k = 0; k < this.perSchool; k++) {
-        members.push({ off: new THREE.Vector3((this.rand() - 0.5) * 3, (this.rand() - 0.5) * 1.2, (this.rand() - 0.5) * 3), ph: this.rand() * 6.28, sp: 0.8 + this.rand() * 0.4 });
-      }
-      this.schools.push({ pos: new THREE.Vector3(), heading: this.rand() * 6.28, speed: 1.2, active: false, color: SPECIES[s % SPECIES.length], members, timer: 0 });
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.35, side: THREE.DoubleSide });
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uTime = this.uTime;
+      sh.vertexShader = sh.vertexShader
+        .replace("#include <common>", "#include <common>\nuniform float uTime;")
+        .replace("#include <begin_vertex>", `#include <begin_vertex>
+  // Ondulation : la queue bat de plus en plus fort vers l'arrière
+  float ph = 0.0;
+#ifdef USE_INSTANCING
+  ph = instanceMatrix[3].x * 3.1 + instanceMatrix[3].z * 1.7;
+#endif
+  float back = clamp(-position.z * 2.6 + 0.35, 0.0, 1.2);
+  transformed.x += sin(uTime * 9.0 + ph - position.z * 9.0) * 0.06 * back * back * (0.5 + abs(position.z) * 2.0);`);
+    };
+    for (const k in FISH) {
+      const max = FISH[k].n[1] * 2;
+      const m = new THREE.InstancedMesh(fishGeo(FISH[k]), mat, max);
+      m.count = 0; m.frustumCulled = false;
+      scene.add(m);
+      this.meshes[k] = m;
     }
+    for (let s = 0; s < 9; s++) this.schools.push({ pos: new THREE.Vector3(), heading: 0, active: false, type: null, members: [], timer: 0 });
     this.turtles = [0, 1].map(() => { const t = turtleModel(); t.group.visible = false; scene.add(t.group); return { ...t, pos: t.group.position, heading: 0, active: false, phase: 0 }; });
     this.checkTimer = 0;
     // Particules en suspension (visibles seulement sous l'eau)
@@ -92,19 +143,23 @@ export class Fish {
     this.dust.frustumCulled = false;
     this.dust.visible = false;
     scene.add(this.dust);
-    this.m4 = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.e = new THREE.Euler(); this.v = new THREE.Vector3(); this.one = new THREE.Vector3(1, 1, 1);
+    this.m4 = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.e = new THREE.Euler(); this.v = new THREE.Vector3(); this.sc = new THREE.Vector3();
   }
 
-  // Point d'eau profonde au hasard près de c (ou null)
+  isSea(x, z) { return Math.hypot(x, z) > this.world.half * 0.62 || this.world.waterLevelAt(x, z) < 0.3 && this.world.heightAt(x, z) < -4; }
+
+  // Point d'eau assez profond près de c (ou null)
   findSpot(c, rMin, rMax, minDepth) {
-    for (let t = 0; t < 12; t++) {
+    for (let t = 0; t < 14; t++) {
       const a = this.rand() * Math.PI * 2, r = rMin + this.rand() * (rMax - rMin);
       const x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r;
       const wl = this.world.waterLevelAt(x, z), g = this.world.heightAt(x, z);
-      if (wl - g > minDepth) return new THREE.Vector3(x, g + 0.6 + this.rand() * (wl - g - 1.4), z);
+      if (wl - g > minDepth) return new THREE.Vector3(x, g + 0.4 + this.rand() * Math.max(0, wl - g - 0.9), z);
     }
     return null;
   }
+
+  depthAt(x, z) { return this.world.waterLevelAt(x, z) - this.world.heightAt(x, z); }
 
   particles(dt, cam, under) {
     this.dust.visible = under;
@@ -120,59 +175,64 @@ export class Fish {
     a.needsUpdate = true;
   }
 
-  depthAt(x, z) { return this.world.waterLevelAt(x, z) - this.world.heightAt(x, z); }
-
   update(dt, cam, day) {
-    const t = performance.now() * 0.001;
+    this.uTime.value += dt;
+    const t = performance.now() * 0.001, r = this.rand;
     this.checkTimer -= dt;
     if (this.checkTimer <= 0) {
       this.checkTimer = 1;
       for (const s of this.schools) {
-        if (!s.active || s.pos.distanceTo(cam) > 55) {
-          const p = this.findSpot(cam, 8, 40, 2.2);
+        if (!s.active || s.pos.distanceTo(cam) > 60) {
+          const p = this.findSpot(cam, 6, 45, 0.9);
           s.active = !!p;
-          if (p) { s.pos.copy(p); s.heading = this.rand() * 6.28; }
+          if (!p) continue;
+          s.pos.copy(p); s.heading = r() * 6.28;
+          const sea = this.isSea(p.x, p.z);
+          const pool = Object.keys(FISH).filter((k) => (FISH[k].hab === "mer") === sea && (FISH[k].len < 0.5 || this.depthAt(p.x, p.z) > 1.6));
+          s.type = pool[Math.floor(r() * pool.length)];
+          const f = FISH[s.type], n = f.n[0] + Math.floor(r() * (f.n[1] - f.n[0] + 1));
+          s.members = [];
+          const spread = f.len * 6;
+          for (let k = 0; k < n; k++) s.members.push({ off: new THREE.Vector3((r() - 0.5) * spread, (r() - 0.5) * spread * 0.3, (r() - 0.5) * spread), ph: r() * 6.28, sc: 0.8 + r() * 0.4 });
         }
       }
       for (const tu of this.turtles) {
         if (!tu.active || tu.pos.distanceTo(cam) > 60) {
-          const p = this.rand() < 0.5 ? this.findSpot(cam, 12, 45, 3.5) : null;
-          tu.active = !!p;
+          const p = r() < 0.5 ? this.findSpot(cam, 12, 45, 3.5) : null;
+          tu.active = !!p && this.isSea(p.x, p.z);
           tu.group.visible = tu.active;
-          if (p) { tu.pos.copy(p); tu.heading = this.rand() * 6.28; }
+          if (tu.active) { tu.pos.copy(p); tu.heading = r() * 6.28; }
         }
       }
     }
-    let n = 0;
-    const arr = this.mesh.instanceColor.array;
+    const counts = {};
+    for (const k in FISH) counts[k] = 0;
     for (const s of this.schools) {
       if (!s.active) continue;
-      // Le banc tourne au hasard, évite les hauts-fonds et s'écarte du nageur
+      const f = FISH[s.type], im = this.meshes[s.type];
       s.timer -= dt;
-      if (s.timer <= 0) { s.timer = 2 + this.rand() * 3; s.turn = (this.rand() - 0.5) * 1.2; }
+      if (s.timer <= 0) { s.timer = 2 + r() * 3; s.turn = (r() - 0.5) * 1.2; }
       s.heading += (s.turn || 0) * dt;
-      const flee = s.pos.distanceTo(cam) < 4;
+      const flee = s.pos.distanceTo(cam) < 3.5;
       if (flee) s.heading = Math.atan2(s.pos.x - cam.x, s.pos.z - cam.z);
-      const sp = flee ? 3.5 : 1.2;
+      const sp = f.sp * (flee ? 2.5 : 1);
       const nx = s.pos.x + Math.sin(s.heading) * sp * dt, nz = s.pos.z + Math.cos(s.heading) * sp * dt;
-      if (this.depthAt(nx, nz) < 1.4) s.heading += Math.PI * 0.8; else { s.pos.x = nx; s.pos.z = nz; }
+      if (this.depthAt(nx, nz) < 0.8) s.heading += Math.PI * 0.8; else { s.pos.x = nx; s.pos.z = nz; }
       const wl = this.world.waterLevelAt(s.pos.x, s.pos.z), g = this.world.heightAt(s.pos.x, s.pos.z);
-      s.pos.y = Math.min(wl - 0.5, Math.max(g + 0.5, s.pos.y));
+      s.pos.y = Math.min(wl - 0.3, Math.max(g + 0.3, s.pos.y));
       for (const m of s.members) {
-        const wig = Math.sin(t * 9 * m.sp + m.ph);
-        this.v.set(m.off.x + Math.sin(t * 0.7 + m.ph) * 0.5, m.off.y + Math.sin(t * 0.9 + m.ph) * 0.2, m.off.z);
+        const n = counts[s.type];
+        if (n >= im.instanceMatrix.count) break;
+        this.v.set(m.off.x + Math.sin(t * 0.7 + m.ph) * f.len, m.off.y + Math.sin(t * 0.9 + m.ph) * 0.1, m.off.z);
         this.v.applyAxisAngle(THREE.Object3D.DEFAULT_UP, s.heading).add(s.pos);
-        this.v.y = Math.min(wl - 0.3, Math.max(g + 0.3, this.v.y));
-        this.q.setFromEuler(this.e.set(0, s.heading + wig * 0.18, wig * 0.05));
-        this.m4.compose(this.v, this.q, this.one);
-        this.mesh.setMatrixAt(n, this.m4);
-        arr.set(s.color, n * 3);
-        n++;
+        this.v.y = Math.min(wl - 0.2, Math.max(g + 0.15, this.v.y));
+        this.q.setFromEuler(this.e.set(Math.sin(t + m.ph) * 0.08, s.heading + Math.sin(t * 1.3 + m.ph) * 0.15, 0));
+        this.m4.compose(this.v, this.q, this.sc.setScalar(m.sc));
+        im.setMatrixAt(n, this.m4);
+        counts[s.type]++;
       }
     }
-    this.mesh.count = n;
-    this.mesh.instanceMatrix.needsUpdate = true;
-    this.mesh.instanceColor.needsUpdate = true;
+    for (const k in FISH) { const im = this.meshes[k]; im.count = counts[k]; im.visible = counts[k] > 0; im.instanceMatrix.needsUpdate = true; }
 
     for (const tu of this.turtles) {
       if (!tu.active) continue;

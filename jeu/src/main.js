@@ -15,9 +15,12 @@ import { Reflection } from "./reflection.js";
 import { Fish } from "./fish.js";
 import { BuildSystem, PIECES, BUILD_CATS } from "./build.js";
 import { registerFurniture } from "./furniture.js";
+import { MapView } from "./map.js";
+import { Birds } from "./birds.js";
+import { Insects } from "./insects.js";
 
-const SAVE_KEY = "lisiere-save-v6";        // v6 : forêts variées, montagnes et rochers refaits
-const OLD_SAVE_KEYS = ["lisiere-save-v5", "lisiere-save-v4", "lisiere-save-v3", "lisiere-save-v2", "lisiere-save-v1"];
+const SAVE_KEY = "lisiere-save-v7";        // v6 : forêts variées, montagnes et rochers refaits
+const OLD_SAVE_KEYS = ["lisiere-save-v6", "lisiere-save-v5", "lisiere-save-v4", "lisiere-save-v3", "lisiere-save-v2", "lisiere-save-v1"];
 const SETTINGS_KEY = "lisiere-settings";
 const $ = (id) => document.getElementById(id);
 
@@ -165,6 +168,10 @@ class Game {
     this.scene.add(this.world.buildStreams(waterN));
     this.grass = new Grass(this.scene, this.world, Q);
     this.fish = new Fish(this.scene, this.world, Q);
+    this.birds = new Birds(this.scene, this.world, this.props);
+    this.insects = new Insects(this.scene, this.world);
+
+    this.map = new MapView(this.world, (x, z) => { const [i, j] = this.world._cell(x, z); return this.world.canopy ? this.world.canopy[j * this.world.V + i] : 0; });
 
     await step(65, "Le ciel se lève…");
     this.env = new Environment(this.scene, renderer, Q);
@@ -325,11 +332,12 @@ class Game {
     $("btnReload").onclick = () => { this.save(); location.reload(); };
     document.querySelectorAll("[data-back]").forEach((b) => (b.onclick = () => this.openPanel(null)));
     $("howKeys").innerHTML = touch
-      ? `<p>Joystick à gauche pour marcher (pousse à fond pour courir), glisse à droite pour regarder.<br>✊ frapper · ✋ ramasser, boire, cuire · 🎒 sac · 🔨 construire · 🔁 changer d'outil · ⤒ sauter.</p>`
+      ? `<p>Joystick à gauche pour marcher (pousse à fond pour courir), glisse à droite pour regarder.<br>✊ frapper · ✋ ramasser, boire, cuire · 🎒 sac · 🔨 construire · 🗺️ carte · 🔁 changer d'outil · ⤒ sauter.</p>`
       : `<p><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> ou <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> se déplacer · <kbd>Maj</kbd> courir · <kbd>Espace</kbd> sauter · <kbd>C</kbd> s'accroupir<br>
-         <kbd>Clic</kbd> frapper · <kbd>E</kbd> ou <kbd>clic droit</kbd> ramasser, boire, cuire · <kbd>Tab</kbd> sac · <kbd>B</kbd> construire · <kbd>1</kbd>–<kbd>6</kbd> ou molette : outil · <kbd>F</kbd> manger · <kbd>Échap</kbd> pause</p>`;
+         <kbd>Clic</kbd> frapper · <kbd>E</kbd> ou <kbd>clic droit</kbd> ramasser, boire, cuire · <kbd>Tab</kbd> sac · <kbd>B</kbd> construire · <kbd>M</kbd> carte · <kbd>1</kbd>–<kbd>6</kbd> ou molette : outil · <kbd>F</kbd> manger · <kbd>Échap</kbd> pause</p>`;
     $("closeBag").onclick = () => this.toggleBag(false);
     $("closeBuild").onclick = () => this.toggleBuildMenu(false);
+    $("closeMap").onclick = () => this.toggleMap(false);
     $("closeStorage").onclick = () => this.closeStorage();
     $("storageAll").onchange = (e) => (this.storageAll = e.target.checked);
     // Barre d'outils : toucher / cliquer un emplacement sélectionne l'outil
@@ -344,7 +352,7 @@ class Game {
     $("btnRespawn").onclick = () => this.respawn();
     $("btnPause").addEventListener("touchstart", (e) => { e.preventDefault(); this.pause(); });
     this.input.onLockChange = (locked) => {
-      if (!locked && this.state === "play" && !this.bagOpen && !this.buildMenuOpen && !this.storageOpen && !this.arcadeOpen) this.pause();
+      if (!locked && this.state === "play" && !this.bagOpen && !this.buildMenuOpen && !this.storageOpen && !this.arcadeOpen && !this.mapOpen) this.pause();
     };
     this.updateHomeInfo();
   }
@@ -410,6 +418,15 @@ class Game {
     $("menuTag").textContent = "Pause · partie sauvegardée";
     this.save();
     this.showMenu();
+  }
+
+  // ---------- Carte ----------
+  toggleMap(open) {
+    open = open ?? !this.mapOpen;
+    this.mapOpen = open;
+    $("mapFull").classList.toggle("hidden", !open);
+    if (open) { this.map.drawFull(this); this.input.exitLock(); }
+    else if (this.state === "play") this.input.requestLock();
   }
 
   // ---------- Mobilier ----------
@@ -1066,6 +1083,8 @@ class Game {
         if (this.build.selected || this.editMode) this.exitBuild(); else this.toggleBuildMenu();
       }
       if (input.was("Escape") && this.buildMenuOpen) this.toggleBuildMenu(false);
+      if ((input.was("KeyM") || input.was("Map")) && !this.bagOpen && !this.buildMenuOpen) this.toggleMap();
+      if (input.was("Escape") && this.mapOpen) this.toggleMap(false);
       const building = !!this.build.selected || this.editMode;
       if (input.was("KeyF")) this.quickEat();
       const tools = this.ownedTools();
@@ -1076,7 +1095,8 @@ class Game {
       }
       if (!tools.includes(this.tool)) this.selectTool("main");
 
-      const menu = this.bagOpen || this.buildMenuOpen || this.storageOpen || this.arcadeOpen;
+      const menu = this.bagOpen || this.buildMenuOpen || this.storageOpen || this.arcadeOpen || this.mapOpen;
+      this.map.updateMini(dt, this);
       if (input.was("Escape") && this.storageOpen) this.closeStorage();
       if (menu) { input.consumeLook(); input.move.x = input.move.y = 0; }
       const frozenInput = menu ? { consumeLook: () => ({ x: 0, y: 0 }), axis: () => ({ x: 0, y: 0 }), sprint: false, crouch: false, jump: false } : input;
@@ -1149,6 +1169,8 @@ class Game {
     this.fish.particles(dt, this.camera.position, this.env.sunInfo.under);
     this.env.sunInfo.day = this.env.dayFactor;
     if (this.fish) this.fish.update(dt, this.camera.position, this.env.dayFactor);
+    this.birds.update(dt, this.camera.position, this.env.dayFactor);
+    this.insects.update(dt, this.camera.position, this.env.dayFactor);
     this.refl.render(this.scene, this.camera, settings.reflections && !p.underwater ? this.nearWaterLevel(dt) : null);
     this.post.render(this.scene, this.camera, this.env.sunInfo);
     input.endFrame();
