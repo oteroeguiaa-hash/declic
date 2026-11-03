@@ -158,6 +158,21 @@ export class Player {
     this.pitch = clamp(this.pitch - look.y * (this.invertY ? -1 : 1), -1.5, 1.5);
 
     if (this.boat) { this.updateBoat(dt, input, ctx); this.survive(dt, ctx); return; }
+    if (this.seat) {
+      // Assis : regard libre, récupération plus rapide ; bouger ou sauter pour se lever
+      const ax0 = input.axis();
+      if (Math.hypot(ax0.x, ax0.y) > 0.2 || input.jump) { this.pos.set(this.seat.x + Math.sin(this.seat.yaw) * -0.9, this.seat.y - 0.4, this.seat.z + Math.cos(this.seat.yaw) * -0.9); this.seat = null; }
+      else {
+        this.pos.set(this.seat.x, this.seat.y - 0.45, this.seat.z);
+        this.camera.position.set(this.seat.x, this.seat.y + 0.75, this.seat.z);
+        this.camera.rotation.order = "YXZ"; this.camera.rotation.set(this.pitch, this.yaw, 0);
+        this.vel.set(0, 0, 0);
+        this.stamina = Math.min(100, this.stamina + dt * 25);
+        this.health = Math.min(100, this.health + dt * 0.4);
+        this.survive(dt, ctx);
+        return;
+      }
+    }
 
     const ax = input.axis();
     const len = Math.hypot(ax.x, ax.y);

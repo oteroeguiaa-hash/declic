@@ -15,6 +15,12 @@ Jeu de survie en 3D dans le navigateur : une île générée au hasard, un cycle
 - **Sons** 100 % synthétisés : vent, ressac, oiseaux, grillons, pas selon le sol, feu, hurlements.
 - **Sauvegarde automatique** (dans le navigateur).
 
+## Construction et aménagement
+
+- **Construction modulaire** (`src/build.js`) : fondations (bois, pierre), planchers, murs (rondins, planches, pierre, fenêtre, porte), portes, escaliers, toits, piquets, clôtures, portails. Grille de 3 m avec points d'accroche, aperçu vert/rouge, rotation, détection des chevauchements, démontage et déplacement (ressources rendues). On marche sur les planchers, on monte les escaliers, les murs arrêtent joueur et animaux.
+- **Mobilier** (`src/furniture.js`) : cuisine, salon, chambre, extérieur, en plusieurs styles. Meubles interactifs : rangements (coffres, armoire, frigo qui empêche la viande de s'abîmer), four / plaques / barbecue (cuisson), évier (eau), lit (dormir, réapparition), canapé et chaises (s'asseoir), lampes (lumière), télévision, console avec un jeu du serpent, potager, mangeoire, porte de garage.
+- Tout est sauvegardé, y compris le contenu des rangements.
+
 ## Performances
 
 - Trois niveaux (Rapide, Équilibré, Beau), choisis automatiquement selon l'appareil.
@@ -33,7 +39,11 @@ Jeu de survie en 3D dans le navigateur : une île générée au hasard, un cycle
 | `src/sky.js` | Ciel, jour/nuit, lumières, nuages |
 | `src/props.js` | Arbres, rochers, buissons, objets au sol, herbe |
 | `src/creatures.js` | Cerfs et loups |
-| `src/structures.js` | Feux de camp et abris |
+| `src/structures.js` | Feux de camp, abris, canoë |
+| `src/build.js` | Système de construction |
+| `src/furniture.js` | Mobilier et interactions |
+| `src/fish.js` | Vie sous-marine |
+| `src/post.js`, `src/reflection.js` | Image : réfraction, rayons, halo, brume, reflets |
 | `src/player.js` | Déplacements, nage, survie, outil en main |
 | `src/items.js` | Objets et recettes |
 | `src/input.js`, `src/ui.js`, `src/audio.js` | Commandes, interface, sons |

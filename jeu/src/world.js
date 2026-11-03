@@ -284,6 +284,16 @@ export class World {
     }
   }
 
+  // Dégage l'herbe sous une construction (fondation, plancher posé au sol)
+  clearGround(x0, z0, x1, z1) {
+    if (!this.heightTex) return;
+    const V = this.V, data = this.heightTex.image.data, zero = THREE.DataUtils.toHalfFloat(0);
+    const i0 = Math.max(0, Math.floor((x0 + this.half) / this.step)), i1 = Math.min(this.N, Math.ceil((x1 + this.half) / this.step));
+    const j0 = Math.max(0, Math.floor((z0 + this.half) / this.step)), j1 = Math.min(this.N, Math.ceil((z1 + this.half) / this.step));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) data[(j * V + i) * 4 + 1] = zero;
+    this.heightTex.needsUpdate = true;
+  }
+
   // Texture R = hauteur, G = densité d'herbe, B = ruisseau, A = canopée. Utilisée par le terrain, l'herbe et l'eau.
   buildHeightTexture() {
     const V = this.V;

@@ -251,6 +251,9 @@ export class BuildSystem {
     this.ghostMatOk = new THREE.MeshBasicMaterial({ color: 0x5ee08a, transparent: true, opacity: 0.38, depthWrite: false });
     this.ghostMatBad = new THREE.MeshBasicMaterial({ color: 0xe05a4a, transparent: true, opacity: 0.38, depthWrite: false });
     this.extraDefs = {};          // mobilier (ajouté à l'étape 5)
+    // Lumières des lampes : nombre fixe (pas de recompilation des shaders), données aux lampes allumées les plus proches
+    this.lampPool = [0, 1, 2, 3].map(() => { const l = new THREE.PointLight(0xffd29a, 0, 12, 1.6); scene.add(l); return l; });
+    this.time = 0;
   }
 
   def(id) { return PIECES[id] || this.extraDefs[id]; }
@@ -416,6 +419,17 @@ export class BuildSystem {
     info.group.traverse((o) => { if (o.isMesh) { o.userData.owner = piece; this.meshes.push(o); } });
     if (d.door && state.open) this.setDoor(piece, true, true);
     if (d.onAdd) d.onAdd(piece, this);
+    // Sol construit près du terrain : plus d'herbe ni de petites plantes dessous
+    if (info.walk.length && piece.pos.y - this.world.heightAt(pos.x, pos.z) < 2.5) {
+      let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9;
+      for (const b of piece.wboxes) { x0 = Math.min(x0, b.min[0]); z0 = Math.min(z0, b.min[2]); x1 = Math.max(x1, b.max[0]); z1 = Math.max(z1, b.max[2]); }
+      if (x0 < x1) {
+        this.world.clearGround(x0, z0, x1, z1);
+        this.props.query((x0 + x1) / 2, (z0 + z1) / 2, Math.max(x1 - x0, z1 - z0), (id, q) => {
+          if (q.alive && !q.r0 && q.x > x0 - 0.3 && q.x < x1 + 0.3 && q.z > z0 - 0.3 && q.z < z1 + 0.3) { q.alive = false; q.respawnAt = 1e12; this.props.dirty = true; }
+        });
+      }
+    }
     this.pieces.push(piece);
     return piece;
   }
@@ -453,7 +467,22 @@ export class BuildSystem {
     if (instant && piece.info.pivot) piece.info.pivot.rotation.y = piece.doorTarget;
   }
 
-  animate(dt) {
+  animate(dt, camPos) {
+    this.time += dt;
+    if (this.tvTick && Math.floor(this.time * 8) !== Math.floor((this.time - dt) * 8)) this.tvTick(this.time);
+    if (camPos) {
+      const lit = [];
+      for (const p of this.pieces) { const d = this.def(p.type); if (d.light && p.state.on) lit.push(p); }
+      lit.sort((a, b) => a.pos.distanceToSquared(camPos) - b.pos.distanceToSquared(camPos));
+      this.lampPool.forEach((l, i) => {
+        const p = lit[i];
+        if (!p || p.pos.distanceTo(camPos) > 90) { l.intensity = 0; return; }
+        const o = this.def(p.type).light.offset, c = Math.cos(p.rot), s = Math.sin(p.rot);
+        l.position.set(p.pos.x + o[0] * c + o[2] * s, p.pos.y + o[1], p.pos.z - o[0] * s + o[2] * c);
+        l.distance = this.def(p.type).light.range;
+        l.intensity = 6;
+      });
+    }
     for (const p of this.pieces) {
       if (p.info.pivot && p.doorTarget !== undefined) {
         const r = p.info.pivot.rotation;

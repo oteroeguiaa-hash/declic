@@ -14,6 +14,7 @@ import { Post } from "./post.js";
 import { Reflection } from "./reflection.js";
 import { Fish } from "./fish.js";
 import { BuildSystem, PIECES, BUILD_CATS } from "./build.js";
+import { registerFurniture } from "./furniture.js";
 
 const SAVE_KEY = "lisiere-save-v6";        // v6 : forêts variées, montagnes et rochers refaits
 const OLD_SAVE_KEYS = ["lisiere-save-v5", "lisiere-save-v4", "lisiere-save-v3", "lisiere-save-v2", "lisiere-save-v1"];
@@ -176,6 +177,7 @@ class Game {
     this.build = new BuildSystem(this.scene, this.world, this.props);
     this.structures.build = this.build;
     this.creatures.build = this.build;
+    registerFurniture(this.build, this);
     this.player = new Player(this.camera, this.world, this.props, this.structures);
     this.inv = new Inventory();
     this.input = new Input(canvas);
@@ -328,6 +330,8 @@ class Game {
          <kbd>Clic</kbd> frapper · <kbd>E</kbd> ou <kbd>clic droit</kbd> ramasser, boire, cuire · <kbd>Tab</kbd> sac · <kbd>B</kbd> construire · <kbd>1</kbd>–<kbd>6</kbd> ou molette : outil · <kbd>F</kbd> manger · <kbd>Échap</kbd> pause</p>`;
     $("closeBag").onclick = () => this.toggleBag(false);
     $("closeBuild").onclick = () => this.toggleBuildMenu(false);
+    $("closeStorage").onclick = () => this.closeStorage();
+    $("storageAll").onchange = (e) => (this.storageAll = e.target.checked);
     // Barre d'outils : toucher / cliquer un emplacement sélectionne l'outil
     const pickSlot = (e) => {
       const slot = e.target.closest(".slot");
@@ -340,7 +344,7 @@ class Game {
     $("btnRespawn").onclick = () => this.respawn();
     $("btnPause").addEventListener("touchstart", (e) => { e.preventDefault(); this.pause(); });
     this.input.onLockChange = (locked) => {
-      if (!locked && this.state === "play" && !this.bagOpen) this.pause();
+      if (!locked && this.state === "play" && !this.bagOpen && !this.buildMenuOpen && !this.storageOpen && !this.arcadeOpen) this.pause();
     };
     this.updateHomeInfo();
   }
@@ -406,6 +410,122 @@ class Game {
     $("menuTag").textContent = "Pause · partie sauvegardée";
     this.save();
     this.showMenu();
+  }
+
+  // ---------- Mobilier ----------
+  // Rangement (coffre, armoire, réfrigérateur…) : clic sur un objet du sac = déposer, sur le contenu = prendre
+  openStorage(piece, cap, filter) {
+    this.storage = { piece, cap, filter };
+    this.storageOpen = true;
+    $("storage").classList.remove("hidden");
+    this.input.exitLock();
+    this.renderStorage();
+  }
+  closeStorage() {
+    this.storageOpen = false;
+    $("storage").classList.add("hidden");
+    if (this.state === "play") this.input.requestLock();
+    this.save();
+  }
+  renderStorage() {
+    const { piece, cap, filter } = this.storage, st = piece.state;
+    st.items = st.items || {};
+    const used = Object.values(st.items).reduce((a, b) => a + b, 0);
+    const d = this.build.def(piece.type);
+    $("storageTitle").textContent = `${d.icon} ${d.name} — ${used}/${cap}`;
+    const cell = (id, n, side) => `<div class="item use" data-id="${id}" data-side="${side}"><span class="n">${n}</span><span class="ic">${ITEMS[id].icon}</span>${ITEMS[id].name}</div>`;
+    const bag = Object.entries(this.inv.items).filter(([id, n]) => n > 0 && !ITEMS[id].tool && (!filter || filter(id)));
+    $("storageBag").innerHTML = bag.length ? bag.map(([id, n]) => cell(id, n, "bag")).join("") : `<p class="empty">${filter ? "Rien à ranger ici (aliments uniquement)." : "Ton sac est vide."}</p>`;
+    const inside = Object.entries(st.items).filter(([, n]) => n > 0);
+    $("storageBox").innerHTML = inside.length ? inside.map(([id, n]) => cell(id, n, "box")).join("") : `<p class="empty">Vide.</p>`;
+    document.querySelectorAll("#storage .item").forEach((el) => el.addEventListener("click", (e) => {
+      const id = el.dataset.id, all = e.shiftKey || this.storageAll;
+      if (el.dataset.side === "bag") {
+        const room = cap - Object.values(st.items).reduce((a, b) => a + b, 0);
+        const n = Math.min(all ? this.inv.count(id) : 1, room);
+        if (n <= 0) { this.ui.toast("C'est plein.", true); return; }
+        this.inv.remove(id, n); st.items[id] = (st.items[id] || 0) + n;
+      } else {
+        const n = all ? st.items[id] : 1;
+        st.items[id] -= n; if (st.items[id] <= 0) delete st.items[id];
+        this.inv.add(id, n);
+      }
+      this.sounds.pickup();
+      this.renderStorage();
+    }));
+  }
+
+  // S'asseoir (canapé, chaise) : on récupère plus vite ; bouger pour se lever
+  sitOn(piece, h) {
+    const p = this.player;
+    p.seat = { x: piece.pos.x, y: piece.pos.y + h, z: piece.pos.z, yaw: piece.rot + Math.PI };
+    p.yaw = p.seat.yaw; p.pitch = -0.05;
+    this.ui.toast("Tu t'assois. Avance pour te lever.");
+  }
+
+  // Mangeoire : attire du gibier près d'elle
+  feederTick(dt) {
+    this.feederT = (this.feederT || 0) - dt;
+    if (this.feederT > 0) return;
+    this.feederT = 15;
+    for (const p of this.build.pieces) {
+      if (p.type !== "mangeoire" || !(p.state.food > 0)) continue;
+      if (p.pos.distanceTo(this.player.pos) > 160 || p.pos.distanceTo(this.player.pos) < 12) continue;
+      if (this.creatures.list.filter((c) => !c.dead && c.pos.distanceTo(p.pos) < 40).length >= 4) continue;
+      const a = Math.random() * Math.PI * 2, r = 8 + Math.random() * 8;
+      const c = this.creatures.create(Math.random() < 0.6 ? "deer" : "rabbit", p.pos.x + Math.cos(a) * r, p.pos.z + Math.sin(a) * r);
+      if (c) { c.state = "graze"; c.timer = 20; p.state.food--; }
+    }
+  }
+
+  // Console : petit jeu du serpent
+  openArcade() {
+    this.arcadeOpen = true;
+    $("arcade").classList.remove("hidden");
+    this.input.exitLock();
+    const cv = $("arcadeCanvas"), g = cv.getContext("2d"), N = 20, C = cv.width / N;
+    let snake = [[10, 10], [9, 10], [8, 10]], dir = [1, 0], next = [1, 0], food = [15, 10], score = 0, over = false, acc = 0, last = performance.now();
+    this.arcadeBest = this.arcadeBest || 0;
+    const place = () => { do { food = [Math.floor(Math.random() * N), Math.floor(Math.random() * N)]; } while (snake.some(([x, y]) => x === food[0] && y === food[1])); };
+    const key = (e) => {
+      const m = { ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] }[e.code];
+      if (m && (m[0] !== -dir[0] || m[1] !== -dir[1])) { next = m; e.preventDefault(); }
+      if (e.code === "Escape") close();
+      if (over && (e.code === "Space" || e.code === "Enter")) restart();
+    };
+    let sx = 0, sy = 0;
+    const ts = (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; if (over) restart(); };
+    const te = (e) => { const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; if (Math.hypot(dx, dy) < 20) return; key({ code: Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "ArrowRight" : "ArrowLeft") : (dy > 0 ? "ArrowDown" : "ArrowUp"), preventDefault() {} }); };
+    const restart = () => { snake = [[10, 10], [9, 10], [8, 10]]; dir = [1, 0]; next = [1, 0]; score = 0; over = false; place(); };
+    const draw = () => {
+      g.fillStyle = "#0e1a12"; g.fillRect(0, 0, cv.width, cv.height);
+      g.fillStyle = "#e05a4a"; g.fillRect(food[0] * C + 3, food[1] * C + 3, C - 6, C - 6);
+      snake.forEach(([x, y], i) => { g.fillStyle = i ? "#7ad46a" : "#c8f0a0"; g.fillRect(x * C + 1, y * C + 1, C - 2, C - 2); });
+      g.fillStyle = "#f3efe6"; g.font = "bold 16px system-ui"; g.fillText(`Score ${score} · Record ${this.arcadeBest}`, 8, 20);
+      if (over) { g.fillStyle = "rgba(0,0,0,0.6)"; g.fillRect(0, 0, cv.width, cv.height); g.fillStyle = "#fff"; g.font = "bold 24px system-ui"; g.textAlign = "center"; g.fillText("Perdu !", cv.width / 2, cv.height / 2 - 6); g.font = "14px system-ui"; g.fillText("Espace ou toucher pour rejouer", cv.width / 2, cv.height / 2 + 20); g.textAlign = "left"; }
+    };
+    const loop = (t) => {
+      if (!this.arcadeOpen) return;
+      acc += t - last; last = t;
+      while (acc > 120 && !over) {
+        acc -= 120; dir = next;
+        const h = [(snake[0][0] + dir[0] + N) % N, (snake[0][1] + dir[1] + N) % N];
+        if (snake.some(([x, y]) => x === h[0] && y === h[1])) { over = true; this.arcadeBest = Math.max(this.arcadeBest, score); break; }
+        snake.unshift(h);
+        if (h[0] === food[0] && h[1] === food[1]) { score++; this.sounds.pickup(); place(); } else snake.pop();
+      }
+      if (over) acc = 0;
+      draw();
+      requestAnimationFrame(loop);
+    };
+    const close = () => {
+      this.arcadeOpen = false; $("arcade").classList.add("hidden");
+      removeEventListener("keydown", key, true); cv.removeEventListener("touchstart", ts); cv.removeEventListener("touchend", te);
+      if (this.state === "play") this.input.requestLock();
+    };
+    addEventListener("keydown", key, true); cv.addEventListener("touchstart", ts, { passive: true }); cv.addEventListener("touchend", te, { passive: true });
+    $("arcadeClose").onclick = close;
+    place(); requestAnimationFrame(loop);
   }
 
   // ---------- Construction ----------
@@ -538,7 +658,7 @@ class Game {
   }
 
   quickEat() {
-    for (const id of ["viande_cuite", "noisettes", "baies", "viande_crue"]) {
+    for (const id of ["viande_cuite", "legumes", "noisettes", "baies", "viande_crue"]) {
       if (this.inv.count(id) > 0) { this.useItem(id); return; }
     }
     this.ui.toast("Tu n'as rien à manger.", true);
@@ -831,7 +951,13 @@ class Game {
   advanceTime(dh) {
     this.hours += dh;
     this.totalHours += dh;
-    while (this.hours >= 24) { this.hours -= 24; this.day++; this.ui.toast(`☀️ Jour ${this.day}`); }
+    while (this.hours >= 24) {
+      this.hours -= 24; this.day++; this.ui.toast(`☀️ Jour ${this.day}`);
+      // La viande se gâte dans le sac (pas dans le réfrigérateur)
+      let lost = 0;
+      for (const id of ["viande_crue", "viande_cuite"]) { const n = this.inv.count(id); const k = Math.ceil(n / 3); if (k) { this.inv.remove(id, k); lost += k; } }
+      if (lost) this.ui.toast(`🤢 ${lost} morceau${lost > 1 ? "x" : ""} de viande s'est gâté. Range-la au réfrigérateur.`, true);
+    }
   }
 
   respawn() {
@@ -950,7 +1076,8 @@ class Game {
       }
       if (!tools.includes(this.tool)) this.selectTool("main");
 
-      const menu = this.bagOpen || this.buildMenuOpen;
+      const menu = this.bagOpen || this.buildMenuOpen || this.storageOpen || this.arcadeOpen;
+      if (input.was("Escape") && this.storageOpen) this.closeStorage();
       if (menu) { input.consumeLook(); input.move.x = input.move.y = 0; }
       const frozenInput = menu ? { consumeLook: () => ({ x: 0, y: 0 }), axis: () => ({ x: 0, y: 0 }), sprint: false, crouch: false, jump: false } : input;
       p.update(dt, frozenInput, ctx);
@@ -970,7 +1097,8 @@ class Game {
         if (input.was("KeyE")) this.interact(target);
       }
 
-      this.build.animate(dt);
+      this.build.animate(dt, this.camera.position);
+      this.feederTick(dt);
       this.creatures.update(dt, p, {
         night: this.isNight(), day: this.day, fires: this.structures.fires, diff: this.diff,
         onAttack: (dmg, c) => {
