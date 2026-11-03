@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { mergeGeometries, mergeVertices } from "../vendor/addons/BufferGeometryUtils.js";
 import { mulberry32, fbm, smoothstep, createNoise2D } from "./noise.js";
-import { makeAtlas, makeBroadleaf, makeConifer, makeTallBroadleaf, makeScotsPine, makeLeafBush, makeFern, makeLog, makeTreeImpostor, makeVegetationMaterial, vegUniforms } from "./trees.js";
+import { makeAtlas, makeBroadleaf, makeConifer, makeTallBroadleaf, makeScotsPine, makeLeafBush, makeFern, makeLog, makeTreeImpostor, makeReeds, makeKelp, makeVegetationMaterial, vegUniforms } from "./trees.js";
 
 // ---------- Fabrication des modèles ----------
 
@@ -105,10 +105,15 @@ export const PROP_TYPES = {
   flint: { kind: "pickup", hp: 1, radius: 0, near: 45, maxDist: 45, center: 0.08, name: "Pierre" },
   fern:  { kind: "decor", hp: 1, radius: 0, near: 55, maxDist: 60, center: 0.35, name: "Fougère" },
   log:   { kind: "log", hp: 3, radius: 0, near: 70, maxDist: 150, center: 0.3, name: "Tronc couché" },
+  reed:  { kind: "decor", hp: 1, radius: 0, near: 70, maxDist: 90, center: 0.6, name: "Roseaux" },
+  kelp:  { kind: "decor", hp: 1, radius: 0, near: 45, maxDist: 55, center: 1.0, name: "Algues" },
 };
 const CANDIDATES = 750000; // même nombre quelle que soit la qualité : l'île est identique partout
 
 const CELL = 16;
+// Teintes d'automne du feuillage (multipliées à la luminance des feuilles)
+const TINTS = [null, [1.25, 0.55, 0.18], [1.2, 0.3, 0.14], [1.15, 0.92, 0.3]];
+const WHITE = [1, 1, 1];
 
 export class Props {
   constructor(scene, world, quality, seed, renderer) {
@@ -175,7 +180,14 @@ export class Props {
     for (let i = 0; i < CANDIDATES; i++) {
       const x = (rand() * 2 - 1) * R, z = (rand() * 2 - 1) * R;
       const h = W.heightAt(x, z);
-      if (h < 2.2) continue;
+      if (h < 2.2) {
+        // Marais : roseaux au bord et dans les mares ; sous l'eau : algues et rochers
+        const bi = W.biomeAt(x, z), wl = W.waterLevelAt(x, z);
+        if (bi.w > 0.3 && h > -0.8 && h < 1.6) { if (rand() < 0.55 * bi.w) this.add("reed", x, z, 0.8 + rand() * 0.5, rand); }
+        else if (h < -1.5 && h > -14 && wl - h > 1.5 && rand() < 0.1) this.add("kelp", x, z, 0.7 + rand() * 0.7, rand);
+        else if (h < -1 && h > -14 && rand() < 0.012 && !tooClose(x, z, 3)) this.add("rock", x, z, 0.6 + rand() * 1.4, rand);
+        continue;
+      }
       const st = W.streamAt(x, z);
       const r = rand();
       if (st > 0.02) {
@@ -184,6 +196,7 @@ export class Props {
         continue;
       }
       const slope = W.slopeAt(x, z);
+      const bi = W.biomeAt(x, z);
       const moist = W.moisture(x, z);
       const forest = fbm(forestN, x / 180, z / 180, 3) * 0.5 + 0.5;
       const thicket = fbm(thickN, x / 110, z / 110, 2);
@@ -211,21 +224,25 @@ export class Props {
       if (rand() < 0.012 && slope < 0.3) { this.add("flint", x, z, 0.8 + rand() * 0.6, rand); continue; }
 
       // Arbres : forêt presque continue, avec de rares clairières, des rives et des sommets plus dégagés
-      if (h > 3.2 && h < 62 && slope < 0.34) {
+      if (h > 3.2 && h < 135 && slope < (bi.m > 0.3 ? 0.52 : 0.36)) {
         const clearing = smoothstep(0.64, 0.74, forest) * (bank ? 0.3 : 1);
-        const dens = (1 - clearing) * smoothstep(3.2, 6.5, h) * (1 - smoothstep(42, 62, h)) * (0.82 + 0.18 * moist);
+        // limite des arbres vers 120 m ; prairies presque sans arbres ; marais clairsemés
+        const dens = (1 - clearing) * smoothstep(3.2, 6.5, h) * (1 - smoothstep(110, 132, h)) * (0.82 + 0.18 * moist) * (1 - 0.94 * bi.p) * (1 - 0.7 * bi.w);
         if (r < dens * 0.97) {
           // Forêt tempérée : hêtres, chênes et pins sylvestres de 20 à 30 m ; épicéas en altitude
           let t;
           const u = rand();
-          if (rand() < smoothstep(26, 40, h) * 0.85) t = "pine";
+          if (rand() < Math.max(smoothstep(26, 40, h) * 0.85, bi.m * smoothstep(12, 30, h))) t = "pine";
+          else if (bi.p > 0.4 && rand() < 0.75) t = "scots";
+          else if (bi.w > 0.3 && rand() < 0.7) t = "birch";
           else if (((moist > 0.62 && u < 0.25) || (bank && u < 0.45))) t = "birch";
           else if (moist < 0.32 && u < 0.35) t = "scots";
           else t = u < 0.55 ? "beech" : u < 0.88 ? "oak" : "scots";
           const space = { beech: 7.5, oak: 8.2, scots: 6, pine: 4.6, birch: 4 }[t];
           const sc = t === "pine" ? 1.9 + rand() * 0.6 : t === "birch" ? 1.6 + rand() * 0.6 : 0.82 + rand() * 0.32;
           if (!tooClose(x, z, space)) {
-            this.add(t, x, z, sc, rand);
+            const tid = this.add(t, x, z, sc, rand);
+            if (bi.a > 0.2 && t !== "pine" && t !== "scots" && rand() < bi.a * 0.95) this.list[tid].tint = 1 + Math.floor(rand() * 3);
             // Sous-bois
             const r2 = rand();
             if (r2 < 0.16) { const [sx, sz] = near(x, z, 4); if (dry(sx, sz)) this.add("stick", sx, sz, 0.8 + rand() * 0.4, rand); }
@@ -252,7 +269,7 @@ export class Props {
         }
       }
       // Buissons (plus nombreux au bord des ruisseaux)
-      if (h > 3 && h < 40 && slope < 0.25 && r < 0.06 * (0.4 + moist) * (bank ? 3 : 1)) {
+      if (h > 3 && h < 60 && slope < 0.4 && r < 0.06 * (0.4 + moist) * (bank ? 3 : 1) * (1 + 1.5 * bi.p + 1.5 * bi.w)) {
         if (!tooClose(x, z, 2)) this.add("bush", x, z, 0.8 + rand() * 0.5, rand);
         continue;
       }
@@ -281,6 +298,8 @@ export class Props {
       bush: [makeLeafBush(true)],
       bushEmpty: [makeLeafBush(false)],
       fern: [makeFern(5)],
+      reed: [makeReeds(13)],
+      kelp: [makeKelp(17)],
       log: [makeLog(3)],
       stick: [makeStick()],
       flint: [makeFlint()],
@@ -300,6 +319,10 @@ export class Props {
         im.castShadow = lod === 0 && kind !== "pickup" && kind !== "decor";
         im.receiveShadow = true;
         im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        if (m === mat) {
+          im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
+          im.instanceColor.setUsage(THREE.DynamicDrawUsage);
+        }
         this.scene.add(im);
         return im;
       });
@@ -343,12 +366,14 @@ export class Props {
       const im = meshes[lod];
       const n = counts[key][lod]++;
       im.instanceMatrix.array.set(this.matrices.subarray(i * 16, i * 16 + 16), n * 16);
+      if (im.instanceColor) im.instanceColor.array.set(p.tint ? TINTS[p.tint] : WHITE, n * 3);
       if (lod === 0) this.slot[i] = n;
     }
     for (const k in this.meshes) {
       this.meshes[k].forEach((im, lod) => {
         im.count = counts[k][lod];
         im.instanceMatrix.needsUpdate = true;
+        if (im.instanceColor) im.instanceColor.needsUpdate = true;
       });
     }
     this.lastBuild.copy(cam);

@@ -14,7 +14,7 @@ export const reflUniforms = {
 export const REFL_PARS = `uniform sampler2D tRefl; uniform mat4 uReflMat; uniform float uReflOn; uniform float uReflLevel;`;
 export const REFL_APPLY = `
   {
-    float on = uReflOn * (1.0 - smoothstep(0.35, 1.2, abs(vWPos.y - uReflLevel)));
+    float on = uReflOn * (1.0 - smoothstep(0.35, 1.2, abs(vWPos.y - uReflLevel))) * step(vWPos.y, cameraPosition.y);
     if (on > 0.001) {
       vec4 rp = uReflMat * vec4(vWPos, 1.0);
       vec2 ruv = rp.xy / rp.w + nxy * 0.035;

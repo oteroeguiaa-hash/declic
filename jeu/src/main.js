@@ -12,9 +12,10 @@ import { UI } from "./ui.js";
 import { ITEMS, TOOLS, RECIPES, TOOL_SLOTS, Inventory } from "./items.js";
 import { Post } from "./post.js";
 import { Reflection } from "./reflection.js";
+import { Fish } from "./fish.js";
 
-const SAVE_KEY = "lisiere-save-v4";        // v4 : grande forêt de feuillus, rivières navigables
-const OLD_SAVE_KEYS = ["lisiere-save-v3", "lisiere-save-v2", "lisiere-save-v1"];
+const SAVE_KEY = "lisiere-save-v5";        // v5 : biomes (montagnes, prairies, marais, automne), monde sous-marin
+const OLD_SAVE_KEYS = ["lisiere-save-v4", "lisiere-save-v3", "lisiere-save-v2", "lisiere-save-v1"];
 const SETTINGS_KEY = "lisiere-settings";
 const $ = (id) => document.getElementById(id);
 
@@ -160,6 +161,7 @@ class Game {
     this.scene.add(this.world.buildWater(waterN));
     this.scene.add(this.world.buildStreams(waterN));
     this.grass = new Grass(this.scene, this.world, Q);
+    this.fish = new Fish(this.scene, this.world, Q);
 
     await step(65, "Le ciel se lève…");
     this.env = new Environment(this.scene, renderer, Q);
@@ -253,7 +255,7 @@ class Game {
     const vd = VIEW[settings.viewDist] || baseView;
     if (vd !== Q.viewDistance) {
       Q.viewDistance = vd;
-      this.scene.fog.near = vd * 0.25; this.scene.fog.far = vd;
+      this.scene.fog.near = vd * 0.35; this.scene.fog.far = vd * 1.55;
       this.props.dirty = true;
     }
   }
@@ -319,6 +321,15 @@ class Game {
       : `<p><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> ou <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> se déplacer · <kbd>Maj</kbd> courir · <kbd>Espace</kbd> sauter · <kbd>C</kbd> s'accroupir<br>
          <kbd>Clic</kbd> frapper · <kbd>E</kbd> ou <kbd>clic droit</kbd> ramasser, boire, cuire · <kbd>Tab</kbd> sac · <kbd>1</kbd>–<kbd>6</kbd> ou molette : outil · <kbd>F</kbd> manger · <kbd>Échap</kbd> pause</p>`;
     $("closeBag").onclick = () => this.toggleBag(false);
+    // Barre d'outils : toucher / cliquer un emplacement sélectionne l'outil
+    const pickSlot = (e) => {
+      const slot = e.target.closest(".slot");
+      if (!slot || this.state !== "play") return;
+      e.preventDefault(); e.stopPropagation();
+      this.selectTool(slot.dataset.tool);
+    };
+    $("hotbar").addEventListener("touchstart", pickSlot, { passive: false });
+    $("hotbar").addEventListener("mousedown", pickSlot);
     $("btnRespawn").onclick = () => this.respawn();
     $("btnPause").addEventListener("touchstart", (e) => { e.preventDefault(); this.pause(); });
     this.input.onLockChange = (locked) => {
@@ -557,7 +568,7 @@ class Game {
     }
     if (def.kind === "bush") return [`<b>${p.state ? "Buisson à baies" : "Buisson"}</b><small>${p.state ? `${use} Cueillir` : "Les baies repousseront"}</small>`, !!p.state];
     if (def.kind === "pickup") return [`<b>${def.name}</b><small>${use} Ramasser</small>`, true];
-    if (def.kind === "decor") return [`<b>Fougère</b><small>${use} Cueillir (fibre)</small>`, true];
+    if (def.kind === "decor") return [`<b>${def.name}</b><small>${use} Cueillir (fibre)</small>`, true];
     if (def.kind === "log") {
       const ok = TOOLS[this.tool].tree > 0;
       return [`<b>Tronc couché</b><small>${ok ? `${hit} Débiter (bois)` : "Il faut une hache"}</small>`, ok];
@@ -893,7 +904,10 @@ class Game {
 
     this.ui.updateHUD(p, this.hours, this.day, settings.fps ? this.fpsText : null);
     this.resize(); // filet de sécurité : rotation d'écran en mode appli (iOS)
-    this.refl.render(this.scene, this.camera, settings.reflections ? this.nearWaterLevel(dt) : null);
+    this.env.sunInfo.under = this.state === "play" && !!p.underwater;
+    this.env.sunInfo.day = this.env.dayFactor;
+    if (this.fish) this.fish.update(dt, this.camera.position, this.env.dayFactor);
+    this.refl.render(this.scene, this.camera, settings.reflections && !p.underwater ? this.nearWaterLevel(dt) : null);
     this.post.render(this.scene, this.camera, this.env.sunInfo);
     input.endFrame();
 

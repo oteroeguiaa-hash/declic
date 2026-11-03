@@ -6,7 +6,7 @@ const $ = (id) => document.getElementById(id);
 export class UI {
   constructor() {
     this.bars = {
-      health: $("sHealth"), food: $("sFood"), water: $("sWater"), stamina: $("sStamina"), warmth: $("sWarmth"),
+      health: $("sHealth"), food: $("sFood"), water: $("sWater"), stamina: $("sStamina"), warmth: $("sWarmth"), air: $("sAir"),
     };
     this.clock = $("clock");
     this.target = $("target");
@@ -42,6 +42,7 @@ export class UI {
       el.classList.toggle("low", v < 22 && k !== "stamina");
     }
     this.bars.warmth.style.display = p.warmth < 99 ? "" : "none";
+    this.bars.air.style.display = p.air < 99.5 ? "" : "none";
     const h = Math.floor(hours), m = Math.floor((hours - h) * 60);
     const icon = hours >= 6 && hours < 20.5 ? "☀️" : "🌙";
     this.clock.textContent = `${icon} Jour ${day} · ${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
@@ -63,7 +64,7 @@ export class UI {
     const key = tools.join(",") + "|" + current;
     if (key === this.hotbarKey) return;
     this.hotbarKey = key;
-    this.hotbar.innerHTML = tools.map((t, i) => `<div class="slot ${t === current ? "sel" : ""}" title="${TOOLS[t].name}"><kbd>${i + 1}</kbd>${TOOLS[t].icon}${TOOLS[t].tag ? `<em class="tag-${TOOLS[t].tag}">${TOOLS[t].tag}</em>` : ""}</div>`).join("");
+    this.hotbar.innerHTML = tools.map((t, i) => `<div class="slot ${t === current ? "sel" : ""}" data-tool="${t}" title="${TOOLS[t].name}"><kbd>${i + 1}</kbd>${TOOLS[t].icon}${TOOLS[t].tag ? `<em class="tag-${TOOLS[t].tag}">${TOOLS[t].tag}</em>` : ""}</div>`).join("");
   }
 
   toast(text, warn = false) {

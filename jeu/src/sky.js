@@ -61,7 +61,7 @@ export class Environment {
     this.hemi = new THREE.HemisphereLight(0xbfd8ff, 0x4a4030, 0.5);
     scene.add(this.hemi);
 
-    scene.fog = new THREE.Fog(FOG_DAY.clone(), quality.viewDistance * 0.25, quality.viewDistance);
+    scene.fog = new THREE.Fog(FOG_DAY.clone(), quality.viewDistance * 0.35, quality.viewDistance * 1.55);
 
     this.buildStars();
     this.buildMoon();

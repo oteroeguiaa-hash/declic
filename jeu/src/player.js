@@ -21,6 +21,7 @@ export class Player {
     this.water = 100;
     this.stamina = 100;
     this.warmth = 100;
+    this.air = 100;
     this.dead = false;
     this.sprinting = false;
     this.crouching = false;
@@ -196,9 +197,17 @@ export class Player {
     if (this.swimming && this.stamina <= 0) this.health -= dt * 6; // noyade
 
     if (this.swimming) {
+      // Nage en 3D : regarder vers le bas en avançant fait plonger, sinon on remonte doucement
       const surfaceY = wl - 1.35;
-      this.vel.y += (surfaceY - this.pos.y) * dt * 6 - this.vel.y * dt * 3;
-      if (input.jump) this.vel.y += dt * 6;
+      const below = surfaceY - this.pos.y;
+      if (ax.y > 0.1 && (this.pitch < -0.2 || below > 0.3)) {
+        const vyT = Math.sin(this.pitch) * speed * ax.y;
+        this.vel.y += (vyT - this.vel.y) * Math.min(1, dt * 4);
+      } else {
+        this.vel.y += ((surfaceY - this.pos.y) * 1.2 - this.vel.y) * Math.min(1, dt * 2);
+      }
+      if (input.jump) this.vel.y += dt * 9;
+      if (this.pos.y > surfaceY) this.pos.y += (surfaceY - this.pos.y) * Math.min(1, dt * 6);
       this.onGround = false;
     } else {
       if (this.onGround && input.jump && this.stamina > 8) {
@@ -263,7 +272,17 @@ export class Player {
     const bobAmt = (this.onGround ? Math.min(1, hs / 5) : 0) * (this.bobScale ?? 1);
     const cam = this.camera;
     cam.position.set(this.pos.x, this.pos.y + this.eyeY + Math.sin(this.bob * 2) * 0.045 * bobAmt, this.pos.z);
-    if (this.swimming) cam.position.y = Math.max(cam.position.y, wl + 0.25 + Math.sin(performance.now() * 0.002) * 0.06);
+    if (this.swimming) {
+      const g2 = this.world.heightAt(this.pos.x, this.pos.z);
+      if (this.pos.y < g2 - 0.2) { this.pos.y = g2 - 0.2; this.vel.y = Math.max(0, this.vel.y); }
+      if (this.pos.y > wl - 1.6) cam.position.y = Math.max(cam.position.y, wl + 0.25 + Math.sin(performance.now() * 0.002) * 0.06);
+      else cam.position.y = this.pos.y + this.eyeY;
+    }
+    // Air : on retient sa respiration sous l'eau (environ 25 s), puis on se noie
+    this.underwater = cam.position.y < wl - 0.05;
+    if (this.underwater) this.air = Math.max(0, this.air - dt * 4);
+    else this.air = Math.min(100, this.air + dt * 30);
+    if (this.air <= 0) this.health -= dt * 8;
     cam.rotation.order = "YXZ";
     cam.rotation.y = this.yaw;
     cam.rotation.x = this.pitch;

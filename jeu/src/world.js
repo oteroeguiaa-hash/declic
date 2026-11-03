@@ -1,7 +1,7 @@
 // Génération de l'île : relief, ruisseaux, sol, eau, carte des hauteurs pour les shaders.
 // Le terrain est découpé en morceaux (chunks) avec plusieurs niveaux de détail selon la distance.
 import * as THREE from "three";
-import { createNoise2D, fbm, smoothstep, lerp, clamp, mulberry32 } from "./noise.js";
+import { createNoise2D, fbm, ridged, smoothstep, lerp, clamp, mulberry32 } from "./noise.js";
 import { reflUniforms, REFL_PARS, REFL_APPLY } from "./reflection.js";
 
 export const WORLD_SIZE = 3500;      // mètres de côté (île 2,5 × plus grande)
@@ -24,7 +24,10 @@ export class World {
     this.nS = createNoise2D(seed + 67);
     this.nR = createNoise2D(seed + 79);
     this.nV = createNoise2D(seed + 97);
+    this.nM = createNoise2D(seed + 131);
+    this.nBio = createNoise2D(seed + 151);
     this._out = { h: 0, stream: 0, water: -1e3 };
+    this.treeDist = { value: 500 };
     this.buildHeights();
   }
 
@@ -43,21 +46,40 @@ export class World {
 
     const massif = smoothstep(0.25, 0.7, fbm(this.nB, x / 650 + 3.1, z / 650 - 1.7, 2) * 0.9 + 0.35);
     const mount = fbm(this.nB, wx / 300, wz / 300, 4) * 0.5 + 0.5;
-    h += Math.pow(mount, 2.2) * 62 * massif;
+    h += Math.pow(mount, 2.2) * 40 * massif;
     h += fbm(this.nE, x / 38, z / 38, 2) * 0.8;
+
+    // ---- Biomes ----
+    // Montagnes alpines : une ou deux chaînes, crêtes réalistes (bruit « ridged »), jusqu'à ~250 m
+    const mreg = fbm(this.nM, x / 1700 + 4.2, z / 1700 - 7.7, 2) * 0.5 + 0.5;
+    const M = smoothstep(0.56, 0.68, mreg) * smoothstep(0.84, 0.55, d);
+    if (M > 0) {
+      const r = ridged(this.nM, wx / 650, wz / 650, 6);
+      const broad = fbm(this.nM, x / 900 + 9, z / 900 - 3, 2) * 0.5 + 0.5;
+      const hm = 25 + broad * 70 + Math.pow(r, 1.7) * 240;
+      h = lerp(h, Math.max(h, hm), M * M * (3 - 2 * M));
+    }
+    // Prairies (vallées ouvertes), forêts d'automne, marais
+    const P = smoothstep(0.6, 0.68, fbm(this.nBio, x / 1100, z / 1100, 2) * 0.5 + 0.5) * (1 - M);
+    const A = smoothstep(0.6, 0.68, fbm(this.nBio, x / 1000 + 31, z / 1000 - 17, 2) * 0.5 + 0.5) * (1 - M) * (1 - P);
+    let Wm = smoothstep(0.6, 0.68, fbm(this.nBio, x / 700 - 51, z / 700 + 23, 2) * 0.5 + 0.5) * (1 - M) * (1 - massif) * smoothstep(0.55, 0.75, continental);
+    Wm *= 1 - smoothstep(0.45, 0.7, roll);
 
     // Lacs : seulement dans les creux de basse altitude, rives en pente douce (pas de cratère)
     const lakeN = fbm(this.nC, x / 330 + 21, z / 330 - 13, 2);
     // Le masque dépend du relief à grande échelle (plaines, hors massifs), pas de l'altitude locale :
     // sinon la cuvette se creuse d'autant plus vite que le terrain monte, et ça fait des falaises.
-    const lowland = (1 - massif) * (1 - smoothstep(0.45, 0.7, roll));
+    const lowland = (1 - massif) * (1 - smoothstep(0.45, 0.7, roll)) * (1 - M) * (1 - Wm);
     let lake = smoothstep(0.2, 0.5, lakeN) * smoothstep(0.8, 0.5, d) * lowland;
     lake = lake * lake * (3 - 2 * lake);
     h = lerp(h, -2.6, lake);
+    // Marais : terrain aplati juste autour du niveau de l'eau, avec des mares
+    if (Wm > 0) h = lerp(h, 0.3 + fbm(this.nE, x / 45 + 7, z / 45, 3) * 1.8, Wm);
     h = lerp(-14, h, continental);
     if (h > 0 && h < 3) h = h * h / 3 * 0.6 + h * 0.4;
     const b = this._b || (this._b = {});
     b.h = h; b.lake = lake; b.wx = wx; b.wz = wz; b.massif = massif; b.cont = continental; b.d = d;
+    b.mount = M; b.prairie = P; b.autumn = A; b.marsh = Wm;
     return b;
   }
 
@@ -66,6 +88,7 @@ export class World {
     const B = this.base(x, z);
     let h = B.h;
     const lake = B.lake, wx = B.wx, wz = B.wz, massif = B.massif, cont = B.cont, dN = B.d;
+    out.mount = B.mount; out.prairie = B.prairie; out.autumn = B.autumn; out.marsh = B.marsh;
     let stream = 0, water = -1e3;
     const region = smoothstep(-0.05, 0.25, fbm(this.nR, x / 900, z / 900, 2));
     if (region > 0 && h > 2.5 && h < 46) {
@@ -100,7 +123,7 @@ export class World {
     }
 
     // Grandes rivières navigables : 2 ou 3 sur l'île, dans des vallées boisées, jusqu'à la mer.
-    const rz = (1 - smoothstep(0.35, 0.7, massif)) * smoothstep(0.35, 0.7, cont);
+    const rz = (1 - smoothstep(0.35, 0.7, massif)) * smoothstep(0.35, 0.7, cont) * (1 - smoothstep(0.15, 0.45, out.mount)) * (1 - out.marsh);
     if (rz > 0) {
       const fr = (X, Z) => fbm(this.nV, X / 800, Z / 800, 2);
       const v = fr(wx, wz);
@@ -143,6 +166,7 @@ export class World {
     this.heights = new Float32Array(V * V);
     this.stream = new Float32Array(V * V);
     this.waterY = new Float32Array(V * V);
+    this.bio = new Uint8Array(V * V * 4);   // R montagne, G prairie, B marais, A automne
     const o = this._out;
     for (let j = 0; j < V; j++) {
       const z = -this.half + j * this.step;
@@ -151,6 +175,7 @@ export class World {
         this.sample(x, z, o);
         const k = j * V + i;
         this.heights[k] = o.h; this.stream[k] = o.stream; this.waterY[k] = o.water;
+        this.bio[k * 4] = o.mount * 255; this.bio[k * 4 + 1] = o.prairie * 255; this.bio[k * 4 + 2] = o.marsh * 255; this.bio[k * 4 + 3] = o.autumn * 255;
       }
     }
   }
@@ -170,6 +195,13 @@ export class World {
     const ha = H[j * V + i], hb = H[j * V + i + 1], hc = H[(j + 1) * V + i], hd = H[(j + 1) * V + i + 1];
     if (fx + fz <= 1) return ha + (hb - ha) * fx + (hc - ha) * fz;
     return hd + (hc - hd) * (1 - fx) + (hb - hd) * (1 - fz);
+  }
+
+  // Biomes à cet endroit (0..1) : { m: montagne, p: prairie, w: marais, a: automne }
+  biomeAt(x, z) {
+    const [i, j, fx, fz] = this._cell(x, z);
+    const k = ((j + (fz > 0.5 ? 1 : 0)) * this.V + i + (fx > 0.5 ? 1 : 0)) * 4, B = this.bio;
+    return { m: B[k] / 255, p: B[k + 1] / 255, w: B[k + 2] / 255, a: B[k + 3] / 255 };
   }
 
   streamAt(x, z) {
@@ -248,11 +280,14 @@ export class World {
         const h = this.heights[k];
         const s = this.slopeAt(x, z);
         const m = this.moisture(x, z);
-        let g = smoothstep(2.6, 4.0, h) * (1 - smoothstep(42, 56, h)) * (1 - smoothstep(0.12, 0.25, s));
-        g *= smoothstep(0.15, 0.55, m) * 0.85 + 0.15;
+        // Végétation partout, sauf dans l'eau, sur les vraies falaises et au-dessus de la limite alpine
+        const marsh = this.bio[k * 4 + 2] / 255, prairie = this.bio[k * 4 + 1] / 255;
+        const shore = Math.max(smoothstep(2.4, 3.6, h), smoothstep(0.25, 0.9, h) * marsh);
+        let g = shore * (1 - smoothstep(130, 152, h)) * (1 - smoothstep(0.45, 0.62, s));
+        g *= Math.min(1, (smoothstep(0.1, 0.5, m) * 0.6 + 0.4) * (1 + prairie * 0.6));
         g *= 1 - smoothstep(0.02, 0.15, this.stream[k]);
         const can = this.canopy ? this.canopy[k] : 0;
-        g *= 1 - 0.88 * can;
+        g *= 1 - 0.55 * can;
         data[k * 4] = toHalf(h);
         data[k * 4 + 1] = toHalf(g);
         data[k * 4 + 2] = toHalf(this.stream[k]);
@@ -268,6 +303,10 @@ export class World {
     const a = 1 / (this.step * V);
     const b = (this.half / this.step + 0.5) / V;
     this.hmTransform = new THREE.Vector2(a, b); // uv = pos * a + b
+    const bt = new THREE.DataTexture(this.bio, V, V, THREE.RGBAFormat);
+    bt.minFilter = bt.magFilter = THREE.LinearFilter;
+    bt.needsUpdate = true;
+    this.biomeTex = bt;
     return tex;
   }
 
@@ -333,9 +372,11 @@ export class World {
   }
 
   updateTerrain(cam, viewDistance, lodScale = 1) {
+    this.treeDist.value = viewDistance;
+    const showDist = viewDistance * 1.6;
     for (const c of this.chunks) {
       const d = Math.max(0, Math.hypot(c.cx - cam.x, c.cz - cam.z) - c.size * 0.71);
-      c.mesh.visible = d < viewDistance + 50 && !c.underwater;
+      c.mesh.visible = d < showDist + 50 && !c.underwater;
       if (!c.mesh.visible) continue;
       const k = d / lodScale;
       const lod = k < 70 ? 0 : k < 200 ? 1 : k < 420 ? 2 : k < 750 ? 3 : 4;
@@ -352,6 +393,8 @@ export class World {
       sh.uniforms.uHM = { value: this.hmTransform };
       sh.uniforms.uTexel = { value: 1 / this.V };
       sh.uniforms.uStep = { value: step };
+      sh.uniforms.tBiome = { value: this.biomeTex };
+      sh.uniforms.uTreeDist = this.treeDist;
       sh.vertexShader = sh.vertexShader
         .replace("#include <common>", "#include <common>\nuniform sampler2D tHeight; uniform vec2 uHM; uniform float uTexel; uniform float uStep;\nvarying vec3 vWPos;\nvarying vec3 vWN;")
         .replace("#include <beginnormal_vertex>", `
@@ -362,7 +405,7 @@ export class World {
         .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWPos = transformed;\nvWN = objectNormal;");
       sh.fragmentShader = sh.fragmentShader
         .replace("#include <common>", `#include <common>
-uniform sampler2D tDetail; uniform sampler2D tHeight; uniform vec2 uHM;
+uniform sampler2D tDetail; uniform sampler2D tHeight; uniform vec2 uHM; uniform sampler2D tBiome; uniform float uTreeDist;
 varying vec3 vWPos;
 varying vec3 vWN;
 vec3 srgb(vec3 c){ return pow(c, vec3(2.2)); }
@@ -375,12 +418,15 @@ vec3 terrainColor(){
   vec4 hm = texture2D(tHeight, vWPos.xz * uHM.x + uHM.y);
   float stream = hm.b;
   float canopy = hm.a;
+  vec4 bio = texture2D(tBiome, vWPos.xz * uHM.x + uHM.y);
   vec3 grass = mix(srgb(vec3(0.24,0.36,0.12)), srgb(vec3(0.40,0.43,0.17)), smoothstep(0.3,0.7,d2.r*0.6+d3.g*0.6));
   grass *= 0.75 + 0.5 * d1.g;
   vec3 dirt = srgb(vec3(0.33,0.29,0.18)) * (0.75 + 0.5 * d1.b);
   vec3 sand = srgb(vec3(0.80,0.72,0.54)) * (0.88 + 0.24 * d1.r);
   vec3 rock = srgb(vec3(0.46,0.44,0.41)) * (0.55 + 0.7 * d1.r * (0.6 + 0.4 * d2.g));
   vec3 mud = mix(srgb(vec3(0.28,0.24,0.17)), srgb(vec3(0.45,0.42,0.36)), smoothstep(0.45, 0.7, d1.r)) * (0.8 + 0.3 * d1.g);
+  grass = mix(grass, srgb(vec3(0.52, 0.50, 0.22)) * (0.8 + 0.4 * d1.g), bio.g * 0.55);      // prairie dorée
+  grass = mix(grass, srgb(vec3(0.24, 0.30, 0.12)) * (0.8 + 0.4 * d1.g), bio.b * 0.6);       // marais
   vec3 c = grass;
   c = mix(c, dirt, smoothstep(0.88, 0.96, d2.b * 0.8 + d1.r * 0.25 + d3.r * 0.2) * 0.6);
   // Herbe sèche par endroits (variations naturelles de la prairie)
@@ -388,6 +434,7 @@ vec3 terrainColor(){
   c = mix(c, srgb(vec3(0.26, 0.28, 0.12)) * (0.7 + 0.5 * d1.b), smoothstep(0.6, 0.8, d3.b) * 0.3);
   // Sous-bois : feuilles mortes, aiguilles et mousse sous les arbres
   vec3 leaves = mix(srgb(vec3(0.36, 0.22, 0.11)), srgb(vec3(0.48, 0.33, 0.17)), d1.r) * (0.75 + 0.4 * d1.b);
+  leaves = mix(leaves, mix(srgb(vec3(0.62, 0.30, 0.10)), srgb(vec3(0.70, 0.52, 0.16)), d2.r), bio.a * 0.8); // feuilles d'automne
   vec3 moss = mix(srgb(vec3(0.22, 0.38, 0.08)), srgb(vec3(0.36, 0.50, 0.12)), d1.g) * (0.8 + 0.3 * d1.r);
   vec3 litter = mix(leaves, moss, smoothstep(0.45, 0.62, d2.g * 0.7 + d1.b * 0.45));
   c = mix(c, litter, smoothstep(0.15, 0.65, canopy) * 0.9);
@@ -396,8 +443,16 @@ vec3 terrainColor(){
   float beach = 1.0 - smoothstep(1.4, 3.0 + d2.g * 1.6, h);
   c = mix(c, sand, beach);
   c = mix(c, sand * 0.55, 1.0 - smoothstep(-0.3, 0.5, h));
-  float rockAmt = smoothstep(0.30, 0.46, slope + (d1.g - 0.5) * 0.14) + smoothstep(58.0, 72.0, h + d2.r * 10.0);
+  // Roche seulement sur les vraies falaises (plus tôt en montagne), neige sur les sommets
+  float rockStart = mix(0.56, 0.42, bio.r);
+  float rockAmt = smoothstep(rockStart, rockStart + 0.14, slope + (d1.g - 0.5) * 0.12) + smoothstep(135.0, 160.0, h + d2.r * 20.0) * 0.6;
   c = mix(c, rock, clamp(rockAmt, 0.0, 1.0) * (1.0 - smoothstep(0.1, 0.3, stream)));
+  float snow = smoothstep(150.0, 175.0, h + (d2.r - 0.5) * 30.0) * (1.0 - smoothstep(0.62, 0.82, slope));
+  c = mix(c, srgb(vec3(0.92, 0.94, 0.98)) * (0.92 + 0.08 * d1.g), snow);
+  // Au-delà de la distance d'affichage des arbres, le sol prend la couleur de la forêt
+  float far = smoothstep(uTreeDist * 0.8, uTreeDist * 1.05, length(vWPos - cameraPosition));
+  vec3 forestCol = mix(srgb(vec3(0.16, 0.26, 0.10)), srgb(vec3(0.55, 0.30, 0.10)), bio.a * 0.7);
+  c = mix(c, forestCol * (0.8 + 0.3 * d2.g), far * smoothstep(0.2, 0.6, canopy) * 0.9);
   return c;
 }`)
         .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb = terrainColor();");
@@ -427,7 +482,7 @@ vec3 terrainColor(){
     geo.setIndex(idx);
     geo.computeVertexNormals();
     geo.computeBoundingSphere();
-    const mat = new THREE.MeshStandardMaterial({ color: 0x2a5a52, roughness: 0.14, metalness: 0, transparent: true, depthWrite: true });
+    const mat = new THREE.MeshStandardMaterial({ color: 0x2a5a52, roughness: 0.14, metalness: 0, transparent: true, depthWrite: true, side: THREE.DoubleSide });
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = this.waterUniforms.uTime;
       sh.uniforms.tHeight = { value: this.heightTex };
@@ -479,7 +534,7 @@ ${REFL_PARS}`)
   buildWater(waterNormalTex) {
     const geo = new THREE.PlaneGeometry(16000, 16000, 1, 1);
     geo.rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x1b4d5c, roughness: 0.06, metalness: 0.0, transparent: true, depthWrite: true });
+    const mat = new THREE.MeshStandardMaterial({ color: 0x1b4d5c, roughness: 0.06, metalness: 0.0, transparent: true, depthWrite: true, side: THREE.DoubleSide });
     const uniforms = { uTime: { value: 0 } };
     this.waterUniforms = uniforms;
     mat.onBeforeCompile = (sh) => {

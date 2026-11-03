@@ -448,6 +448,60 @@ export function makeTreeImpostor(kind) {
   return b.build();
 }
 
+// Roseaux de marais : touffe de tiges fines et quelques massettes brunes.
+export function makeReeds(seed = 13) {
+  const rand = mulberry32(seed);
+  const b = new Builder();
+  const W = UV.white;
+  for (let i = 0; i < 16; i++) {
+    const a = rand() * Math.PI * 2, r = rand() * 0.45;
+    const base = V(Math.cos(a) * r, -0.6, Math.sin(a) * r);
+    const H = 1.6 + rand() * 1.1, w = 0.035;
+    const lean = V((rand() - 0.5) * 0.4, 0, (rand() - 0.5) * 0.4);
+    const side = V(Math.cos(a + 1.57), 0, Math.sin(a + 1.57));
+    const col = tint(rand() < 0.3 ? 0xb8a860 : 0x7a9440, 0.8 + rand() * 0.3);
+    for (let s = 0; s < 3; s++) {
+      const t0 = s / 3, t1 = (s + 1) / 3;
+      const p0 = base.clone().addScaledVector(lean, t0 * t0).add(V(0, H * t0, 0));
+      const p1 = base.clone().addScaledVector(lean, t1 * t1).add(V(0, H * t1, 0));
+      const w0 = w * (1 - t0 * 0.8), w1 = w * (1 - t1 * 0.8);
+      const n = V(side.z, 0.3, -side.x).normalize();
+      const q = [p0.clone().addScaledVector(side, -w0), p0.clone().addScaledVector(side, w0), p1.clone().addScaledVector(side, w1), p1.clone().addScaledVector(side, -w1)];
+      const c0 = col.clone().multiplyScalar(0.55 + 0.45 * t0), c1 = col.clone().multiplyScalar(0.55 + 0.45 * t1);
+      b.v(q[0], n, W[0], W[1], c0); b.v(q[1], n, W[0], W[1], c0); b.v(q[2], n, W[0], W[1], c1);
+      b.v(q[0], n, W[0], W[1], c0); b.v(q[2], n, W[0], W[1], c1); b.v(q[3], n, W[0], W[1], c1);
+    }
+    if (i < 5) b.blob(base.clone().addScaledVector(lean, 0.8).add(V(0, H * 0.85, 0)), 0.05, tint(0x4a2e18));
+  }
+  return b.build();
+}
+
+// Algues sous-marines : longs rubans ondulants.
+export function makeKelp(seed = 17) {
+  const rand = mulberry32(seed);
+  const b = new Builder();
+  const W = UV.white;
+  for (let i = 0; i < 6; i++) {
+    const a = rand() * Math.PI * 2, r = rand() * 0.5;
+    const base = V(Math.cos(a) * r, 0, Math.sin(a) * r);
+    const H = 1.5 + rand() * 2.5, w = 0.09 + rand() * 0.05;
+    const side = V(Math.cos(a), 0, Math.sin(a));
+    const col = tint(rand() < 0.5 ? 0x5a6a20 : 0x3a5a2a, 0.8 + rand() * 0.3);
+    const segs = 6;
+    for (let s = 0; s < segs; s++) {
+      const t0 = s / segs, t1 = (s + 1) / segs;
+      const off = (t) => V(Math.sin(t * 5 + i) * 0.15 * t, H * t, Math.cos(t * 4 + i) * 0.15 * t);
+      const p0 = base.clone().add(off(t0)), p1 = base.clone().add(off(t1));
+      const n = V(side.z, 0.2, -side.x).normalize();
+      const q = [p0.clone().addScaledVector(side, -w), p0.clone().addScaledVector(side, w), p1.clone().addScaledVector(side, w), p1.clone().addScaledVector(side, -w)];
+      const c0 = col.clone().multiplyScalar(0.5 + 0.5 * t0), c1 = col.clone().multiplyScalar(0.5 + 0.5 * t1);
+      b.v(q[0], n, W[0], W[1], c0); b.v(q[1], n, W[0], W[1], c0); b.v(q[2], n, W[0], W[1], c1);
+      b.v(q[0], n, W[0], W[1], c0); b.v(q[2], n, W[0], W[1], c1); b.v(q[3], n, W[0], W[1], c1);
+    }
+  }
+  return b.build();
+}
+
 // Fougère : frondes arquées (on réutilise la texture du rameau, teintée vert tendre).
 export function makeFern(seed = 5) {
   const rand = mulberry32(seed);
@@ -501,7 +555,18 @@ export function makeVegetationMaterial(atlas) {
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, vegUniforms);
     sh.vertexShader = sh.vertexShader
-      .replace("#include <common>", "#include <common>\nuniform float uTime;\nvarying float vLeaf;\nvarying vec3 vWPos2;")
+      .replace("#include <common>", "#include <common>\nuniform float uTime;\nvarying float vLeaf;\nvarying vec3 vWPos2;\nvarying vec3 vAut;")
+      .replace("#include <color_vertex>", `
+  // La couleur d'instance sert de teinte d'automne, appliquée seulement au feuillage (dans le fragment)
+  vColor = vec3(1.0);
+#ifdef USE_COLOR
+  vColor *= color;
+#endif
+#ifdef USE_INSTANCING_COLOR
+  vAut = instanceColor;
+#else
+  vAut = vec3(1.0);
+#endif`)
       .replace("#include <begin_vertex>", `#include <begin_vertex>
   vLeaf = step(0.5, uv.x);
   vec3 ip = vec3(0.0);
@@ -523,7 +588,11 @@ export function makeVegetationMaterial(atlas) {
 #endif
   vWPos2 = (modelMatrix * wp2).xyz;`);
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nuniform vec3 uSunDir;\nuniform vec3 uSunCol;\nvarying float vLeaf;\nvarying vec3 vWPos2;")
+      .replace("#include <common>", "#include <common>\nuniform vec3 uSunDir;\nuniform vec3 uSunCol;\nvarying float vLeaf;\nvarying vec3 vWPos2;\nvarying vec3 vAut;")
+      .replace("#include <color_fragment>", `#include <color_fragment>
+  float autK = (1.0 - step(2.99, vAut.r + vAut.g + vAut.b)) * vLeaf;
+  float lum = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
+  diffuseColor.rgb = mix(diffuseColor.rgb, lum * vAut * 2.6, autK);`)
       .replace("#include <alphatest_fragment>", `
   // Les mipmaps rendent les feuilles transparentes au loin : on compense selon le niveau de détail.
   vec2 dUv = max(abs(dFdx(vMapUv)), abs(dFdy(vMapUv))) * 1024.0;
