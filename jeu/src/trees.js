@@ -1,0 +1,377 @@
+// Arbres « réalistes » : écorce texturée, grappes de feuilles et rameaux d'aiguilles en cartes à transparence,
+// lumière à contre-jour (les feuilles s'illuminent quand on regarde vers le soleil) et ombres découpées.
+import * as THREE from "three";
+import { mulberry32 } from "./noise.js";
+
+// ---------- Atlas de textures (dessiné une fois sur un canvas) ----------
+// u 0.00-0.25 : écorce brune · u 0.25-0.50 : écorce de bouleau (v > 0.06), blanc uni (v < 0.05)
+// u 0.50-1.00 / v 0.50-1.00 : grappe de feuilles · u 0.50-1.00 / v 0.00-0.50 : rameau d'aiguilles
+export const UV = {
+  bark: [0.005, 0.245, 0.0, 1.0],
+  birch: [0.255, 0.495, 0.07, 1.0],
+  white: [0.375, 0.025],
+  leaves: [0.5, 1.0, 0.5, 1.0],
+  needles: [0.5, 1.0, 0.0, 0.5],
+};
+
+export function makeAtlas(renderer) {
+  const S = 1024;
+  const c = document.createElement("canvas");
+  c.width = c.height = S;
+  const g = c.getContext("2d");
+  const r = mulberry32(31);
+  // Canvas : y vers le bas. La texture est retournée (flipY), donc v=1 en haut du canvas.
+
+  // Écorce brune : stries verticales sinueuses
+  g.fillStyle = "#4a3828"; g.fillRect(0, 0, 256, S);
+  for (let i = 0; i < 260; i++) {
+    const x = r() * 256, w = 1 + r() * 4;
+    const light = r() < 0.35;
+    g.strokeStyle = light ? `rgba(130,110,90,${0.25 + r() * 0.3})` : `rgba(20,14,10,${0.35 + r() * 0.45})`;
+    g.lineWidth = w;
+    g.beginPath();
+    let px = x;
+    g.moveTo(px, 0);
+    for (let y = 0; y <= S; y += 24) { px += (r() - 0.5) * 7; g.lineTo(px, y); }
+    g.stroke();
+  }
+  for (let i = 0; i < 90; i++) { // plaques
+    g.fillStyle = `rgba(${90 + r() * 40},${70 + r() * 30},${50 + r() * 20},0.35)`;
+    g.fillRect(r() * 256, r() * S, 6 + r() * 18, 20 + r() * 60);
+  }
+
+  // Bouleau
+  g.fillStyle = "#e4e0d6"; g.fillRect(256, 0, 256, S - 52);
+  for (let i = 0; i < 220; i++) {
+    const y = r() * (S - 52), x = 256 + r() * 256;
+    g.fillStyle = `rgba(30,28,25,${0.5 + r() * 0.5})`;
+    g.fillRect(x, y, 6 + r() * 34, 1.5 + r() * 3);
+  }
+  for (let i = 0; i < 25; i++) {
+    g.fillStyle = "rgba(25,22,20,0.85)";
+    const y = r() * (S - 60), x = 256 + r() * 230;
+    g.beginPath(); g.ellipse(x, y, 8 + r() * 20, 4 + r() * 10, 0, 0, 7); g.fill();
+  }
+  g.fillStyle = "#ffffff"; g.fillRect(256, S - 50, 256, 50);
+
+  // Grappe de feuilles (rameaux + ~420 feuilles)
+  const LX = 768, LY = 256, LR = 236;
+  g.save();
+  g.beginPath(); g.rect(512, 0, 512, 512); g.clip();
+  g.strokeStyle = "#3b2c1e"; g.lineCap = "round";
+  for (let i = 0; i < 9; i++) {
+    const a = r() * Math.PI * 2;
+    g.lineWidth = 3 + r() * 3;
+    g.beginPath(); g.moveTo(LX, LY + 40);
+    g.quadraticCurveTo(LX + Math.cos(a) * 80, LY + Math.sin(a) * 80, LX + Math.cos(a) * LR * 0.85, LY + Math.sin(a) * LR * 0.85);
+    g.stroke();
+  }
+  for (let i = 0; i < 430; i++) {
+    const rr = Math.sqrt(r()) * LR * 0.92, a = r() * Math.PI * 2;
+    const x = LX + Math.cos(a) * rr, y = LY + Math.sin(a) * rr * 0.92;
+    const len = 15 + r() * 13, wid = len * (0.42 + r() * 0.15);
+    const shade = rr / LR;
+    const gr = 70 + r() * 70 - shade * 20, rd = 40 + r() * 45, bl = 20 + r() * 25;
+    g.save();
+    g.translate(x, y); g.rotate(r() * Math.PI * 2);
+    g.fillStyle = `rgb(${rd | 0},${gr | 0},${bl | 0})`;
+    g.beginPath();
+    g.moveTo(-len, 0);
+    g.quadraticCurveTo(0, -wid, len, 0);
+    g.quadraticCurveTo(0, wid, -len, 0);
+    g.fill();
+    g.strokeStyle = `rgba(200,220,150,0.25)`; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(-len * 0.8, 0); g.lineTo(len * 0.8, 0); g.stroke();
+    g.restore();
+  }
+  g.restore();
+
+  // Rameau d'aiguilles (base à gauche, pointe à droite)
+  g.save();
+  g.beginPath(); g.rect(512, 512, 512, 512); g.clip();
+  const cy = 768;
+  const twig = (x0, y0, x1, y1, n, len0, wBase) => {
+    g.strokeStyle = "#3a2a1c"; g.lineWidth = wBase;
+    g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+    for (let i = 0; i < n; i++) {
+      const t = i / n;
+      const x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t;
+      const len = len0 * (1 - t * 0.55) * (0.8 + r() * 0.4);
+      for (const s of [-1, 1]) {
+        const ang = Math.atan2(y1 - y0, x1 - x0) + s * (0.75 + r() * 0.35);
+        const gr = 60 + r() * 55;
+        g.strokeStyle = `rgb(${25 + r() * 20 | 0},${gr | 0},${30 + r() * 20 | 0})`;
+        g.lineWidth = 2.4 + r() * 1.4;
+        g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len); g.stroke();
+      }
+    }
+  };
+  twig(520, cy, 1010, cy - 6, 230, 78, 5);
+  for (let k = 0; k < 12; k++) {
+    const x = 560 + k * 36, s = k % 2 ? 1 : -1;
+    twig(x, cy, x + 110 - k * 6, cy + s * (95 - k * 6), 45, 40, 2.5);
+  }
+  g.restore();
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  return tex;
+}
+
+// ---------- Construction des maillages ----------
+class Builder {
+  constructor() { this.pos = []; this.nor = []; this.uv = []; this.col = []; }
+  v(p, n, u, v, c) { this.pos.push(p.x, p.y, p.z); this.nor.push(n.x, n.y, n.z); this.uv.push(u, v); this.col.push(c.r, c.g, c.b); }
+  build() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(this.pos, 3));
+    g.setAttribute("normal", new THREE.Float32BufferAttribute(this.nor, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(this.uv, 2));
+    g.setAttribute("color", new THREE.Float32BufferAttribute(this.col, 3));
+    g.computeBoundingSphere();
+    return g;
+  }
+
+  // Tube le long d'une suite de points (tronc, branches). uv dans une zone de l'atlas.
+  tube(points, radii, seg, uvr, color, vScale = 0.25) {
+    const [u0, u1, v0, v1] = uvr;
+    const frames = [];
+    let len = 0;
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const next = points[Math.min(i + 1, points.length - 1)], prev = points[Math.max(i - 1, 0)];
+      const t = next.clone().sub(prev).normalize();
+      const ref = Math.abs(t.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+      const n1 = new THREE.Vector3().crossVectors(t, ref).normalize();
+      const n2 = new THREE.Vector3().crossVectors(t, n1).normalize();
+      if (i > 0) len += p.distanceTo(points[i - 1]);
+      frames.push({ p, n1, n2, len });
+    }
+    const ring = (f, k, r) => {
+      const a = (k / seg) * Math.PI * 2;
+      const n = f.n1.clone().multiplyScalar(Math.cos(a)).addScaledVector(f.n2, Math.sin(a));
+      return { p: f.p.clone().addScaledVector(n, r), n };
+    };
+    const c = new THREE.Color();
+    for (let i = 0; i < frames.length - 1; i++) {
+      for (let k = 0; k < seg; k++) {
+        const a = ring(frames[i], k, radii[i]), b = ring(frames[i], k + 1, radii[i]);
+        const cc = ring(frames[i + 1], k, radii[i + 1]), d = ring(frames[i + 1], k + 1, radii[i + 1]);
+        const ua = u0 + (u1 - u0) * (k / seg), ub = u0 + (u1 - u0) * ((k + 1) / seg);
+        const va = v0 + ((frames[i].len * vScale) % 1) * (v1 - v0) * 0.999;
+        let vb = va + (frames[i + 1].len - frames[i].len) * vScale * (v1 - v0);
+        if (vb > v1) vb = v1;
+        const ao0 = Math.min(1, 0.55 + frames[i].p.y * 0.25), ao1 = Math.min(1, 0.55 + frames[i + 1].p.y * 0.25);
+        const c0 = c.clone().copy(color).multiplyScalar(ao0), c1 = c.clone().copy(color).multiplyScalar(ao1);
+        this.v(a.p, a.n, ua, va, c0); this.v(cc.p, cc.n, ua, vb, c1); this.v(b.p, b.n, ub, va, c0);
+        this.v(b.p, b.n, ub, va, c0); this.v(cc.p, cc.n, ua, vb, c1); this.v(d.p, d.n, ub, vb, c1);
+      }
+    }
+  }
+
+  // Carte (quad) à transparence, normales « sphériques » autour du centre du houppier pour un éclairage doux.
+  card(center, right, up, w, h, uvr, color, crown, normalUp = 0.3) {
+    const [u0, u1, v0, v1] = uvr;
+    const corners = [[-1, -1, u0, v0], [1, -1, u1, v0], [1, 1, u1, v1], [-1, 1, u0, v1]];
+    const pts = corners.map(([sx, sy, u, v]) => {
+      const p = center.clone().addScaledVector(right, sx * w / 2).addScaledVector(up, sy * h / 2);
+      const n = p.clone().sub(crown).normalize();
+      n.y += normalUp; n.normalize();
+      return { p, n, u, v };
+    });
+    const [a, b, cc, d] = pts;
+    const col = (p) => {
+      const k = Math.min(1, Math.max(0.35, 0.45 + (p.y - crown.y) * 0.18 + p.clone().sub(crown).length() * 0.12));
+      return color.clone().multiplyScalar(k);
+    };
+    this.v(a.p, a.n, a.u, a.v, col(a.p)); this.v(b.p, b.n, b.u, b.v, col(b.p)); this.v(cc.p, cc.n, cc.u, cc.v, col(cc.p));
+    this.v(a.p, a.n, a.u, a.v, col(a.p)); this.v(cc.p, cc.n, cc.u, cc.v, col(cc.p)); this.v(d.p, d.n, d.u, d.v, col(d.p));
+  }
+
+  // Grappe = 3 cartes croisées orientées au hasard.
+  cluster(center, size, uvr, color, crown, rand, n = 3) {
+    for (let i = 0; i < n; i++) {
+      const nrm = new THREE.Vector3(rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1).normalize();
+      const right = new THREE.Vector3().crossVectors(nrm, new THREE.Vector3(rand() - 0.5, 1, rand() - 0.5)).normalize();
+      const up = new THREE.Vector3().crossVectors(right, nrm).normalize();
+      const s = size * (0.8 + rand() * 0.4);
+      this.card(center, right, up, s, s, uvr, color, crown);
+    }
+  }
+
+  // Petite sphère pleine (baies) utilisant le blanc de l'atlas.
+  blob(center, r, color) {
+    const geo = new THREE.IcosahedronGeometry(r, 0);
+    const p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const v = new THREE.Vector3(p.getX(i), p.getY(i), p.getZ(i));
+      this.v(v.clone().add(center), v.clone().normalize(), UV.white[0], UV.white[1], color);
+    }
+  }
+}
+
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+const tint = (hex, k = 1) => new THREE.Color(hex).multiplyScalar(k);
+
+function trunkPoints(h, steps, lean, rand) {
+  const pts = [];
+  let x = 0, z = 0;
+  const dx = (rand() - 0.5) * lean, dz = (rand() - 0.5) * lean;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    x += dx / steps + (rand() - 0.5) * 0.04; z += dz / steps + (rand() - 0.5) * 0.04;
+    pts.push(V(x, -0.3 + t * (h + 0.3), z));
+  }
+  return pts;
+}
+
+function flare(n, r0, r1) {
+  // évasement aux racines
+  return Array.from({ length: n + 1 }, (_, i) => { const t = i / n; return (r0 + (r1 - r0) * t) * (1 + 0.6 * Math.exp(-t * 14)); });
+}
+
+export function makeBroadleaf(lod, seed, birch = false) {
+  const rand = mulberry32(seed);
+  const b = new Builder();
+  const h = birch ? 6.2 : 3.4;
+  const steps = lod ? 3 : 8;
+  const pts = trunkPoints(h, steps, birch ? 0.5 : 0.3, rand);
+  b.tube(pts, flare(steps, birch ? 0.2 : 0.42, birch ? 0.08 : 0.26), lod ? 5 : 9, birch ? UV.birch : UV.bark, tint(birch ? 0xffffff : 0xd8c8b8), birch ? 0.35 : 0.3);
+  const top = pts[pts.length - 1];
+  const crown = birch ? V(top.x, 6.4, top.z) : V(top.x, 5.9, top.z);
+  const R = birch ? V(1.8, 2.6, 1.8) : V(3.3, 2.5, 3.3);
+  const leafTint = birch ? tint(0xc8e070, 1.0) : tint(0xa8c070, 0.95);
+  // Branches maîtresses
+  if (!lod) {
+    const nb = birch ? 6 : 5;
+    for (let i = 0; i < nb; i++) {
+      const a = (i / nb) * Math.PI * 2 + rand() * 0.6;
+      const startY = birch ? 2.8 + rand() * 3 : h - 0.3 - rand() * 0.6;
+      const s = V(top.x * (startY / h), startY, top.z * (startY / h));
+      const e = V(crown.x + Math.cos(a) * R.x * 0.75, crown.y + (rand() - 0.2) * R.y * 0.7, crown.z + Math.sin(a) * R.z * 0.75);
+      const m = s.clone().lerp(e, 0.5); m.y += 0.4;
+      b.tube([s, m, e], birch ? [0.06, 0.04, 0.015] : [0.17, 0.1, 0.03], 5, birch ? UV.birch : UV.bark, tint(birch ? 0xffffff : 0xc8b8a8), 0.5);
+    }
+  }
+  // Feuillage
+  const n = lod ? (birch ? 7 : 9) : (birch ? 22 : 30);
+  const size = lod ? (birch ? 2.4 : 3.4) : (birch ? 1.5 : 2.2);
+  for (let i = 0; i < n; i++) {
+    const dir = V(rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1);
+    if (dir.length() > 1) { i--; continue; }
+    const shell = 0.45 + 0.55 * Math.cbrt(rand());
+    dir.normalize().multiplyScalar(shell);
+    const p = V(crown.x + dir.x * R.x, crown.y + dir.y * R.y, crown.z + dir.z * R.z);
+    const c = leafTint.clone().multiplyScalar(0.85 + rand() * 0.3);
+    b.cluster(p, size, UV.leaves, c, crown, rand, lod ? 2 : 3);
+  }
+  return b.build();
+}
+
+export function makeConifer(lod, seed) {
+  const rand = mulberry32(seed);
+  const b = new Builder();
+  const H = 10.5;
+  const steps = lod ? 3 : 9;
+  const pts = trunkPoints(H, steps, 0.15, rand);
+  b.tube(pts, flare(steps, 0.32, 0.04), lod ? 5 : 8, UV.bark, tint(0xb8a898), 0.3);
+  const needleTint = tint(0x9cc088);
+  const step = lod ? 1.0 : 0.45;
+  for (let y = 1.8; y < H - 0.3; y += step * (0.85 + rand() * 0.3)) {
+    const t = (y - 1.8) / (H - 1.8);
+    const L = 0.5 + 2.7 * Math.pow(1 - t, 0.95);
+    const n = lod ? 5 : 7 + Math.floor(rand() * 2);
+    const a0 = rand() * Math.PI * 2;
+    const tp = pts[Math.min(pts.length - 1, Math.round((y / H) * steps))];
+    for (let i = 0; i < n; i++) {
+      const a = a0 + (i / n) * Math.PI * 2 + (rand() - 0.5) * 0.4;
+      const droop = 0.25 + t * -0.3 + rand() * 0.15;
+      const dir = V(Math.cos(a), -droop, Math.sin(a)).normalize();
+      const base = V(tp.x, y, tp.z);
+      const center = base.clone().addScaledVector(dir, L / 2);
+      const side = V(-Math.sin(a), 0, Math.cos(a));
+      const flatUp = new THREE.Vector3().crossVectors(dir, side).normalize();
+      const crown = V(tp.x, y - 0.6, tp.z);
+      const c = needleTint.clone().multiplyScalar(0.8 + rand() * 0.3);
+      // carte presque horizontale + carte verticale pour le volume
+      b.card(center, dir, side, L, L * 0.62, UV.needles, c, crown, 0.6);
+      if (!lod) b.card(center, dir, flatUp, L, L * 0.4, UV.needles, c.clone().multiplyScalar(0.85), crown, 0.6);
+    }
+  }
+  // Cime
+  const tip = pts[pts.length - 1];
+  for (let i = 0; i < (lod ? 2 : 3); i++) {
+    const a = (i / 3) * Math.PI;
+    b.card(V(tip.x, H - 0.1, tip.z), V(0, 1, 0), V(Math.cos(a), 0, Math.sin(a)), 1.4, 0.6, UV.needles, needleTint, V(tip.x, H - 1, tip.z), 0.6);
+  }
+  return b.build();
+}
+
+export function makeLeafBush(withBerries, seed = 9) {
+  const rand = mulberry32(seed);
+  const b = new Builder();
+  const crown = V(0, 0.55, 0);
+  for (let i = 0; i < 12; i++) {
+    const d = V(rand() * 2 - 1, rand() * 0.9 - 0.2, rand() * 2 - 1).normalize().multiplyScalar(0.3 + rand() * 0.5);
+    b.cluster(crown.clone().add(d), 0.95, UV.leaves, tint(0x98b468, 0.8 + rand() * 0.3), crown, rand, 2);
+  }
+  if (withBerries) {
+    for (let i = 0; i < 22; i++) {
+      const a = rand() * Math.PI * 2, e = rand() * 1.2 - 0.2;
+      b.blob(V(Math.cos(a) * 0.8 * Math.cos(e), 0.55 + Math.sin(e) * 0.6, Math.sin(a) * 0.8 * Math.cos(e)), 0.06, tint(0xc0102a));
+    }
+  }
+  return b.build();
+}
+
+// ---------- Matériau partagé ----------
+// uniforms partagés avec l'herbe : temps, direction et couleur du soleil.
+export const vegUniforms = {
+  uTime: { value: 0 },
+  uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+  uSunCol: { value: new THREE.Color(1, 1, 1) },
+};
+
+export function makeVegetationMaterial(atlas) {
+  const mat = new THREE.MeshStandardMaterial({ map: atlas, vertexColors: true, roughness: 0.82, metalness: 0, alphaTest: 0.42, side: THREE.DoubleSide, shadowSide: THREE.DoubleSide });
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, vegUniforms);
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nuniform float uTime;\nvarying float vLeaf;\nvarying vec3 vWPos2;")
+      .replace("#include <begin_vertex>", `#include <begin_vertex>
+  vLeaf = step(0.5, uv.x);
+  vec3 ip = vec3(0.0);
+#ifdef USE_INSTANCING
+  ip = vec3(instanceMatrix[3]);
+#endif
+  float hgt = max(0.0, position.y - 1.5);
+  float w = sin(uTime * 1.2 + ip.x * 0.13 + ip.z * 0.07) + 0.45 * sin(uTime * 2.6 + ip.z * 0.3);
+  transformed.x += w * 0.03 * hgt;
+  transformed.z += cos(uTime * 1.05 + ip.z * 0.11) * 0.022 * hgt;
+  // frémissement des feuilles
+  float fl = sin(uTime * 7.0 + position.x * 3.1 + position.y * 2.3 + position.z * 2.7 + ip.x);
+  transformed += normal * fl * 0.035 * vLeaf;`)
+      .replace("#include <worldpos_vertex>", `#include <worldpos_vertex>
+  vec4 wp2 = vec4(transformed, 1.0);
+#ifdef USE_INSTANCING
+  wp2 = instanceMatrix * wp2;
+#endif
+  vWPos2 = (modelMatrix * wp2).xyz;`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform vec3 uSunDir;\nuniform vec3 uSunCol;\nvarying float vLeaf;\nvarying vec3 vWPos2;")
+      .replace("#include <alphatest_fragment>", `
+  // Les mipmaps rendent les feuilles transparentes au loin : on compense selon le niveau de détail.
+  vec2 dUv = max(abs(dFdx(vMapUv)), abs(dFdy(vMapUv))) * 1024.0;
+  diffuseColor.a *= 1.0 + max(0.0, log2(max(dUv.x, dUv.y))) * 0.35;
+  #include <alphatest_fragment>`)
+      .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+  // Translucidité : feuilles éclairées par derrière quand on regarde vers le soleil.
+  vec3 toCam = normalize(cameraPosition - vWPos2);
+  float back = pow(max(dot(-toCam, uSunDir), 0.0), 4.0);
+  totalEmissiveRadiance += diffuseColor.rgb * uSunCol * (back * 1.6 + 0.08) * vLeaf;`);
+  };
+  return mat;
+}

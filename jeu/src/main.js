@@ -10,6 +10,7 @@ import { Input } from "./input.js";
 import { Sounds } from "./audio.js";
 import { UI } from "./ui.js";
 import { ITEMS, TOOLS, RECIPES, Inventory } from "./items.js";
+import { Post } from "./post.js";
 
 const SAVE_KEY = "lisiere-save-v1";
 const SETTINGS_KEY = "lisiere-settings";
@@ -24,9 +25,9 @@ const store = {
 };
 
 const PRESETS = {
-  low:    { terrainCells: 256, shadows: true, shadowSize: 1024, shadowRange: 38, viewDistance: 330, grassCount: 12000, grassRadius: 22, treeCandidates: 120000, lodScale: 0.55, envInterval: 20, maxDeer: 6, maxWolves: 3, antialias: false, maxPixelRatio: 1.25 },
-  medium: { terrainCells: 384, shadows: true, shadowSize: 2048, shadowRange: 55, viewDistance: 480, grassCount: 34000, grassRadius: 30, treeCandidates: 120000, lodScale: 0.85, envInterval: 10, maxDeer: 8, maxWolves: 4, antialias: true, maxPixelRatio: 1.6 },
-  high:   { terrainCells: 512, shadows: true, shadowSize: 2048, shadowRange: 70, viewDistance: 680, grassCount: 70000, grassRadius: 40, treeCandidates: 120000, lodScale: 1.25, envInterval: 6, maxDeer: 10, maxWolves: 5, antialias: true, maxPixelRatio: 2 },
+  low:    { msaa: 0, raySamples: 24, rayScale: 0.25, terrainCells: 256, shadows: true, shadowSize: 1024, shadowRange: 34, viewDistance: 330, grassCount: 20000, grassRadius: 20, treeCandidates: 120000, lodScale: 0.55, envInterval: 20, maxDeer: 6, maxWolves: 3, antialias: false, maxPixelRatio: 1.25 },
+  medium: { msaa: 2, raySamples: 40, rayScale: 0.4, terrainCells: 384, shadows: true, shadowSize: 2048, shadowRange: 48, viewDistance: 480, grassCount: 50000, grassRadius: 28, treeCandidates: 120000, lodScale: 0.85, envInterval: 10, maxDeer: 8, maxWolves: 4, antialias: true, maxPixelRatio: 1.6 },
+  high:   { msaa: 4, raySamples: 60, rayScale: 0.5, terrainCells: 512, shadows: true, shadowSize: 4096, shadowRange: 62, viewDistance: 680, grassCount: 100000, grassRadius: 36, treeCandidates: 120000, lodScale: 1.25, envInterval: 6, maxDeer: 10, maxWolves: 5, antialias: true, maxPixelRatio: 2 },
 };
 
 function detectQuality() {
@@ -57,7 +58,7 @@ class Game {
     const canvas = $("game");
     let renderer;
     try {
-      renderer = new THREE.WebGLRenderer({ canvas, antialias: Q.antialias, powerPreference: "high-performance", stencil: false });
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance", stencil: false });
     } catch (e) {
       loadText.textContent = "Ton appareil ne prend pas en charge WebGL, nécessaire pour le jeu.";
       throw e;
@@ -65,14 +66,17 @@ class Game {
     this.renderer = renderer;
     this.pixelRatio = Math.min(devicePixelRatio, Q.maxPixelRatio);
     renderer.setPixelRatio(this.pixelRatio);
-    renderer.setSize(innerWidth, innerHeight);
+    this.viewW = canvas.clientWidth || innerWidth;
+    this.viewH = canvas.clientHeight || innerHeight;
+    renderer.setSize(this.viewW, this.viewH, false); // le CSS garde 100 % : pas de taille figée
+    renderer.info.autoReset = false;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = Q.shadows;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(settings.fov, innerWidth / innerHeight, 0.08, 9000);
+    this.camera = new THREE.PerspectiveCamera(settings.fov, this.viewW / this.viewH, 0.08, 9000);
     this.scene.add(this.camera);
 
     await step(15, "Formation de l'île…");
@@ -88,7 +92,7 @@ class Game {
     this.env = new Environment(this.scene, renderer, Q);
 
     await step(60, "Les forêts poussent…");
-    this.props = new Props(this.scene, this.world, Q, this.seed);
+    this.props = new Props(this.scene, this.world, Q, this.seed, renderer);
     this.grass = new Grass(this.scene, this.world, Q);
 
     await step(78, "Les animaux s'installent…");
@@ -118,8 +122,10 @@ class Game {
     this.env.update(this.hours, 0.016, this.camera.position, this.player.pos);
     this.player.update(0, this.input, this.ctx(0, 0));
     this.props.rebuild(this.player.pos);
+    this.post = new Post(renderer, Q);
+    this.post.setSize(this.viewW * this.pixelRatio, this.viewH * this.pixelRatio);
     renderer.compile(this.scene, this.camera);
-    renderer.render(this.scene, this.camera);
+    this.post.render(this.scene, this.camera, this.env.sunInfo);
 
     await step(100, "Prêt.");
     this.state = "menu";
@@ -134,6 +140,8 @@ class Game {
     this.dynTimer = 0;
     this.fpsAcc = 0; this.fpsFrames = 0; this.fpsText = "";
     addEventListener("resize", () => this.resize());
+    addEventListener("orientationchange", () => { this.resize(); setTimeout(() => this.resize(), 300); setTimeout(() => this.resize(), 1000); });
+    if (window.visualViewport) visualViewport.addEventListener("resize", () => this.resize());
     document.addEventListener("visibilitychange", () => { if (document.hidden) { this.save(); if (this.state === "play") this.pause(); } });
     addEventListener("pagehide", () => this.save());
     renderer.setAnimationLoop(() => this.frame());
@@ -551,9 +559,14 @@ class Game {
   }
 
   resize() {
-    this.camera.aspect = innerWidth / innerHeight;
+    const c = this.renderer.domElement;
+    const w = c.clientWidth || innerWidth, h = c.clientHeight || innerHeight;
+    if (w === this.viewW && h === this.viewH) return;
+    this.viewW = w; this.viewH = h;
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(innerWidth, innerHeight);
+    this.renderer.setSize(w, h, false);
+    this.post.setSize(w * this.pixelRatio, h * this.pixelRatio);
   }
 
   // Résolution dynamique : garde le jeu fluide sur les appareils modestes.
@@ -568,12 +581,13 @@ class Game {
     let pr = this.pixelRatio;
     if (avg > 1 / 40 && pr > 0.6) pr = Math.max(0.6, pr - 0.15);
     else if (avg < 1 / 58 && pr < max) pr = Math.min(max, pr + 0.1);
-    if (pr !== this.pixelRatio) { this.pixelRatio = pr; this.renderer.setPixelRatio(pr); }
+    if (pr !== this.pixelRatio) { this.pixelRatio = pr; this.renderer.setPixelRatio(pr); this.renderer.setSize(this.viewW, this.viewH, false); this.post.setSize(this.viewW * pr, this.viewH * pr); }
   }
 
   // ---------- Boucle ----------
   frame() {
     const dt = Math.min(0.05, this.clock.getDelta());
+    this.renderer.info.reset();
     const playing = this.state === "play";
     const input = this.input;
     const p = this.player;
@@ -644,7 +658,8 @@ class Game {
     this.env.update(this.hours, dt, this.camera.position, p.pos);
 
     this.ui.updateHUD(p, this.hours, this.day, settings.fps ? this.fpsText : null);
-    this.renderer.render(this.scene, this.camera);
+    this.resize(); // filet de sécurité : rotation d'écran en mode appli (iOS)
+    this.post.render(this.scene, this.camera, this.env.sunInfo);
     input.endFrame();
 
     this.fpsAcc += dt; this.fpsFrames++;
