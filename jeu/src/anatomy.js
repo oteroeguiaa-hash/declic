@@ -105,6 +105,29 @@ function ellipsoid(rx, ry, rz, c, colorFn, seg = 14) {
 
 const mesh = (geos, mat = FUR) => { const m = new THREE.Mesh(geos.length > 1 ? mergeGeometries(geos) : geos[0], mat); m.castShadow = true; m.receiveShadow = true; return m; };
 
+const antler = (m) => { m.userData.antler = true; return m; };
+
+// Fusionne les morceaux immobiles d'un groupe en un seul maillage (moins d'appels de dessin)
+function flatten(group) {
+  const geos = [], keep = [];
+  for (const o of [...group.children]) {
+    if (!o.isMesh || o.userData.antler) { if (o.isMesh) keep.push(o); continue; }
+    o.updateMatrix();
+    let g = o.geometry.clone().applyMatrix4(o.matrix);
+    if (g.index === null) g = g.toNonIndexed();
+    for (const k of Object.keys(g.attributes)) if (k !== "position" && k !== "normal" && k !== "color") g.deleteAttribute(k);
+    if (!g.attributes.color) {
+      const c = o.material.color || new THREE.Color(1, 1, 1), a = new Float32Array(g.attributes.position.count * 3);
+      for (let i = 0; i < a.length; i += 3) { a[i] = c.r; a[i + 1] = c.g; a[i + 2] = c.b; }
+      g.setAttribute("color", new THREE.BufferAttribute(a, 3));
+    }
+    if (!g.index) { const idx = []; for (let i = 0; i < g.attributes.position.count; i++) idx.push(i); g.setIndex(idx); }
+    geos.push(g);
+    group.remove(o);
+  }
+  if (geos.length) { const m = new THREE.Mesh(mergeGeometries(geos), FUR); m.castShadow = true; group.add(m); }
+}
+
 // ---------- Pelage ----------
 // Couleur d'un point selon les zones : dos, flancs, ventre + motif de l'espèce.
 function furFn(s, part, rand) {
@@ -253,7 +276,7 @@ export function buildAnimal(s) {
     const tine = (pts, r0) => loft(pts.map((p, i) => ({ c: p, rx: r0 * (1 - i / pts.length * 0.7), ry: r0 * (1 - i / pts.length * 0.7) })), () => C(0x8a7458), 6, 3);
     const b = V3(sx * hr * 0.35, hr * 0.85, -0.02 * hl);
     const m1 = b.clone().add(V3(sx * 0.16, 0.28, -0.1)), t1 = m1.clone().add(V3(sx * 0.12, 0.26, -0.06)), t2 = t1.clone().add(V3(sx * 0.02, 0.14, 0.08));
-    head.add(mesh([tine([b, m1, t1, t2], 0.026), tine([b.clone().lerp(m1, 0.35), b.clone().lerp(m1, 0.35).add(V3(sx * 0.04, 0.1, 0.14))], 0.016), tine([m1, m1.clone().add(V3(sx * 0.02, 0.16, 0.12))], 0.014), tine([t1, t1.clone().add(V3(sx * 0.08, 0.1, -0.06))], 0.012)]));
+    head.add(antler(mesh([tine([b, m1, t1, t2], 0.026), tine([b.clone().lerp(m1, 0.35), b.clone().lerp(m1, 0.35).add(V3(sx * 0.04, 0.1, 0.14))], 0.016), tine([m1, m1.clone().add(V3(sx * 0.02, 0.16, 0.12))], 0.014), tine([t1, t1.clone().add(V3(sx * 0.08, 0.1, -0.06))], 0.012)])));
   }
   if (s.antlers === "moose") for (const sx of [-1, 1]) {
     const b = V3(sx * hr * 0.4, hr * 0.8, -0.05 * hl);
@@ -265,6 +288,7 @@ export function buildAnimal(s) {
     head.add(mesh(parts));
   }
   if (s.dewlap) head.add(mesh([loft([{ c: V3(0, -hr * 0.8, 0.05 * hl), rx: 0.03, ry: 0.03 }, { c: V3(0, -hr * 1.4, 0.0), rx: 0.04, ry: 0.06 }, { c: V3(0, -hr * 1.7, -0.02), rx: 0.002, ry: 0.002 }], furFn(s, "neck", rand), 6, 3)]));
+  flatten(head);
   neck.add(head);
   body.add(neck);
 
@@ -351,5 +375,6 @@ export function buildBird(b) {
     g.add(pv);
     wings.push(pv);
   }
+  flatten(g);
   return { group: g, wings };
 }

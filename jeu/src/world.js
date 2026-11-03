@@ -55,17 +55,19 @@ export class World {
     // ---- Biomes ----
     // Montagnes alpines : une ou deux chaînes, crêtes réalistes (bruit « ridged »), jusqu'à ~250 m
     const mreg = fbm(this.nM, X / 1700 + 4.2, Z / 1700 - 7.7, 2) * 0.5 + 0.5;
-    const M = smoothstep(0.56, 0.68, mreg) * smoothstep(0.84, 0.55, d);
+    const M = smoothstep(0.5, 0.74, mreg) * smoothstep(0.84, 0.5, d);
     if (M > 0) {
       // Domaine fortement déformé : silhouettes irrégulières, pas de cônes
       const qx = wx + fbm(this.nM, X / 420 + 3, Z / 420 - 8, 3) * 140;
       const qz = wz + fbm(this.nM, X / 420 - 6, Z / 420 + 2, 3) * 140;
-      const main = ridged(this.nM, qx / 1050, qz / 1050, 7);                    // grandes crêtes
+      // Grand massif aux sommets arrondis (jusqu'à ~500 m), versants longs et réguliers
+      const core = Math.pow(smoothstep(0.5, 0.76, mreg), 1.2);
+      const main = ridged(this.nM, qx / 1500, qz / 1500, 5);                    // grandes crêtes, larges
       const broad = fbm(this.nM, X / 900 + 9, Z / 900 - 3, 2) * 0.5 + 0.5;
-      let hm = 20 + broad * 55 + Math.pow(main, 1.25) * 150;
-      // Arêtes secondaires et sommets découpés, surtout en altitude
-      const hi = smoothstep(60, 180, hm);
-      hm += ridged(this.nM, qx / 320 + 5.3, qz / 320 - 1.1, 4) * 26 * (0.25 + hi);
+      let hm = 22 + core * (240 * (0.55 + 0.45 * broad) + 260 * Math.pow(main, 1.6));
+      // Arêtes secondaires douces
+      const hi = smoothstep(100, 350, hm);
+      hm += ridged(this.nM, qx / 420 + 5.3, qz / 420 - 1.1, 3) * 16 * (0.3 + hi);
       // Ravines et couloirs (crevasses) qui entaillent les versants
       const gully = 1 - Math.abs(fbm(this.nM, qx / 230 + 17, qz / 230 + 4, 3));
       hm -= Math.pow(gully, 9) * 30 * smoothstep(40, 120, hm);
@@ -75,6 +77,7 @@ export class World {
       hm = lerp(hm, terr, 0.45 * smoothstep(50, 110, hm));
       // Rugosité fine
       hm += fbm(this.nM, x / 28, z / 28, 3) * 2.2 * smoothstep(40, 120, hm);
+      hm = 500 * Math.tanh(hm / 500);                                           // plafond naturel ~500 m
       const k = M * M * (3 - 2 * M);
       h = lerp(h, Math.max(h, hm), k);
     }
@@ -313,7 +316,7 @@ export class World {
         // Végétation partout, sauf dans l'eau, sur les vraies falaises et au-dessus de la limite alpine
         const marsh = this.bio[k * 4 + 2] / 255, prairie = this.bio[k * 4 + 1] / 255;
         const shore = Math.max(smoothstep(2.4, 3.6, h), smoothstep(0.25, 0.9, h) * marsh);
-        let g = shore * (1 - smoothstep(130, 152, h)) * (1 - smoothstep(0.45, 0.62, s));
+        let g = shore * (1 - smoothstep(380, 440, h)) * (1 - smoothstep(0.55, 0.75, s));
         g *= Math.min(1, (smoothstep(0.1, 0.5, m) * 0.6 + 0.4) * (1 + prairie * 0.6));
         g *= 1 - smoothstep(0.02, 0.15, this.stream[k]);
         const can = this.canopy ? this.canopy[k] : 0;
@@ -499,15 +502,15 @@ vec3 terrainColor(){
   c = mix(c, sand, beach);
   c = mix(c, sand * 0.55, 1.0 - smoothstep(-0.3, 0.5, h));
   // Roche seulement sur les vraies falaises (plus tôt en montagne), neige sur les sommets
-  float rockStart = mix(0.5, 0.33, bio.r);
-  float rockAmt = smoothstep(rockStart, rockStart + 0.14, slope + (d1.g - 0.5) * 0.12) + smoothstep(135.0, 160.0, h + d2.r * 20.0) * 0.6;
+  float rockStart = mix(0.5, 0.6, bio.r);
+  float rockAmt = smoothstep(rockStart, rockStart + 0.14, slope + (d1.g - 0.5) * 0.12) + smoothstep(400.0, 450.0, h + d2.r * 30.0) * 0.6;
   // Éboulis : gravier clair au pied des falaises en montagne
   float scree = smoothstep(rockStart - 0.18, rockStart - 0.02, slope) * bio.r * (1.0 - smoothstep(0.1, 0.3, stream));
   vec3 gravel = srgb(vec3(0.55, 0.53, 0.49)) * (0.6 + 0.6 * d1.r * d1.g + 0.2 * d1.b);
   c = mix(c, gravel, scree * smoothstep(0.35, 0.65, d1.b + d2.r * 0.4) * 0.85);
   gRock = clamp(rockAmt, 0.0, 1.0) * (1.0 - smoothstep(0.1, 0.3, stream));
   c = mix(c, rock, gRock);
-  float snow = smoothstep(150.0, 175.0, h + (d2.r - 0.5) * 30.0) * (1.0 - smoothstep(0.62, 0.82, slope));
+  float snow = smoothstep(440.0, 480.0, h + (d2.r - 0.5) * 30.0) * (1.0 - smoothstep(0.62, 0.82, slope));
   c = mix(c, srgb(vec3(0.92, 0.94, 0.98)) * (0.92 + 0.08 * d1.g), snow);
   // Au-delà de la distance d'affichage des arbres, le sol prend la couleur de la forêt
   float far = smoothstep(uTreeDist * 0.8, uTreeDist * 1.05, length(vWPos - cameraPosition));
@@ -531,7 +534,7 @@ vec3 terrainColor(){
 #ifdef USE_FOG
   // Brume plus légère en altitude : les sommets lointains restent visibles, voilés de bleu
   float fogF = smoothstep(fogNear, fogFar, vFogDepth);
-  fogF *= 1.0 - 0.72 * smoothstep(30.0, 190.0, vWPos.y);
+  fogF *= 1.0 - 0.72 * smoothstep(30.0, 450.0, vWPos.y);
   gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogF);
 #endif`)
         .replace("#include <color_fragment>", `#include <color_fragment>
@@ -713,7 +716,7 @@ ${REFL_PARS}`)
   float fN2 = texture2D(tWaterN, vWPos.xz * 0.05 - vec2(uTime * 0.01, 0.0)).b;
   float band = sin(depth * 5.0 - uTime * 1.6 + fN2 * 6.0) * 0.5 + 0.5;
   float shoreFoam = (1.0 - smoothstep(0.0, 0.9, depth)) * smoothstep(0.45, 0.85, fN * 0.7 + band * 0.55);
-  float crestFoam = smoothstep(0.55, 0.95, vCrest + fN * 0.35) * smoothstep(3.0, 8.0, depth) * 0.6;
+  float crestFoam = smoothstep(0.75, 1.1, vCrest + fN * 0.25) * smoothstep(3.0, 8.0, depth) * 0.3 * fN2;
   wFoam = clamp(shoreFoam + crestFoam, 0.0, 1.0);
   diffuseColor.a = 1.0;`)
         .replace("#include <normal_fragment_maps>", `

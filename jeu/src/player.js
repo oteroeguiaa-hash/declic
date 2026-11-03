@@ -2,6 +2,13 @@
 import * as THREE from "three";
 import { clamp } from "./noise.js";
 
+// Arbres grimpables : hauteur du tronc jusqu'aux grosses branches, et rayon de la plateforme de branches
+const CLIMB = {
+  beech: { top: 14.5, plat: 3.0 }, oak: { top: 11.5, plat: 3.6 }, scots: { top: 17, plat: 2.0 },
+  pine: { top: 4.2, plat: 1.4 }, birch: { top: 3.4, plat: 1.3 }, young: { top: 2.4, plat: 1.6 },
+};
+const climbInfo = (p) => { const c = CLIMB[p.t]; return c ? { top: p.y - 0.25 + c.top * p.s, plat: c.plat * p.s } : null; };
+
 const EYE = 1.68;
 const GRAVITY = 22;
 
@@ -158,6 +165,7 @@ export class Player {
     this.pitch = clamp(this.pitch - look.y * (this.invertY ? -1 : 1), -1.5, 1.5);
 
     if (this.boat) { this.updateBoat(dt, input, ctx); this.survive(dt, ctx); return; }
+    if (this.climb) { this.updateClimb(dt, input, ctx); this.survive(dt, ctx); return; }
     if (this.seat) {
       // Assis : regard libre, récupération plus rapide ; bouger ou sauter pour se lever
       const ax0 = input.axis();
@@ -251,6 +259,28 @@ export class Player {
       const d = Math.hypot(this.pos.x - p.x, this.pos.z - p.z);
       if (d < 1.0 * p.s && this.pos.y >= p.y + p.s * 0.6) floor = Math.max(floor, p.y + p.s * 0.75);
     });
+    // Branches des grands arbres : on peut marcher dessus (et sauter d'arbre en arbre)
+    this.props.query(this.pos.x, this.pos.z, 9, (id, p) => {
+      if (!p.alive) return;
+      const ci = climbInfo(p);
+      if (!ci || this.pos.y < ci.top - 0.5) return;
+      const d = Math.hypot(this.pos.x - p.x, this.pos.z - p.z);
+      if (d < ci.plat) floor = Math.max(floor, ci.top);
+    });
+    // Grimper : face à un tronc, avancer + sauter
+    if (!this.swimming && input.jump && ax.y > 0.3 && this.stamina > 5) {
+      const f = this.forward;
+      this.props.query(this.pos.x, this.pos.z, 3, (id, p) => {
+        if (this.climb || !p.alive || !p.r0) return;
+        const ci = climbInfo(p);
+        if (!ci || this.pos.y > ci.top - 1) return;
+        const dx = p.x - this.pos.x, dz = p.z - this.pos.z, d = Math.hypot(dx, dz);
+        if (d < p.r0 + 0.8 && (dx * f.x + dz * f.z) / Math.max(d, 1e-3) > 0.5) {
+          this.climb = { tree: p, top: ci.top, ang: Math.atan2(this.pos.x - p.x, this.pos.z - p.z) };
+          this.vel.set(0, 0, 0);
+        }
+      });
+    }
     // Constructions : planchers, fondations, escaliers
     if (this.structures.build) floor = Math.max(floor, this.structures.build.groundAt(this.pos.x, this.pos.z, this.pos.y));
 
@@ -319,6 +349,44 @@ export class Player {
     }
 
     this.survive(dt, ctx);
+  }
+
+  // ---------- Escalade ----------
+  updateClimb(dt, input, ctx) {
+    const c = this.climb, p = c.tree;
+    const look = input.consumeLook();
+    this.yaw -= look.x;
+    this.pitch = clamp(this.pitch - look.y * (this.invertY ? -1 : 1), -1.5, 1.5);
+    const ax = input.axis();
+    // avant = monter, arrière = descendre, gauche/droite = tourner autour du tronc
+    const v = ax.y * 2.4;
+    this.pos.y += v * dt;
+    c.ang += -ax.x * dt * 1.6;
+    this.stamina -= dt * (Math.abs(v) > 0.1 ? 7 : 2.5);
+    const ground = this.world.heightAt(this.pos.x, this.pos.z);
+    const R = p.r0 + 0.38;
+    this.pos.x = p.x + Math.sin(c.ang) * R;
+    this.pos.z = p.z + Math.cos(c.ang) * R;
+    const stepS = Math.abs(v) > 0.1;
+    if (stepS) { this.stepAcc += dt; if (this.stepAcc > 0.45) { this.stepAcc = 0; ctx.sounds.step("rock"); } }
+    let leave = null;
+    if (this.pos.y <= ground) { this.pos.y = ground; leave = "sol"; }
+    else if (this.pos.y >= c.top - 0.05) {
+      // arrivé aux branches : on se hisse dessus
+      this.pos.y = c.top; this.pos.x = p.x + Math.sin(c.ang) * 0.6; this.pos.z = p.z + Math.cos(c.ang) * 0.6;
+      leave = "haut";
+    } else if (input.jump && ax.y <= 0.3) {
+      // saut en arrière (on se lâche)
+      this.vel.set(Math.sin(c.ang) * 3, 4, Math.cos(c.ang) * 3); leave = "saut";
+    } else if (this.stamina <= 0) leave = "chute";
+    if (leave) {
+      this.climb = null; this.onGround = leave === "sol" || leave === "haut";
+      this.fallStartY = leave === "chute" || leave === "saut" ? this.pos.y : null;
+      if (leave === "chute") this.vel.set(0, 0, 0);
+    }
+    const cam = this.camera;
+    cam.position.set(this.pos.x, this.pos.y + this.eyeY, this.pos.z);
+    cam.rotation.order = "YXZ"; cam.rotation.set(this.pitch, this.yaw, 0);
   }
 
   // ---------- Canoë ----------

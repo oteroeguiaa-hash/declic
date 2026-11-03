@@ -135,7 +135,7 @@ export class Environment {
         }`,
     });
     this.clouds = new THREE.Mesh(g, mat);
-    this.clouds.position.y = 420;
+    this.clouds.position.y = 700;
     this.clouds.frustumCulled = false;
     this.clouds.renderOrder = 1;
     this.scene.add(this.clouds);

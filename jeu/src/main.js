@@ -31,9 +31,9 @@ const store = {
 };
 
 const PRESETS = {
-  low:    { reflections: 0, msaa: 0, raySamples: 24, rayScale: 0.25, terrainCells: 256, shadows: true, shadowSize: 1024, shadowRange: 34, viewDistance: 330, grassCount: 16000, grassRadius: 19, treeCandidates: 120000, lodScale: 0.55, envInterval: 20, maxDeer: 5, maxSquirrels: 3, maxWolves: 4, maxCreatures: 16, antialias: false, maxPixelRatio: 1.25 },
-  medium: { reflections: 0.35, msaa: 2, raySamples: 40, rayScale: 0.4, terrainCells: 384, shadows: true, shadowSize: 2048, shadowRange: 48, viewDistance: 480, grassCount: 38000, grassRadius: 26, treeCandidates: 120000, lodScale: 0.85, envInterval: 10, maxDeer: 6, maxSquirrels: 4, maxWolves: 5, maxCreatures: 22, antialias: true, maxPixelRatio: 1.6 },
-  high:   { reflections: 0.5, msaa: 4, raySamples: 60, rayScale: 0.5, terrainCells: 512, shadows: true, shadowSize: 4096, shadowRange: 62, viewDistance: 680, grassCount: 75000, grassRadius: 34, treeCandidates: 120000, lodScale: 1.25, envInterval: 6, maxDeer: 8, maxSquirrels: 5, maxWolves: 6, maxCreatures: 28, antialias: true, maxPixelRatio: 2 },
+  low:    { reflections: 0, msaa: 0, raySamples: 24, rayScale: 0.25, terrainCells: 256, shadows: true, shadowSize: 1024, shadowRange: 34, viewDistance: 330, grassCount: 11000, grassRadius: 17, treeCandidates: 120000, lodScale: 0.55, envInterval: 20, maxDeer: 5, maxSquirrels: 3, maxWolves: 4, maxCreatures: 12, antialias: false, maxPixelRatio: 1.0 },
+  medium: { reflections: 0.25, msaa: 0, raySamples: 40, rayScale: 0.4, terrainCells: 384, shadows: true, shadowSize: 2048, shadowRange: 48, viewDistance: 480, grassCount: 26000, grassRadius: 24, treeCandidates: 120000, lodScale: 0.85, envInterval: 10, maxDeer: 6, maxSquirrels: 4, maxWolves: 5, maxCreatures: 15, antialias: true, maxPixelRatio: 1.6 },
+  high:   { reflections: 0.35, msaa: 2, raySamples: 40, rayScale: 0.4, terrainCells: 512, shadows: true, shadowSize: 2048, shadowRange: 58, viewDistance: 620, grassCount: 46000, grassRadius: 31, treeCandidates: 120000, lodScale: 1.25, envInterval: 6, maxDeer: 8, maxSquirrels: 5, maxWolves: 6, maxCreatures: 20, antialias: true, maxPixelRatio: 1.6 },
 };
 
 function detectQuality() {
@@ -146,7 +146,7 @@ class Game {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = Q.shadows;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(settings.fov, this.viewW / this.viewH, 0.08, 9000);
@@ -788,7 +788,8 @@ class Game {
       const tool = TOOLS[this.tool];
       const action = tool.tree >= 1 ? `${hit} Abattre` : tool.tree > 0 ? `${hit} Abattre (lentement)` : `${hit} Arracher une branche`;
       const hp = p.hp < def.hp ? `<div class="hpbar"><i style="width:${(p.hp / def.hp) * 100}%"></i></div>` : "";
-      return [`<b>${def.name}</b><small>${action}</small>${hp}`, true];
+      const climb = this.input.touch ? "⤒ + avancer : grimper" : "[Espace] + avancer : grimper";
+      return [`<b>${def.name}</b><small>${action} · ${climb}</small>${hp}`, true];
     }
     if (def.kind === "rock") {
       const ok = TOOLS[this.tool].rock > 0;
