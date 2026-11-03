@@ -86,9 +86,75 @@ function buildWolf() {
   return { group: g, body, legs, neck, tail, height: 0.75 };
 }
 
+function buildBear() {
+  const fur = new THREE.MeshStandardMaterial({ color: 0x4a3222, roughness: 1 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2a1c12, roughness: 1 });
+  const snout = new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 1 });
+  const g = new THREE.Group();
+  const body = new THREE.Group();
+  body.position.y = 1.0;
+  g.add(body);
+  body.add(box(0.95, 0.95, 1.7, fur));
+  body.add(box(0.9, 0.5, 0.6, fur, 0, 0.35, 0.45)); // bosse des épaules
+  body.add(box(0.85, 0.8, 0.5, fur, 0, -0.05, -0.75));
+  const neck = new THREE.Group();
+  neck.position.set(0, 0.15, 0.95);
+  const head = new THREE.Group();
+  head.add(box(0.6, 0.52, 0.5, fur, 0, 0, 0.1));
+  head.add(box(0.32, 0.26, 0.3, snout, 0, -0.1, 0.45));
+  head.add(box(0.12, 0.08, 0.06, dark, 0, -0.02, 0.61));
+  head.add(box(0.14, 0.14, 0.08, fur, 0.22, 0.3, 0));
+  head.add(box(0.14, 0.14, 0.08, fur, -0.22, 0.3, 0));
+  neck.add(head);
+  body.add(neck);
+  const legs = [];
+  for (const [x, z] of [[0.3, 0.55], [-0.3, 0.55], [0.3, -0.6], [-0.3, -0.6]]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, -0.35, z);
+    pivot.add(box(0.3, 0.7, 0.32, fur, 0, -0.3, 0));
+    pivot.add(box(0.32, 0.1, 0.4, dark, 0, -0.62, 0.05));
+    body.add(pivot);
+    legs.push(pivot);
+  }
+  return { group: g, body, legs, neck, height: 1.05 };
+}
+
+function buildSquirrel() {
+  const fur = new THREE.MeshStandardMaterial({ color: 0xa5501f, roughness: 0.9 });
+  const belly = new THREE.MeshStandardMaterial({ color: 0xe8d2b0, roughness: 0.9 });
+  const g = new THREE.Group();
+  const body = new THREE.Group();
+  body.position.y = 0.14;
+  g.add(body);
+  body.add(box(0.12, 0.12, 0.22, fur));
+  body.add(box(0.09, 0.06, 0.16, belly, 0, -0.04, 0.02));
+  const neck = new THREE.Group();
+  neck.position.set(0, 0.06, 0.12);
+  neck.add(box(0.1, 0.1, 0.11, fur, 0, 0.02, 0.04));
+  neck.add(box(0.03, 0.05, 0.02, fur, 0.035, 0.09, 0.02));
+  neck.add(box(0.03, 0.05, 0.02, fur, -0.035, 0.09, 0.02));
+  body.add(neck);
+  const tail = new THREE.Group();
+  tail.position.set(0, 0.04, -0.12);
+  const t1 = box(0.1, 0.22, 0.1, fur, 0, 0.1, -0.03); t1.rotation.x = -0.4; tail.add(t1);
+  const t2 = box(0.12, 0.14, 0.12, fur, 0, 0.24, 0.02); tail.add(t2);
+  body.add(tail);
+  const legs = [];
+  for (const [x, z] of [[0.04, 0.07], [-0.04, 0.07], [0.05, -0.07], [-0.05, -0.07]]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, -0.05, z);
+    pivot.add(box(0.03, 0.09, 0.04, fur, 0, -0.04, 0));
+    body.add(pivot);
+    legs.push(pivot);
+  }
+  return { group: g, body, legs, neck, tail, height: 0.15 };
+}
+
 const SPECIES = {
   deer: { build: buildDeer, hp: 60, walk: 1.3, run: 9.5, radius: 0.5, meat: 3, hide: 2 },
   wolf: { build: buildWolf, hp: 70, walk: 1.8, run: 7.4, radius: 0.45, meat: 2, hide: 1 },
+  bear: { build: buildBear, hp: 220, walk: 1.2, run: 6.8, radius: 0.8, meat: 6, hide: 0, fur: 2 },
+  squirrel: { build: buildSquirrel, hp: 8, walk: 1.5, run: 6.5, radius: 0.1, meat: 1, hide: 0, nuts: 2 },
 };
 
 export class Creatures {
@@ -108,7 +174,7 @@ export class Creatures {
     const sp = SPECIES[type];
     for (let tries = 0; tries < 20; tries++) {
       const a = this.rand() * Math.PI * 2;
-      const d = type === "wolf" ? 55 + this.rand() * 40 : 50 + this.rand() * 80;
+      const d = type === "wolf" ? 55 + this.rand() * 40 : type === "squirrel" ? 18 + this.rand() * 30 : type === "bear" ? 80 + this.rand() * 60 : 50 + this.rand() * 80;
       const x = player.x + Math.cos(a) * d, z = player.z + Math.sin(a) * d;
       const h = this.world.heightAt(x, z);
       if (h < 2.5 || h > 60 || this.world.slopeAt(x, z) > 0.3) continue;
@@ -135,10 +201,13 @@ export class Creatures {
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawnTimer = 2;
-      const deer = this.list.filter((c) => c.type === "deer" && !c.dead).length;
-      const wolves = this.list.filter((c) => c.type === "wolf" && !c.dead).length;
+      const n = (t) => this.list.filter((c) => c.type === t && !c.dead).length;
+      const deer = n("deer"), wolves = n("wolf");
+      const diff = ctx.diff;
       if (deer < this.quality.maxDeer && this.rand() < 0.5) this.spawn("deer", player.pos);
-      const maxW = night ? Math.min(this.quality.maxWolves, 1 + Math.floor(ctx.day / 2)) : 0;
+      if (n("squirrel") < this.quality.maxSquirrels && this.rand() < 0.5) this.spawn("squirrel", player.pos);
+      if (diff.predators && n("bear") < diff.bears && ctx.day >= 2 && this.rand() < 0.06) this.spawn("bear", player.pos);
+      const maxW = night && diff.predators ? Math.min(Math.round(this.quality.maxWolves * diff.wolves), 1 + Math.floor(ctx.day / 2)) : 0;
       if (wolves < maxW && this.rand() < 0.25) {
         const w = this.spawn("wolf", player.pos);
         if (w && this.sounds) this.sounds.howl(w.pos.distanceTo(player.pos));
@@ -147,6 +216,8 @@ export class Creatures {
         const d = c.pos.distanceTo(player.pos);
         if (d > 190 || (c.dead && c.deadT > 240)) this.remove(c);
         else if (c.type === "wolf" && !night && d > 70) this.remove(c);
+        else if (c.type === "squirrel" && d > 70) this.remove(c);
+        else if ((c.type === "wolf" || c.type === "bear") && !ctx.diff.predators) this.remove(c);
       }
     }
 
@@ -157,8 +228,9 @@ export class Creatures {
       c.timer -= dt;
       c.attackCd -= dt;
 
-      if (c.type === "deer") {
-        const alert = player.sprinting ? 30 : player.crouching ? 9 : 17;
+      if (c.type === "deer" || c.type === "squirrel") {
+        const sq = c.type === "squirrel";
+        const alert = sq ? (player.sprinting ? 12 : player.crouching ? 3 : 7) : player.sprinting ? 30 : player.crouching ? 9 : 17;
         if (dist < alert || c.state === "flee") {
           if (c.state !== "flee") { c.state = "flee"; c.timer = 4 + this.rand() * 3; }
           c.heading = Math.atan2(-toP.x, -toP.z) + Math.sin(performance.now() * 0.001 + c.pos.x) * 0.3;
@@ -167,7 +239,30 @@ export class Creatures {
         } else if (c.timer <= 0) {
           if (this.rand() < 0.45) { c.state = "graze"; c.target = 0; }
           else { c.state = "walk"; c.target = c.sp.walk; c.heading += (this.rand() - 0.5) * 2.2; }
-          c.timer = 3 + this.rand() * 6;
+          c.timer = sq ? 0.8 + this.rand() * 2 : 3 + this.rand() * 6;
+        }
+      } else if (c.type === "bear") {
+        let nearFire = null;
+        for (const f of fires) if (f.lit && f.pos.distanceTo(c.pos) < 11) nearFire = f;
+        if (c.hp < 50 || nearFire) {
+          const from = nearFire ? nearFire.pos : player.pos;
+          c.heading = Math.atan2(c.pos.x - from.x, c.pos.z - from.z);
+          c.target = c.sp.run; c.state = "flee";
+          if (c.hp < 50) c.angry = false;
+        } else if (c.angry || dist < (player.crouching ? 7 : 13)) {
+          c.angry = dist < 40;
+          c.state = dist < 2.4 ? "attack" : "chase";
+          c.heading = Math.atan2(toP.x, toP.z);
+          c.target = dist < 2.4 ? 0 : c.sp.run;
+          if (dist < 2.6 && c.attackCd <= 0 && !player.dead) {
+            c.attackCd = 1.8;
+            onAttack(Math.round((24 + this.rand() * 10) * ctx.diff.damage), c);
+          }
+        } else if (c.timer <= 0) {
+          c.state = this.rand() < 0.4 ? "graze" : "walk";
+          c.target = c.state === "walk" ? c.sp.walk : 0;
+          c.heading += (this.rand() - 0.5) * 1.6;
+          c.timer = 4 + this.rand() * 8;
         }
       } else {
         // Loup
@@ -191,7 +286,7 @@ export class Creatures {
           c.target = dist < 1.9 ? 0 : dist < 14 ? c.sp.run : c.sp.run * 0.75;
           if (dist < 2.1 && c.attackCd <= 0 && !player.dead) {
             c.attackCd = 1.25;
-            onAttack(11 + Math.floor(this.rand() * 6), c);
+            onAttack(Math.round((11 + Math.floor(this.rand() * 6)) * ctx.diff.damage), c);
           }
         } else if (c.timer <= 0) {
           c.state = "roam";
@@ -224,16 +319,16 @@ export class Creatures {
       c.body.rotation.x = THREE.MathUtils.lerp(c.body.rotation.x, -Math.atan2(ahead - c.pos.y, 1) * 0.8, dt * 5);
 
       // Animation des pattes
-      c.phase += dt * c.speed * (c.type === "deer" ? 2.2 : 2.8);
-      const amp = Math.min(0.75, c.speed * 0.12);
+      c.phase += dt * c.speed * ({ deer: 2.2, wolf: 2.8, bear: 1.9, squirrel: 9 })[c.type];
+      const amp = Math.min(0.75, c.speed * (c.type === "squirrel" ? 0.3 : 0.12));
       const gallop = c.speed > 4;
       c.legs.forEach((l, i) => {
         const off = gallop ? (i < 2 ? 0 : Math.PI * 0.8) + (i % 2) * 0.3 : (i === 0 || i === 3 ? 0 : Math.PI);
         l.rotation.x = Math.sin(c.phase + off) * amp;
       });
-      c.body.position.y = c.height * (c.type === "deer" ? 0.955 : 0.96) + Math.abs(Math.sin(c.phase)) * (gallop ? 0.08 : 0.02);
+      c.body.position.y = c.height * (c.type === "deer" ? 0.955 : c.type === "bear" ? 0.95 : 0.96) + Math.abs(Math.sin(c.phase)) * (c.type === "squirrel" ? 0.05 : gallop ? 0.08 : 0.02);
       if (c.type === "deer") c.neck.rotation.x = THREE.MathUtils.lerp(c.neck.rotation.x, c.state === "graze" ? 0.9 : c.state === "flee" ? -0.9 : -0.6, dt * 2);
-      else {
+      else if (c.type === "wolf") {
         c.neck.rotation.x = c.state === "attack" ? Math.sin(performance.now() * 0.02) * 0.15 + 0.1 : 0;
         if (c.tail) c.tail.rotation.x = c.state === "chase" ? 0.1 : 0.6;
       }
@@ -255,7 +350,8 @@ export class Creatures {
       const t = center.clone().sub(origin).dot(dir);
       if (t < 0 || t > bestT + 1) continue;
       const closest = origin.clone().addScaledVector(dir, t);
-      if (closest.distanceTo(center) < 0.85) {
+      const rad = c.type === "bear" ? 1.2 : c.type === "squirrel" ? 0.35 : 0.85;
+      if (closest.distanceTo(center) < rad) {
         const tt = Math.max(0, t - 0.6);
         if (tt < bestT) { bestT = tt; best = c; }
       }
@@ -266,11 +362,13 @@ export class Creatures {
   damage(c, amount, from) {
     if (c.dead) return false;
     c.hp -= amount;
-    if (c.type === "deer") { c.state = "flee"; c.timer = 8; }
+    if (c.type === "deer" || c.type === "squirrel") { c.state = "flee"; c.timer = 8; }
+    else if (c.type === "bear") c.angry = true;
     else { c.attackCd = Math.max(c.attackCd, 0.5); }
     // petit recul
     const dx = c.pos.x - from.x, dz = c.pos.z - from.z, d = Math.hypot(dx, dz) || 1;
-    c.pos.x += (dx / d) * 0.4; c.pos.z += (dz / d) * 0.4;
+    const kb = c.type === "bear" ? 0.08 : 0.4;
+    c.pos.x += (dx / d) * kb; c.pos.z += (dz / d) * kb;
     if (c.hp <= 0) {
       c.dead = true; c.speed = 0; c.deadT = 0;
       return true;

@@ -110,6 +110,8 @@ export class Post {
     });
     this.compMat.toneMapped = true;
 
+    this.rays = true;
+    this.bloom = true;
     this._v = new THREE.Vector3();
     this._f = new THREE.Vector3();
   }
@@ -141,7 +143,7 @@ export class Post {
     camera.getWorldDirection(this._f);
     const facing = this._f.dot(sun.dir);
     const onScreen = Math.max(0, 1 - Math.max(0, Math.max(Math.abs(sp.x), Math.abs(sp.y)) - 1) * 1.2);
-    const rayK = sun.strength * THREE.MathUtils.smoothstep(facing, 0.05, 0.55) * onScreen;
+    const rayK = (this.rays ? 1 : 0) * sun.strength * THREE.MathUtils.smoothstep(facing, 0.05, 0.55) * onScreen;
 
     if (rayK > 0.002) {
       this.raysMat.uniforms.tDepth.value = this.sceneRT.depthTexture;
@@ -152,6 +154,8 @@ export class Post {
     this.compMat.uniforms.uRayCol.value.copy(sun.color).multiplyScalar(rayK);
 
     // Bloom
+    this.compMat.uniforms.uBloom.value = this.bloom ? 0.5 : 0;
+    if (this.bloom) {
     this.brightMat.uniforms.tColor.value = this.sceneRT.texture;
     this.pass(this.brightMat, this.bloomA);
     const bw = this.bloomA.width, bh = this.bloomA.height;
@@ -162,6 +166,7 @@ export class Post {
       this.blurMat.uniforms.tColor.value = this.bloomB.texture;
       this.blurMat.uniforms.uDir.value.set(0, 1 / bh * (1 + i));
       this.pass(this.blurMat, this.bloomA);
+    }
     }
 
     const u = this.compMat.uniforms;

@@ -9,13 +9,12 @@ import { Player } from "./player.js";
 import { Input } from "./input.js";
 import { Sounds } from "./audio.js";
 import { UI } from "./ui.js";
-import { ITEMS, TOOLS, RECIPES, Inventory } from "./items.js";
+import { ITEMS, TOOLS, RECIPES, TOOL_SLOTS, Inventory } from "./items.js";
 import { Post } from "./post.js";
 
-const SAVE_KEY = "lisiere-save-v1";
+const SAVE_KEY = "lisiere-save-v2";        // v2 : nouveau relief, les anciennes îles ne correspondent plus
+const OLD_SAVE_KEY = "lisiere-save-v1";
 const SETTINGS_KEY = "lisiere-settings";
-const DAY_MINUTES = 16;                      // durée d'une journée complète en minutes réelles
-const HOURS_PER_SEC = 24 / (DAY_MINUTES * 60);
 const $ = (id) => document.getElementById(id);
 
 const store = {
@@ -25,9 +24,9 @@ const store = {
 };
 
 const PRESETS = {
-  low:    { msaa: 0, raySamples: 24, rayScale: 0.25, terrainCells: 256, shadows: true, shadowSize: 1024, shadowRange: 34, viewDistance: 330, grassCount: 20000, grassRadius: 20, treeCandidates: 120000, lodScale: 0.55, envInterval: 20, maxDeer: 6, maxWolves: 3, antialias: false, maxPixelRatio: 1.25 },
-  medium: { msaa: 2, raySamples: 40, rayScale: 0.4, terrainCells: 384, shadows: true, shadowSize: 2048, shadowRange: 48, viewDistance: 480, grassCount: 50000, grassRadius: 28, treeCandidates: 120000, lodScale: 0.85, envInterval: 10, maxDeer: 8, maxWolves: 4, antialias: true, maxPixelRatio: 1.6 },
-  high:   { msaa: 4, raySamples: 60, rayScale: 0.5, terrainCells: 512, shadows: true, shadowSize: 4096, shadowRange: 62, viewDistance: 680, grassCount: 100000, grassRadius: 36, treeCandidates: 120000, lodScale: 1.25, envInterval: 6, maxDeer: 10, maxWolves: 5, antialias: true, maxPixelRatio: 2 },
+  low:    { msaa: 0, raySamples: 24, rayScale: 0.25, terrainCells: 256, shadows: true, shadowSize: 1024, shadowRange: 34, viewDistance: 330, grassCount: 16000, grassRadius: 19, treeCandidates: 120000, lodScale: 0.55, envInterval: 20, maxDeer: 6, maxSquirrels: 4, maxWolves: 3, antialias: false, maxPixelRatio: 1.25 },
+  medium: { msaa: 2, raySamples: 40, rayScale: 0.4, terrainCells: 384, shadows: true, shadowSize: 2048, shadowRange: 48, viewDistance: 480, grassCount: 38000, grassRadius: 26, treeCandidates: 120000, lodScale: 0.85, envInterval: 10, maxDeer: 8, maxSquirrels: 6, maxWolves: 4, antialias: true, maxPixelRatio: 1.6 },
+  high:   { msaa: 4, raySamples: 60, rayScale: 0.5, terrainCells: 512, shadows: true, shadowSize: 4096, shadowRange: 62, viewDistance: 680, grassCount: 75000, grassRadius: 34, treeCandidates: 120000, lodScale: 1.25, envInterval: 6, maxDeer: 10, maxSquirrels: 8, maxWolves: 5, antialias: true, maxPixelRatio: 2 },
 };
 
 function detectQuality() {
@@ -38,9 +37,69 @@ function detectQuality() {
   return cores >= 8 && mem >= 8 ? "high" : "medium";
 }
 
-const settings = Object.assign({ quality: "auto", sens: 1, fov: 72, sound: true, fps: false }, store.get(SETTINGS_KEY) || {});
+const DEFAULTS = {
+  quality: "auto", shadows: "auto", grass: "auto", viewDist: "auto", rays: true, bloom: true, dynres: true,
+  difficulty: "normal", dayMinutes: 16, hints: true,
+  sens: 1, invertY: false, fov: 72, headBob: true,
+  volume: 80,
+  uiScale: "1", compass: true, crosshair: true, fps: false,
+};
+const savedSettings = store.get(SETTINGS_KEY) || {};
+if (savedSettings.sound === false && savedSettings.volume == null) savedSettings.volume = 0;
+const settings = Object.assign({}, DEFAULTS, savedSettings);
+
+export const DIFFS = {
+  paisible:  { label: "Paisible",  predators: false, damage: 0.5, hunger: 0.6, wolves: 0, bears: 0 },
+  normal:    { label: "Normal",    predators: true,  damage: 1,   hunger: 1,   wolves: 1, bears: 1 },
+  difficile: { label: "Difficile", predators: true,  damage: 1.5, hunger: 1.4, wolves: 1.6, bears: 2 },
+};
+const VIEW = { proche: 260, normale: 450, loin: 650, tresloin: 900 };
+
 const qualityName = settings.quality === "auto" ? detectQuality() : settings.quality;
 const Q = { ...PRESETS[qualityName], name: qualityName };
+if (settings.shadows === "off") Q.shadows = false;
+else if (settings.shadows === "normal") Object.assign(Q, { shadows: true, shadowSize: 2048, shadowRange: 48 });
+else if (settings.shadows === "fine") Object.assign(Q, { shadows: true, shadowSize: 4096, shadowRange: 60 });
+if (settings.grass === "low") Object.assign(Q, { grassCount: Math.round(Q.grassCount * 0.5), grassRadius: Q.grassRadius * 0.8 });
+else if (settings.grass === "normal") Object.assign(Q, { grassCount: PRESETS.medium.grassCount, grassRadius: PRESETS.medium.grassRadius });
+else if (settings.grass === "high") Object.assign(Q, { grassCount: Math.round(Q.grassCount * 1.6), grassRadius: Q.grassRadius * 1.15 });
+const baseView = Q.viewDistance;
+if (VIEW[settings.viewDist]) Q.viewDistance = VIEW[settings.viewDist];
+const RELOAD_KEYS = ["quality", "shadows", "grass"];
+const initialReload = Object.fromEntries(RELOAD_KEYS.map((k) => [k, settings[k]]));
+
+const opt = (pairs) => pairs.map(([v, l]) => ({ v, l }));
+const SCHEMA = [
+  ["Graphismes", [
+    { k: "quality", l: "Qualité générale", o: opt([["auto", "Automatique"], ["low", "Rapide"], ["medium", "Équilibrée"], ["high", "Belle"]]) },
+    { k: "shadows", l: "Ombres", o: opt([["auto", "Selon la qualité"], ["off", "Désactivées"], ["normal", "Normales"], ["fine", "Fines"]]) },
+    { k: "grass", l: "Densité de l'herbe", o: opt([["auto", "Selon la qualité"], ["low", "Faible"], ["normal", "Normale"], ["high", "Élevée"]]) },
+    { k: "viewDist", l: "Distance de vue", o: opt([["auto", "Selon la qualité"], ["proche", "Proche"], ["normale", "Normale"], ["loin", "Loin"], ["tresloin", "Très loin"]]) },
+    { k: "rays", l: "Rayons de soleil", t: "toggle" },
+    { k: "bloom", l: "Halo lumineux", t: "toggle" },
+    { k: "dynres", l: "Résolution dynamique", h: "Baisse la netteté si le jeu ralentit", t: "toggle" },
+  ]],
+  ["Jeu", [
+    { k: "difficulty", l: "Difficulté", o: opt([["paisible", "Paisible"], ["normal", "Normal"], ["difficile", "Difficile"]]) },
+    { k: "dayMinutes", l: "Durée d'une journée", num: true, o: opt([[10, "10 minutes"], [16, "16 minutes"], [24, "24 minutes"], [40, "40 minutes"]]) },
+    { k: "hints", l: "Conseils à l'écran", t: "toggle" },
+  ]],
+  ["Commandes", [
+    { k: "sens", l: "Sensibilité", t: "range", min: 0.3, max: 2.5, step: 0.1, fmt: (v) => "×" + (+v).toFixed(1) },
+    { k: "invertY", l: "Inverser l'axe vertical", t: "toggle" },
+    { k: "fov", l: "Champ de vision", t: "range", min: 60, max: 100, step: 1, fmt: (v) => v + "°" },
+    { k: "headBob", l: "Balancement de la tête", t: "toggle" },
+  ]],
+  ["Son", [
+    { k: "volume", l: "Volume", t: "range", min: 0, max: 100, step: 5, fmt: (v) => v + " %" },
+  ]],
+  ["Interface", [
+    { k: "uiScale", l: "Taille de l'interface", o: opt([["0.85", "Petite"], ["1", "Normale"], ["1.15", "Grande"], ["1.3", "Très grande"]]) },
+    { k: "compass", l: "Boussole", t: "toggle" },
+    { k: "crosshair", l: "Viseur", t: "toggle" },
+    { k: "fps", l: "Afficher les FPS", t: "toggle" },
+  ]],
+];
 
 const loadBar = $("loadBar"), loadText = $("loadText");
 const step = async (pct, text) => {
@@ -51,8 +110,13 @@ const step = async (pct, text) => {
 
 class Game {
   async init() {
+    this.diff = DIFFS[settings.difficulty] || DIFFS.normal;
+    this.hoursPerSec = 24 / (settings.dayMinutes * 60);
     const saved = store.get(SAVE_KEY);
-    this.seed = saved?.seed ?? ((Math.random() * 1e9) | 0);
+    const oldSave = saved ? null : store.get(OLD_SAVE_KEY);
+    const newSeed = store.get("lisiere-newseed");
+    store.del("lisiere-newseed");
+    this.seed = saved?.seed ?? newSeed ?? oldSave?.seed ?? ((Math.random() * 1e9) | 0);
 
     await step(5, "Allumage du moteur 3D…");
     const canvas = $("game");
@@ -97,7 +161,7 @@ class Game {
 
     await step(78, "Les animaux s'installent…");
     this.sounds = new Sounds();
-    this.sounds.setEnabled(settings.sound);
+    this.sounds.setVolume(settings.volume / 100);
     this.structures = new Structures(this.scene, this.world);
     this.creatures = new Creatures(this.scene, this.world, this.props, Q, this.sounds);
     this.player = new Player(this.camera, this.world, this.props, this.structures);
@@ -116,6 +180,7 @@ class Game {
     this.player.spawnPoint.copy(spawn);
     this.player.yaw = Math.atan2(spawn.x, spawn.z); // regarde vers l'intérieur de l'île
     if (saved) this.restore(saved);
+    else if (oldSave) this.migrate(oldSave);
     this.player.setTool(this.tool);
 
     await step(90, "Compilation des shaders…");
@@ -129,7 +194,9 @@ class Game {
 
     await step(100, "Prêt.");
     this.state = "menu";
-    this.wireUI(!!saved);
+    this.hasSave = !!(saved || oldSave);
+    this.applySettings();
+    this.wireUI();
     $("loading").classList.add("hidden");
     this.showMenu();
 
@@ -153,30 +220,123 @@ class Game {
       const d = f.pos.distanceTo(this.player.pos);
       if (f.lit) { fireDist = Math.min(fireDist, d); if (d < 6) nearFire = true; }
     }
-    return { sounds: this.sounds, day: this.env.dayFactor, gameDtHours, nearFire, fireDist };
+    return { sounds: this.sounds, day: this.env.dayFactor, gameDtHours, nearFire, fireDist, coat: this.inv.count("manteau") > 0, hunger: this.diff.hunger };
+  }
+
+  // ---------- Réglages ----------
+  applySettings() {
+    this.diff = DIFFS[settings.difficulty] || DIFFS.normal;
+    this.hoursPerSec = 24 / (settings.dayMinutes * 60);
+    this.input.sensitivity = settings.sens;
+    this.player.invertY = settings.invertY;
+    this.player.bobScale = settings.headBob ? 1 : 0;
+    this.camera.fov = settings.fov; this.camera.updateProjectionMatrix();
+    this.sounds.setVolume(settings.volume / 100);
+    document.documentElement.style.setProperty("--ui", settings.uiScale);
+    document.body.classList.toggle("nocompass", !settings.compass);
+    document.body.classList.toggle("nocross", !settings.crosshair);
+    if (this.post) { this.post.rays = settings.rays; this.post.bloom = settings.bloom; }
+    if (!settings.dynres && this.post) {
+      const max = Math.min(devicePixelRatio, Q.maxPixelRatio);
+      if (this.pixelRatio !== max) { this.pixelRatio = max; this.renderer.setPixelRatio(max); this.renderer.setSize(this.viewW, this.viewH, false); this.post.setSize(this.viewW * max, this.viewH * max); }
+    }
+    const vd = VIEW[settings.viewDist] || baseView;
+    if (vd !== Q.viewDistance) {
+      Q.viewDistance = vd;
+      this.scene.fog.near = vd * 0.25; this.scene.fog.far = vd;
+      this.props.dirty = true;
+    }
+  }
+
+  renderSettings(tab = this.setTab || 0) {
+    this.setTab = tab;
+    $("setTabs").innerHTML = SCHEMA.map(([name], i) => `<button class="${i === tab ? "sel" : ""}" data-tab="${i}">${name}</button>`).join("");
+    $("setTabs").querySelectorAll("button").forEach((b) => (b.onclick = () => this.renderSettings(+b.dataset.tab)));
+    const rows = SCHEMA[tab][1].map((f) => {
+      const v = settings[f.k];
+      let ctl;
+      if (f.t === "toggle") ctl = `<button class="toggle ${v ? "on" : ""}" data-k="${f.k}" aria-pressed="${!!v}" aria-label="${f.l}"></button>`;
+      else if (f.t === "range") ctl = `<div class="ctl"><input type="range" data-k="${f.k}" min="${f.min}" max="${f.max}" step="${f.step}" value="${v}" aria-label="${f.l}"><span class="val">${f.fmt(v)}</span></div>`;
+      else ctl = `<div class="ctl"><select data-k="${f.k}" aria-label="${f.l}">${f.o.map((o) => `<option value="${o.v}" ${String(o.v) === String(v) ? "selected" : ""}>${o.l}</option>`).join("")}</select></div>`;
+      return `<div class="row"><label>${f.l}${f.h ? `<br><small>${f.h}</small>` : ""}</label>${ctl}</div>`;
+    }).join("");
+    $("setBody").innerHTML = rows;
+    const body = $("setBody");
+    const field = (k) => SCHEMA[tab][1].find((f) => f.k === k);
+    body.querySelectorAll(".toggle").forEach((b) => (b.onclick = () => { this.setSetting(b.dataset.k, !settings[b.dataset.k]); b.classList.toggle("on", settings[b.dataset.k]); }));
+    body.querySelectorAll("input[type=range]").forEach((r) => (r.oninput = () => { const f = field(r.dataset.k); this.setSetting(f.k, +r.value); r.nextElementSibling.textContent = f.fmt(+r.value); }));
+    body.querySelectorAll("select").forEach((sel) => (sel.onchange = () => { const f = field(sel.dataset.k); this.setSetting(f.k, f.num ? +sel.value : sel.value); }));
+    this.updateReloadNote();
+  }
+
+  setSetting(k, v) {
+    settings[k] = v;
+    store.set(SETTINGS_KEY, settings);
+    this.applySettings();
+    this.updateReloadNote();
+    this.updateHomeInfo();
+  }
+
+  updateReloadNote() {
+    const need = RELOAD_KEYS.some((k) => settings[k] !== initialReload[k]);
+    $("reloadNote").classList.toggle("hidden", !need);
+    $("btnReload").classList.toggle("hidden", !need);
   }
 
   // ---------- Menus ----------
-  wireUI(hasSave) {
+  openPanel(id) {
+    for (const p of ["newgame", "settings", "howto"]) $(p).classList.toggle("hidden", p !== id);
+  }
+
+  updateHomeInfo() {
+    const d = this.diff.label;
+    $("homeInfo").innerHTML = this.hasSave
+      ? `Partie en cours : <b>jour ${this.day}</b> · ${d}<br>Graine de l'île : ${this.seed}`
+      : `Nouvelle île prête · ${d}<br>Graine : ${this.seed}`;
+  }
+
+  wireUI() {
     const touch = this.input.touch;
-    $("helpKeys").classList.toggle("hidden", touch);
-    $("helpTouch").classList.toggle("hidden", !touch);
-    $("btnPlay").textContent = hasSave ? "Continuer" : "Jouer";
+    $("btnPlay").textContent = this.hasSave ? "Continuer" : "Jouer";
     $("btnPlay").onclick = () => this.play();
-    $("btnNew").onclick = () => {
-      if (hasSave && !confirm("Commencer sur une nouvelle île ? Ta partie actuelle sera perdue.")) return;
-      store.del(SAVE_KEY);
-      this.noSave = true;
-      location.reload();
-    };
-    $("btnSettings").onclick = () => this.openSettings();
-    $("btnSettingsOk").onclick = () => this.closeSettings();
-    $("btnRespawn").onclick = () => this.respawn();
+    $("btnNew").onclick = () => this.openNewGame();
+    $("btnSettings").onclick = () => { this.renderSettings(); this.openPanel("settings"); };
+    $("btnHelp").onclick = () => this.openPanel("howto");
+    $("btnReload").onclick = () => { this.save(); location.reload(); };
+    document.querySelectorAll("[data-back]").forEach((b) => (b.onclick = () => this.openPanel(null)));
+    $("howKeys").innerHTML = touch
+      ? `<p>Joystick à gauche pour marcher (pousse à fond pour courir), glisse à droite pour regarder.<br>✊ frapper · ✋ ramasser, boire, cuire · 🎒 sac · 🔁 changer d'outil · ⤒ sauter.</p>`
+      : `<p><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> ou <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> se déplacer · <kbd>Maj</kbd> courir · <kbd>Espace</kbd> sauter · <kbd>C</kbd> s'accroupir<br>
+         <kbd>Clic</kbd> frapper · <kbd>E</kbd> ou <kbd>clic droit</kbd> ramasser, boire, cuire · <kbd>Tab</kbd> sac · <kbd>1</kbd>–<kbd>6</kbd> ou molette : outil · <kbd>F</kbd> manger · <kbd>Échap</kbd> pause</p>`;
     $("closeBag").onclick = () => this.toggleBag(false);
+    $("btnRespawn").onclick = () => this.respawn();
     $("btnPause").addEventListener("touchstart", (e) => { e.preventDefault(); this.pause(); });
     this.input.onLockChange = (locked) => {
       if (!locked && this.state === "play" && !this.bagOpen) this.pause();
     };
+    this.updateHomeInfo();
+  }
+
+  openNewGame() {
+    let diff = settings.difficulty;
+    const mark = () => document.querySelectorAll("#diffs .diff").forEach((b) => b.classList.toggle("sel", b.dataset.d === diff));
+    document.querySelectorAll("#diffs .diff").forEach((b) => (b.onclick = () => { diff = b.dataset.d; mark(); }));
+    mark();
+    $("ngDay").value = String(settings.dayMinutes);
+    $("ngSeed").value = "";
+    $("newWarn").textContent = this.hasSave ? `Attention : ta partie en cours (jour ${this.day}) sera remplacée.` : "Choisis comment tu veux jouer.";
+    $("ngStart").onclick = () => {
+      settings.difficulty = diff;
+      settings.dayMinutes = +$("ngDay").value;
+      store.set(SETTINGS_KEY, settings);
+      const raw = $("ngSeed").value.trim();
+      let seed = /^\d+$/.test(raw) ? parseInt(raw, 10) % 1e9 : raw ? [...raw].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7) >>> 0 : (Math.random() * 1e9) | 0;
+      store.del(SAVE_KEY); store.del(OLD_SAVE_KEY);
+      store.set("lisiere-newseed", seed % 1e9);
+      this.noSave = true;
+      location.reload();
+    };
+    this.openPanel("newgame");
   }
 
   showMenu() {
@@ -184,24 +344,28 @@ class Game {
     $("hud").classList.add("hidden");
     document.body.classList.remove("playing");
     this.input.enabled = false;
+    this.updateHomeInfo();
   }
 
   play() {
     this.sounds.init();
+    this.openPanel(null);
     $("menu").classList.add("hidden");
     $("hud").classList.remove("hidden");
     document.body.classList.add("playing");
     this.state = "play";
+    this.hasSave = true;
     this.input.enabled = true;
+    if (this.migrated) { this.migrated = false; this.ui.toast("L'île a été redessinée : tu repars d'un nouvel endroit, avec ton sac."); }
     this.input.requestLock();
     if (this.input.touch) {
       const el = document.documentElement;
       if (el.requestFullscreen && !document.fullscreenElement) el.requestFullscreen().catch(() => {});
       try { screen.orientation?.lock?.("landscape").catch(() => {}); } catch {}
     }
-    if (!this.introShown && this.day === 1 && this.hours < 9) {
+    if (!this.introShown && this.day === 1 && this.hours < 9 && settings.hints) {
       this.introShown = true;
-      this.ui.showHint("Ramasse des branches et des pierres au sol, cueille un buisson pour la fibre, puis ouvre ton sac pour fabriquer une hache.", 9000);
+      this.ui.showHint("Ramasse des branches et des cailloux au sol, cueille un buisson pour la fibre, puis ouvre ton sac pour fabriquer tes premiers outils en bois.", 9000);
     }
   }
 
@@ -211,34 +375,9 @@ class Game {
     this.toggleBag(false, true);
     this.input.exitLock();
     $("btnPlay").textContent = "Reprendre";
-    $("menuTag").textContent = `Jour ${this.day} · partie sauvegardée`;
+    $("menuTag").textContent = "Pause · partie sauvegardée";
     this.save();
     this.showMenu();
-  }
-
-  openSettings() {
-    $("optQuality").value = settings.quality;
-    $("optSens").value = settings.sens;
-    $("optFov").value = settings.fov;
-    $("optSound").value = settings.sound ? "1" : "0";
-    $("optFps").value = settings.fps ? "1" : "0";
-    $("settings").classList.remove("hidden");
-  }
-
-  closeSettings() {
-    const q = $("optQuality").value;
-    const reload = q !== settings.quality;
-    settings.quality = q;
-    settings.sens = +$("optSens").value;
-    settings.fov = +$("optFov").value;
-    settings.sound = $("optSound").value === "1";
-    settings.fps = $("optFps").value === "1";
-    store.set(SETTINGS_KEY, settings);
-    this.input.sensitivity = settings.sens;
-    this.camera.fov = settings.fov; this.camera.updateProjectionMatrix();
-    this.sounds.setEnabled(settings.sound);
-    $("settings").classList.add("hidden");
-    if (reload) { this.save(); location.reload(); }
   }
 
   toggleBag(open, silent) {
@@ -257,7 +396,7 @@ class Game {
 
   // ---------- Objets ----------
   ownedTools() {
-    return ["main", ...["hache", "pioche", "lance", "torche"].filter((t) => this.inv.count(t) > 0)];
+    return ["main", ...TOOL_SLOTS.map((slot) => slot.find((t) => this.inv.count(t) > 0)).filter(Boolean)];
   }
 
   selectTool(t) {
@@ -297,7 +436,7 @@ class Game {
   }
 
   quickEat() {
-    for (const id of ["viande_cuite", "baies", "viande_crue"]) {
+    for (const id of ["viande_cuite", "noisettes", "baies", "viande_crue"]) {
       if (this.inv.count(id) > 0) { this.useItem(id); return; }
     }
     this.ui.toast("Tu n'as rien à manger.", true);
@@ -361,7 +500,7 @@ class Game {
     if (t.type === "water") return [`<b>Eau</b><small>${use} Boire${this.inv.count("gourde") ? " et remplir la gourde" : ""}</small>`, true];
     if (t.type === "creature") {
       const c = t.creature;
-      const name = c.type === "deer" ? "Cerf" : "Loup";
+      const name = { deer: "Cerf", wolf: "Loup", bear: "Ours", squirrel: "Écureuil" }[c.type];
       if (c.dead) return [`<b>${name} (mort)</b><small>${use} Dépecer</small>`, true];
       if (t.dist > TOOLS[this.tool].reach) return [`<b>${name}</b>`, false];
       return [`<b>${name}</b><small>${hit} Attaquer</small><div class="hpbar"><i style="width:${(c.hp / c.sp.hp) * 100}%"></i></div>`, true];
@@ -385,7 +524,7 @@ class Game {
     if (def.kind === "rock") {
       const ok = TOOLS[this.tool].rock > 0;
       const hp = p.hp < def.hp ? `<div class="hpbar"><i style="width:${(p.hp / def.hp) * 100}%"></i></div>` : "";
-      return [`<b>Rocher</b><small>${ok ? `${hit} Extraire de la pierre` : "Il faut une pioche"}</small>${hp}`, ok];
+      return [`<b>Rocher</b><small>${ok ? `${hit} Extraire de la pierre${TOOLS[this.tool].rock < 1 ? " (lentement)" : ""}` : "Il faut une pioche (en bois ou en pierre)"}</small>${hp}`, ok];
     }
     if (def.kind === "bush") return [`<b>${p.state ? "Buisson à baies" : "Buisson"}</b><small>${p.state ? `${use} Cueillir` : "Les baies repousseront"}</small>`, !!p.state];
     if (def.kind === "pickup") return [`<b>${def.name}</b><small>${use} Ramasser</small>`, true];
@@ -404,7 +543,7 @@ class Game {
       if (c.dead) return;
       const dmg = tool.damage * (0.85 + Math.random() * 0.3);
       this.sounds.hitFlesh();
-      if (this.creatures.damage(c, dmg, this.player.pos)) this.ui.toast(c.type === "deer" ? "Tu as abattu un cerf" : "Tu as tué un loup");
+      if (this.creatures.damage(c, dmg, this.player.pos)) this.ui.toast({ deer: "Tu as abattu un cerf", wolf: "Tu as tué un loup", bear: "Tu as vaincu un ours !", squirrel: "Tu as attrapé un écureuil" }[c.type]);
       return;
     }
     if (target.type !== "prop" || target.dist > tool.reach) { this.sounds.swing(); return; }
@@ -427,10 +566,10 @@ class Game {
       this.sounds.rockHit();
       this.props.hit(id);
       if (tool.rock > 0) {
-        p.hp -= 1;
+        p.hp -= tool.rock;
         this.give("pierre", 1);
-        if (p.hp <= 0) this.props.remove(id, this.totalHours, 120);
-      } else this.ui.toast("Il te faut une pioche pour casser ce rocher.", true);
+        if (p.hp <= 0.01) this.props.remove(id, this.totalHours, 120);
+      } else this.ui.toast("Il te faut une pioche (en bois ou en pierre) pour casser ce rocher.", true);
     } else this.interact(target);
   }
 
@@ -449,7 +588,9 @@ class Game {
       const c = target.creature;
       if (!c.dead) return;
       this.give("viande_crue", c.sp.meat);
-      this.give("peau", c.sp.hide);
+      if (c.sp.hide) this.give("peau", c.sp.hide);
+      if (c.sp.fur) this.give("fourrure", c.sp.fur);
+      if (c.sp.nuts) this.give("noisettes", c.sp.nuts);
       this.creatures.remove(c);
       return;
     }
@@ -548,6 +689,16 @@ class Game {
     });
   }
 
+  // Ancienne sauvegarde (avant le nouveau relief) : on garde le sac, les stats et le jour, pas la position.
+  migrate(s) {
+    this.hours = s.hours ?? 8; this.day = s.day ?? 1; this.totalHours = s.totalHours ?? 8;
+    this.inv.restore(s.inv);
+    const p = s.player || {};
+    for (const k of ["health", "food", "water", "stamina", "warmth"]) if (p[k] != null) this.player[k] = p[k];
+    this.introShown = true;
+    this.migrated = true;
+  }
+
   restore(s) {
     this.hours = s.hours ?? 8; this.day = s.day ?? 1; this.totalHours = s.totalHours ?? 8;
     this.player.restore(s.player);
@@ -579,6 +730,7 @@ class Game {
     this.dynTimer = 0;
     const max = Math.min(devicePixelRatio, Q.maxPixelRatio);
     let pr = this.pixelRatio;
+    if (!settings.dynres) return;
     if (avg > 1 / 40 && pr > 0.6) pr = Math.max(0.6, pr - 0.15);
     else if (avg < 1 / 58 && pr < max) pr = Math.min(max, pr + 0.1);
     if (pr !== this.pixelRatio) { this.pixelRatio = pr; this.renderer.setPixelRatio(pr); this.renderer.setSize(this.viewW, this.viewH, false); this.post.setSize(this.viewW * pr, this.viewH * pr); }
@@ -593,7 +745,7 @@ class Game {
     const p = this.player;
 
     if (playing) {
-      const gameDt = dt * HOURS_PER_SEC;
+      const gameDt = dt * this.hoursPerSec;
       this.advanceTime(gameDt);
       const ctx = this.ctx(dt, gameDt);
 
@@ -622,7 +774,7 @@ class Game {
       }
 
       this.creatures.update(dt, p, {
-        night: this.isNight(), day: this.day, fires: this.structures.fires,
+        night: this.isNight(), day: this.day, fires: this.structures.fires, diff: this.diff,
         onAttack: (dmg, c) => {
           const torch = this.tool === "torche" ? 0.6 : 1;
           p.damage(dmg * torch, ctx);
@@ -643,8 +795,8 @@ class Game {
       // Annonce de la nuit
       const nightNow = this.isNight();
       if (nightNow && !this.wasNight) {
-        this.ui.toast("🌙 La nuit tombe. Les loups sortent…", true);
-        if (!this.structures.fires.some((f) => f.lit)) this.ui.showHint("La nuit, les loups rôdent et il fait froid. Reste près d'un feu ou tiens une torche.", 7000);
+        this.ui.toast(this.diff.predators ? "🌙 La nuit tombe. Les loups sortent…" : "🌙 La nuit tombe.", !!this.diff.predators);
+        if (settings.hints && this.diff.predators && !this.structures.fires.some((f) => f.lit)) this.ui.showHint("La nuit, les loups rôdent et il fait froid. Reste près d'un feu ou tiens une torche.", 7000);
       }
       this.wasNight = nightNow;
     } else {

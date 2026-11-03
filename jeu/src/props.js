@@ -460,24 +460,36 @@ export class Grass {
   constructor(scene, world, quality) {
     const count = quality.grassCount;
     const R = quality.grassRadius;
-    const blade = new THREE.BufferGeometry();
-    const w = 0.038, h = 1;
-    blade.setAttribute("position", new THREE.BufferAttribute(new Float32Array([
-      -w, 0, 0, w, 0, 0, -w * 0.75, h * 0.4, 0, w * 0.75, h * 0.4, 0, -w * 0.4, h * 0.75, 0, w * 0.4, h * 0.75, 0, 0, h, 0,
-    ]), 3));
-    blade.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(21).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
-    blade.setIndex([0, 1, 2, 2, 1, 3, 2, 3, 4, 4, 3, 5, 4, 5, 6]);
+    // Une instance = une touffe de 5 brins (densité ×5 pour le même nombre d'instances).
+    const pos = [], bt = [], idx = [];
+    const rb = mulberry32(7);
+    const w = 0.03;
+    for (let k = 0; k < 5; k++) {
+      const ox = (rb() - 0.5) * 0.4, oz = (rb() - 0.5) * 0.4;
+      const rot = rb() * Math.PI, hk = 0.65 + rb() * 0.6;
+      const lx = (rb() - 0.5) * 0.25, lz = (rb() - 0.5) * 0.25;
+      const c = Math.cos(rot), sn = Math.sin(rot);
+      const base = pos.length / 3;
+      const prof = [[-w, 0], [w, 0], [-w * 0.75, 0.4], [w * 0.75, 0.4], [-w * 0.4, 0.75], [w * 0.4, 0.75], [0, 1]];
+      for (const [x, t] of prof) {
+        const y = t * hk;
+        pos.push(ox + x * c + lx * t * t, y, oz + x * sn + lz * t * t);
+        bt.push(t);
+      }
+      idx.push(base, base + 1, base + 2, base + 2, base + 1, base + 3, base + 2, base + 3, base + 4, base + 4, base + 3, base + 5, base + 4, base + 5, base + 6);
+    }
     const geo = new THREE.InstancedBufferGeometry();
-    geo.index = blade.index;
-    geo.attributes.position = blade.attributes.position;
-    geo.attributes.normal = blade.attributes.normal;
+    geo.setIndex(idx);
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("normal", new THREE.Float32BufferAttribute(new Array(pos.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+    geo.setAttribute("bt", new THREE.Float32BufferAttribute(bt, 1));
     const off = new Float32Array(count * 4);
     const rand = mulberry32(99);
     for (let i = 0; i < count; i++) {
       off[i * 4] = (rand() * 2 - 1) * R;
       off[i * 4 + 1] = (rand() * 2 - 1) * R;
       off[i * 4 + 2] = rand() * Math.PI * 2;
-      off[i * 4 + 3] = 0.28 + rand() * 0.42;
+      off[i * 4 + 3] = 0.3 + rand() * 0.35;
     }
     geo.setAttribute("aOff", new THREE.InstancedBufferAttribute(off, 4));
     geo.instanceCount = count;
@@ -495,7 +507,7 @@ export class Grass {
       sh.vertexShader = sh.vertexShader
         .replace("#include <common>", `#include <common>
 uniform float uTime; uniform vec2 uCam; uniform float uR; uniform sampler2D tHeight; uniform vec2 uHM;
-attribute vec4 aOff; varying float vT; varying float vVar; varying vec3 vGW;`)
+attribute vec4 aOff; attribute float bt; varying float vT; varying float vVar; varying vec3 vGW;`)
         .replace("#include <begin_vertex>", `
   vec2 wxz = uCam + mod(aOff.xy - uCam + uR, 2.0 * uR) - uR;
   vec2 hg = texture2D(tHeight, wxz * uHM.x + uHM.y).rg;
@@ -506,14 +518,14 @@ attribute vec4 aOff; varying float vT; varying float vVar; varying vec3 vGW;`)
   float s = aOff.w * keep * fade;
   vec3 p = position;
   p.y *= s;
-  p.x *= (0.6 + 0.4 * fade) * keep;
+  p.xz *= keep * (0.7 + 0.3 * fade);
   float c = cos(aOff.z), sn = sin(aOff.z);
   p = vec3(p.x * c - p.z * sn, p.y, p.x * sn + p.z * c);
   float gust = sin(uTime * 1.7 + wxz.x * 0.25 + wxz.y * 0.18) * 0.5 + 0.5;
-  float bend = position.y * position.y * s * (0.18 + 0.3 * gust);
+  float bend = bt * bt * s * (0.16 + 0.28 * gust);
   p.x += bend * 0.8; p.z += bend * 0.4;
   vec3 transformed = vec3(wxz.x, hg.r - 0.02, wxz.y) + p;
-  vT = position.y;
+  vT = bt;
   vVar = fract(sin(dot(floor(wxz * 0.35), vec2(39.3, 11.7))) * 9137.1);
   vGW = transformed;`);
       sh.fragmentShader = sh.fragmentShader
