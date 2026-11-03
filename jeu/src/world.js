@@ -160,7 +160,22 @@ export class World {
     return new THREE.Vector3(0, this.heightAt(0, 0), 0);
   }
 
-  // Texture R = hauteur, G = densité d'herbe, B = ruisseau. Utilisée par le terrain, l'herbe et l'eau.
+  // Ombre des arbres sur le sol (canopée), rastérisée sur la grille : sol de sous-bois, moins d'herbe.
+  applyCanopy(props) {
+    const V = this.V, C = (this.canopy = new Float32Array(V * V));
+    for (const p of props) {
+      if (p.t !== "pine" && p.t !== "oak" && p.t !== "birch") continue;
+      const r = (p.t === "oak" ? 4.2 : p.t === "birch" ? 2.6 : 3.2) * p.s;
+      const gi = (p.x + this.half) / this.step, gj = (p.z + this.half) / this.step, rc = r / this.step;
+      for (let j = Math.max(0, Math.floor(gj - rc)); j <= Math.min(this.N, Math.ceil(gj + rc)); j++)
+        for (let i = Math.max(0, Math.floor(gi - rc)); i <= Math.min(this.N, Math.ceil(gi + rc)); i++) {
+          const d = Math.hypot(i - gi, j - gj) / rc;
+          if (d < 1) C[j * V + i] = Math.min(1, C[j * V + i] + (1 - d * d) * 0.8);
+        }
+    }
+  }
+
+  // Texture R = hauteur, G = densité d'herbe, B = ruisseau, A = canopée. Utilisée par le terrain, l'herbe et l'eau.
   buildHeightTexture() {
     const V = this.V;
     const data = new Uint16Array(V * V * 4);
@@ -176,10 +191,12 @@ export class World {
         let g = smoothstep(2.6, 4.0, h) * (1 - smoothstep(42, 56, h)) * (1 - smoothstep(0.12, 0.25, s));
         g *= smoothstep(0.15, 0.55, m) * 0.85 + 0.15;
         g *= 1 - smoothstep(0.02, 0.15, this.stream[k]);
+        const can = this.canopy ? this.canopy[k] : 0;
+        g *= 1 - 0.7 * can;
         data[k * 4] = toHalf(h);
         data[k * 4 + 1] = toHalf(g);
         data[k * 4 + 2] = toHalf(this.stream[k]);
-        data[k * 4 + 3] = toHalf(1);
+        data[k * 4 + 3] = toHalf(this.canopy ? this.canopy[k] : 0);
       }
     }
     const tex = new THREE.DataTexture(data, V, V, THREE.RGBAFormat, THREE.HalfFloatType);
@@ -295,7 +312,9 @@ vec3 terrainColor(){
   vec3 d3 = texture2D(tDetail, vWPos.xz * 0.0041).rgb;
   float h = vWPos.y;
   float slope = 1.0 - normalize(vWN).y;
-  float stream = texture2D(tHeight, vWPos.xz * uHM.x + uHM.y).b;
+  vec4 hm = texture2D(tHeight, vWPos.xz * uHM.x + uHM.y);
+  float stream = hm.b;
+  float canopy = hm.a;
   vec3 grass = mix(srgb(vec3(0.24,0.36,0.12)), srgb(vec3(0.40,0.43,0.17)), smoothstep(0.3,0.7,d2.r*0.6+d3.g*0.6));
   grass *= 0.75 + 0.5 * d1.g;
   vec3 dirt = srgb(vec3(0.33,0.29,0.18)) * (0.75 + 0.5 * d1.b);
@@ -305,6 +324,9 @@ vec3 terrainColor(){
   vec3 c = grass;
   c = mix(c, dirt, smoothstep(0.72, 0.84, d2.b * 0.8 + d1.r * 0.25 + d3.r * 0.2));
   c = mix(c, srgb(vec3(0.26, 0.28, 0.12)) * (0.7 + 0.5 * d1.b), smoothstep(0.6, 0.8, d3.b) * 0.3);
+  // Sous-bois : feuilles mortes, aiguilles et mousse sous les arbres
+  vec3 litter = mix(srgb(vec3(0.30, 0.24, 0.14)), srgb(vec3(0.20, 0.25, 0.10)), smoothstep(0.35, 0.65, d2.g + d1.b * 0.3)) * (0.7 + 0.5 * d1.r);
+  c = mix(c, litter, smoothstep(0.15, 0.7, canopy) * 0.8);
   c = mix(c, srgb(vec3(0.17, 0.24, 0.09)) * (0.8 + 0.4 * d1.g), smoothstep(0.0, 0.08, stream) * 0.7); // berges moussues
   c = mix(c, mud, smoothstep(0.15, 0.45, stream));                                                    // lit du ruisseau
   float beach = 1.0 - smoothstep(1.4, 3.0 + d2.g * 1.6, h);
