@@ -27,7 +27,8 @@ export class World {
   }
 
   // Relief « européen » : collines arrondies, vallons, petites montagnes douces, lacs et ruisseaux.
-  sample(x, z, out = this._out) {
+  // Relief sans les ruisseaux. Remplit this._b (h, lake, wx, wz).
+  base(x, z) {
     const wx = x + fbm(this.nD, x / 500 + 7.3, z / 500 - 2.1, 2) * 90;
     const wz = z + fbm(this.nD, x / 500 - 4.7, z / 500 + 5.9, 2) * 90;
     const d = Math.hypot(x, z) / this.half;
@@ -43,13 +44,26 @@ export class World {
     h += Math.pow(mount, 2.2) * 62 * massif;
     h += fbm(this.nE, x / 38, z / 38, 2) * 0.8;
 
+    // Lacs : seulement dans les creux de basse altitude, rives en pente douce (pas de cratère)
     const lakeN = fbm(this.nC, x / 330 + 21, z / 330 - 13, 2);
-    const lake = smoothstep(0.32, 0.5, lakeN) * smoothstep(0.8, 0.5, d) * (1 - massif * 0.8);
-    h = lerp(h, -2.8, lake);
+    // Le masque dépend du relief à grande échelle (plaines, hors massifs), pas de l'altitude locale :
+    // sinon la cuvette se creuse d'autant plus vite que le terrain monte, et ça fait des falaises.
+    const lowland = (1 - massif) * (1 - smoothstep(0.45, 0.7, roll));
+    let lake = smoothstep(0.2, 0.5, lakeN) * smoothstep(0.8, 0.5, d) * lowland;
+    lake = lake * lake * (3 - 2 * lake);
+    h = lerp(h, -2.6, lake);
     h = lerp(-14, h, continental);
     if (h > 0 && h < 3) h = h * h / 3 * 0.6 + h * 0.4;
+    const b = this._b || (this._b = {});
+    b.h = h; b.lake = lake; b.wx = wx; b.wz = wz;
+    return b;
+  }
 
-    // Ruisseaux : lignes de niveau d'un bruit, seulement dans certaines régions et à basse altitude
+  // Relief complet : relief de base + ruisseaux.
+  sample(x, z, out = this._out) {
+    const B = this.base(x, z);
+    let h = B.h;
+    const lake = B.lake, wx = B.wx, wz = B.wz;
     let stream = 0, water = -1e3;
     const region = smoothstep(-0.05, 0.25, fbm(this.nR, x / 900, z / 900, 2));
     if (region > 0 && h > 2.5 && h < 46) {
@@ -58,13 +72,28 @@ export class World {
       if (Math.abs(v) < 0.06) {
         // Distance (en mètres) à la ligne du ruisseau : valeur / pente du bruit → largeur régulière
         const gx = f(wx + 1, wz) - v, gz = f(wx, wz + 1) - v;
-        const dist = Math.abs(v) / (Math.hypot(gx, gz) + 1e-6);
-        const zone = smoothstep(2.5, 5, h) * (1 - smoothstep(38, 46, h)) * (1 - lake) * region;
+        const g = Math.hypot(gx, gz) + 1e-6;
+        const dist = Math.abs(v) / g;
         const half = 1.2 + 1.3 * region;              // demi-largeur du lit : 1,2 à 2,5 m
-        stream = (1 - smoothstep(half * 0.5, half + 1.6, dist)) * zone;
-        // La surface de l'eau couvre une bande plus large que le lit : le terrain la cache sur les berges.
-        if (zone > 0.05 && dist < half + 8) water = h - 0.45;
-        h -= 1.4 * stream;
+        if (dist < half + 6.5) {
+          const zone = smoothstep(2.5, 5, h) * (1 - smoothstep(38, 46, h)) * (1 - lake) * region;
+          // Niveau de l'eau = relief au milieu du lit : la surface reste horizontale en travers
+          const sg = Math.sign(v);
+          const cx = x - sg * (gx / g) * dist, cz = z - sg * (gz / g) * dist;
+          const W = this.base(cx, cz).h - 0.4;
+          const core = 1 - smoothstep(half * 0.5, half + 1.2, dist);
+          let h1 = lerp(h, Math.min(h, W - 0.55 - 0.35 * core), core);
+          // Berges : le terrain remonte au moins au niveau de l'eau pour la contenir
+          const lev = 1 - smoothstep(half + 3.6, half + 6.5, dist);
+          h1 = Math.max(h1, lerp(h1, W + 0.15, lev * (1 - core * 0.999)));
+          h = lerp(h, h1, zone);
+          stream = core * zone;
+          if (zone > 0.4 && dist < half + 3.6) {
+            water = W;
+            // là où il y a de l'eau, la berge est toujours assez haute pour la contenir
+            if (core < 0.5) h = Math.max(h, W + 0.15 * (1 - core * 2));
+          }
+        }
       }
     }
     out.h = h; out.stream = stream; out.water = water;
@@ -320,9 +349,11 @@ vec3 terrainColor(){
   vec3 dirt = srgb(vec3(0.33,0.29,0.18)) * (0.75 + 0.5 * d1.b);
   vec3 sand = srgb(vec3(0.80,0.72,0.54)) * (0.88 + 0.24 * d1.r);
   vec3 rock = srgb(vec3(0.46,0.44,0.41)) * (0.55 + 0.7 * d1.r * (0.6 + 0.4 * d2.g));
-  vec3 mud = mix(srgb(vec3(0.20,0.17,0.12)), srgb(vec3(0.42,0.40,0.36)), step(0.55, d1.r)) * (0.7 + 0.4 * d1.g);
+  vec3 mud = mix(srgb(vec3(0.28,0.24,0.17)), srgb(vec3(0.45,0.42,0.36)), smoothstep(0.45, 0.7, d1.r)) * (0.8 + 0.3 * d1.g);
   vec3 c = grass;
-  c = mix(c, dirt, smoothstep(0.72, 0.84, d2.b * 0.8 + d1.r * 0.25 + d3.r * 0.2));
+  c = mix(c, dirt, smoothstep(0.88, 0.96, d2.b * 0.8 + d1.r * 0.25 + d3.r * 0.2) * 0.6);
+  // Herbe sèche par endroits (variations naturelles de la prairie)
+  c = mix(c, srgb(vec3(0.46, 0.44, 0.22)) * (0.8 + 0.4 * d1.g), smoothstep(0.55, 0.75, d3.r + d2.g * 0.3) * 0.35);
   c = mix(c, srgb(vec3(0.26, 0.28, 0.12)) * (0.7 + 0.5 * d1.b), smoothstep(0.6, 0.8, d3.b) * 0.3);
   // Sous-bois : feuilles mortes, aiguilles et mousse sous les arbres
   vec3 litter = mix(srgb(vec3(0.30, 0.24, 0.14)), srgb(vec3(0.20, 0.25, 0.10)), smoothstep(0.35, 0.65, d2.g + d1.b * 0.3)) * (0.7 + 0.5 * d1.r);

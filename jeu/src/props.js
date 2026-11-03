@@ -225,6 +225,15 @@ export class Props {
           continue;
         }
       }
+      // Lisières : buissons et jeunes arbres en bordure des clairières
+      {
+        const edge = smoothstep(0.6, 0.66, forest) * (1 - smoothstep(0.7, 0.76, forest));
+        if (edge > 0.2 && h > 3.5 && h < 45 && slope < 0.3 && rand() < 0.35 * edge) {
+          if (rand() < 0.7) { if (!tooClose(x, z, 1.8)) this.add("bush", x, z, 0.7 + rand() * 0.6, rand, rand() < 0.5 ? 1 : 0); }
+          else if (!tooClose(x, z, 2.4)) this.add(rand() < 0.6 ? "birch" : "oak", x, z, 0.4 + rand() * 0.3, rand);
+          continue;
+        }
+      }
       // Buissons (plus nombreux au bord des ruisseaux)
       if (h > 3 && h < 40 && slope < 0.25 && r < 0.06 * (0.4 + moist) * (bank ? 3 : 1)) {
         if (!tooClose(x, z, 2)) this.add("bush", x, z, 0.8 + rand() * 0.5, rand);
@@ -539,15 +548,23 @@ export class Grass {
       sh.vertexShader = sh.vertexShader
         .replace("#include <common>", `#include <common>
 uniform float uTime; uniform vec2 uCam; uniform float uR; uniform sampler2D tHeight; uniform vec2 uHM;
-attribute vec4 aOff; attribute float bt; varying float vT; varying float vVar; varying vec3 vGW;`)
+attribute vec4 aOff; attribute float bt; varying float vT; varying float vVar; varying vec3 vGW; varying float vFlower; varying vec3 vFlowerCol;`)
         .replace("#include <begin_vertex>", `
   vec2 wxz = uCam + mod(aOff.xy - uCam + uR, 2.0 * uR) - uR;
-  vec2 hg = texture2D(tHeight, wxz * uHM.x + uHM.y).rg;
+  vec4 hm = texture2D(tHeight, wxz * uHM.x + uHM.y);
+  vec2 hg = hm.rg;
+  float canopy = hm.a;
   float rnd = fract(sin(dot(floor(wxz * 7.0), vec2(12.9898, 78.233))) * 43758.5453);
   float keep = step(rnd, hg.g);
   float dist = length(wxz - uCam);
   float fade = 1.0 - smoothstep(uR * 0.55, uR, dist);
-  float s = aOff.w * keep * fade;
+  float h2 = fract(sin(dot(floor(wxz * 0.9), vec2(17.13, 61.7))) * 24634.6);
+  // En terrain découvert : herbes hautes par endroits ; sous les arbres : herbe courte
+  float s = aOff.w * keep * fade * (1.0 + 0.7 * h2 * h2 * (1.0 - canopy)) * (1.0 - 0.35 * canopy);
+  float fh = fract(sin(dot(floor(wxz * 2.3) + 7.0, vec2(91.7, 23.3))) * 51731.3);
+  vFlower = step(fh, 0.09 * (1.0 - canopy));
+  float fc = fract(fh * 113.7);
+  vFlowerCol = fc < 0.3 ? vec3(0.95, 0.85, 0.15) : fc < 0.55 ? vec3(0.95, 0.95, 0.92) : fc < 0.8 ? vec3(0.55, 0.35, 0.85) : vec3(0.9, 0.25, 0.2);
   vec3 p = position;
   p.y *= s;
   p.xz *= keep * (0.7 + 0.3 * fade);
@@ -561,7 +578,7 @@ attribute vec4 aOff; attribute float bt; varying float vT; varying float vVar; v
   vVar = fract(sin(dot(floor(wxz * 0.35), vec2(39.3, 11.7))) * 9137.1);
   vGW = transformed;`);
       sh.fragmentShader = sh.fragmentShader
-        .replace("#include <common>", "#include <common>\nvarying float vT; varying float vVar; varying vec3 vGW; uniform vec3 uSunDir; uniform vec3 uSunCol;")
+        .replace("#include <common>", "#include <common>\nvarying float vT; varying float vVar; varying vec3 vGW; varying float vFlower; varying vec3 vFlowerCol; uniform vec3 uSunDir; uniform vec3 uSunCol;")
         .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
   vec3 toCamG = normalize(cameraPosition - vGW);
   float backG = pow(max(dot(-toCamG, uSunDir), 0.0), 3.0);
@@ -573,7 +590,9 @@ attribute vec4 aOff; attribute float bt; varying float vT; varying float vVar; v
   vec3 tipB = pow(vec3(0.58, 0.56, 0.26), vec3(2.2));
   vec3 tipC = pow(vec3(0.30, 0.46, 0.14), vec3(2.2));
   vec3 tip = vVar < 0.33 ? tipA : vVar < 0.66 ? tipC : mix(tipA, tipB, 0.6);
-  diffuseColor.rgb = mix(base, tip, smoothstep(0.0, 0.9, vT));`);
+  diffuseColor.rgb = mix(base, tip, smoothstep(0.0, 0.9, vT));
+  // Fleurs sauvages : la pointe de certaines touffes
+  diffuseColor.rgb = mix(diffuseColor.rgb, pow(vFlowerCol, vec3(2.2)), vFlower * smoothstep(0.7, 0.8, vT));`);
     };
     this.mesh = new THREE.Mesh(geo, mat);
     this.mesh.frustumCulled = false;
