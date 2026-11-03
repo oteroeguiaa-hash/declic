@@ -319,11 +319,56 @@ export function makeLeafBush(withBerries, seed = 9) {
     b.cluster(crown.clone().add(d), 0.95, UV.leaves, tint(0x98b468, 0.8 + rand() * 0.3), crown, rand, 2);
   }
   if (withBerries) {
-    for (let i = 0; i < 22; i++) {
-      const a = rand() * Math.PI * 2, e = rand() * 1.2 - 0.2;
-      b.blob(V(Math.cos(a) * 0.8 * Math.cos(e), 0.55 + Math.sin(e) * 0.6, Math.sin(a) * 0.8 * Math.cos(e)), 0.06, tint(0xc0102a));
+    // Petites grappes de fruits des bois, à moitié cachées dans le feuillage
+    for (let g = 0; g < 9; g++) {
+      const a = rand() * Math.PI * 2, e = rand() * 1.0 - 0.1;
+      const cx = Math.cos(a) * 0.62 * Math.cos(e), cy = 0.55 + Math.sin(e) * 0.5, cz = Math.sin(a) * 0.62 * Math.cos(e);
+      const col = rand() < 0.5 ? tint(0x7a0a18) : tint(0x5a0a12);
+      for (let k = 0; k < 4; k++) {
+        b.blob(V(cx + (rand() - 0.5) * 0.09, cy - k * 0.035 + (rand() - 0.5) * 0.04, cz + (rand() - 0.5) * 0.09), 0.026 + rand() * 0.01, col.clone().multiplyScalar(0.8 + rand() * 0.4));
+      }
     }
   }
+  return b.build();
+}
+
+// Fougère : frondes arquées (on réutilise la texture du rameau, teintée vert tendre).
+export function makeFern(seed = 5) {
+  const rand = mulberry32(seed);
+  const b = new Builder();
+  const crown = V(0, 0.2, 0);
+  const n = 9;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + rand() * 0.4;
+    const len = 0.7 + rand() * 0.45;
+    const lift = 0.55 + rand() * 0.35;
+    const dir1 = V(Math.cos(a), lift, Math.sin(a)).normalize();
+    const side = V(-Math.sin(a), 0, Math.cos(a));
+    const c = tint(0xb8e080, 0.8 + rand() * 0.3);
+    // base qui monte, puis pointe qui retombe
+    const p1 = dir1.clone().multiplyScalar(len * 0.5);
+    b.card(p1.clone().multiplyScalar(0.5), dir1, side, len * 0.5, len * 0.42, [0.5, 0.75, 0.0, 0.5], c, crown, 0.8);
+    const dir2 = V(Math.cos(a), -0.35, Math.sin(a)).normalize();
+    b.card(p1.clone().addScaledVector(dir2, len * 0.25), dir2, side, len * 0.5, len * 0.32, [0.75, 1.0, 0.0, 0.5], c, crown, 0.8);
+  }
+  return b.build();
+}
+
+// Tronc couché, moussu.
+export function makeLog(seed = 3) {
+  const rand = mulberry32(seed);
+  const b = new Builder();
+  const L = 3.6;
+  const pts = [];
+  for (let i = 0; i <= 6; i++) pts.push(V(-L / 2 + (i / 6) * L, 0.26 + (rand() - 0.5) * 0.04, (rand() - 0.5) * 0.06));
+  b.tube(pts, pts.map((_, i) => 0.3 - i * 0.012), 9, UV.bark, tint(0x9a9078), 0.3);
+  // mousse sur le dessus
+  for (let i = 0; i < 5; i++) {
+    const p = V(-L / 2 + 0.4 + rand() * (L - 0.8), 0.5, (rand() - 0.5) * 0.15);
+    b.card(p, V(1, 0, 0), V(0, 0, 1), 0.7, 0.35, UV.leaves, tint(0x6a8a3a, 0.7), V(p.x, 0, 0), 0.9);
+  }
+  // branche cassée
+  b.tube([V(0.6, 0.4, 0.1), V(0.9, 0.75, 0.35), V(1.0, 0.95, 0.45)], [0.07, 0.05, 0.02], 5, UV.bark, tint(0x9a9078), 0.5);
   return b.build();
 }
 

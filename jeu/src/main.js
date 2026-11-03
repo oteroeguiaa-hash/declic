@@ -12,8 +12,8 @@ import { UI } from "./ui.js";
 import { ITEMS, TOOLS, RECIPES, TOOL_SLOTS, Inventory } from "./items.js";
 import { Post } from "./post.js";
 
-const SAVE_KEY = "lisiere-save-v2";        // v2 : nouveau relief, les anciennes îles ne correspondent plus
-const OLD_SAVE_KEY = "lisiere-save-v1";
+const SAVE_KEY = "lisiere-save-v3";        // v3 : île 2,5 × plus grande, ruisseaux, bosquets
+const OLD_SAVE_KEYS = ["lisiere-save-v2", "lisiere-save-v1"];
 const SETTINGS_KEY = "lisiere-settings";
 const $ = (id) => document.getElementById(id);
 
@@ -24,9 +24,9 @@ const store = {
 };
 
 const PRESETS = {
-  low:    { msaa: 0, raySamples: 24, rayScale: 0.25, terrainCells: 256, shadows: true, shadowSize: 1024, shadowRange: 34, viewDistance: 330, grassCount: 16000, grassRadius: 19, treeCandidates: 120000, lodScale: 0.55, envInterval: 20, maxDeer: 6, maxSquirrels: 4, maxWolves: 3, antialias: false, maxPixelRatio: 1.25 },
-  medium: { msaa: 2, raySamples: 40, rayScale: 0.4, terrainCells: 384, shadows: true, shadowSize: 2048, shadowRange: 48, viewDistance: 480, grassCount: 38000, grassRadius: 26, treeCandidates: 120000, lodScale: 0.85, envInterval: 10, maxDeer: 8, maxSquirrels: 6, maxWolves: 4, antialias: true, maxPixelRatio: 1.6 },
-  high:   { msaa: 4, raySamples: 60, rayScale: 0.5, terrainCells: 512, shadows: true, shadowSize: 4096, shadowRange: 62, viewDistance: 680, grassCount: 75000, grassRadius: 34, treeCandidates: 120000, lodScale: 1.25, envInterval: 6, maxDeer: 10, maxSquirrels: 8, maxWolves: 5, antialias: true, maxPixelRatio: 2 },
+  low:    { msaa: 0, raySamples: 24, rayScale: 0.25, terrainCells: 256, shadows: true, shadowSize: 1024, shadowRange: 34, viewDistance: 330, grassCount: 16000, grassRadius: 19, treeCandidates: 120000, lodScale: 0.55, envInterval: 20, maxDeer: 5, maxSquirrels: 3, maxWolves: 4, maxCreatures: 16, antialias: false, maxPixelRatio: 1.25 },
+  medium: { msaa: 2, raySamples: 40, rayScale: 0.4, terrainCells: 384, shadows: true, shadowSize: 2048, shadowRange: 48, viewDistance: 480, grassCount: 38000, grassRadius: 26, treeCandidates: 120000, lodScale: 0.85, envInterval: 10, maxDeer: 6, maxSquirrels: 4, maxWolves: 5, maxCreatures: 22, antialias: true, maxPixelRatio: 1.6 },
+  high:   { msaa: 4, raySamples: 60, rayScale: 0.5, terrainCells: 512, shadows: true, shadowSize: 4096, shadowRange: 62, viewDistance: 680, grassCount: 75000, grassRadius: 34, treeCandidates: 120000, lodScale: 1.25, envInterval: 6, maxDeer: 8, maxSquirrels: 5, maxWolves: 6, maxCreatures: 28, antialias: true, maxPixelRatio: 2 },
 };
 
 function detectQuality() {
@@ -113,7 +113,7 @@ class Game {
     this.diff = DIFFS[settings.difficulty] || DIFFS.normal;
     this.hoursPerSec = 24 / (settings.dayMinutes * 60);
     const saved = store.get(SAVE_KEY);
-    const oldSave = saved ? null : store.get(OLD_SAVE_KEY);
+    const oldSave = saved ? null : OLD_SAVE_KEYS.map((k) => store.get(k)).find(Boolean);
     const newSeed = store.get("lisiere-newseed");
     store.del("lisiere-newseed");
     this.seed = saved?.seed ?? newSeed ?? oldSave?.seed ?? ((Math.random() * 1e9) | 0);
@@ -144,13 +144,14 @@ class Game {
     this.scene.add(this.camera);
 
     await step(15, "Formation de l'île…");
-    this.world = new World(this.seed, Q);
+    this.world = new World(this.seed);
     await step(32, "Érosion et rivages…");
     const detail = makeDetailTexture(renderer, 7);
     const waterN = makeWaterNormalTexture(renderer, 3);
     this.world.buildHeightTexture();
-    this.scene.add(this.world.buildTerrainMesh(detail));
+    this.scene.add(this.world.buildTerrain(detail));
     this.scene.add(this.world.buildWater(waterN));
+    this.scene.add(this.world.buildStreams(waterN));
 
     await step(48, "Le ciel se lève…");
     this.env = new Environment(this.scene, renderer, Q);
@@ -187,6 +188,7 @@ class Game {
     this.env.update(this.hours, 0.016, this.camera.position, this.player.pos);
     this.player.update(0, this.input, this.ctx(0, 0));
     this.props.rebuild(this.player.pos);
+    this.world.updateTerrain(this.player.pos, Q.viewDistance, Q.lodScale);
     this.post = new Post(renderer, Q);
     this.post.setSize(this.viewW * this.pixelRatio, this.viewH * this.pixelRatio);
     renderer.compile(this.scene, this.camera);
@@ -331,7 +333,7 @@ class Game {
       store.set(SETTINGS_KEY, settings);
       const raw = $("ngSeed").value.trim();
       let seed = /^\d+$/.test(raw) ? parseInt(raw, 10) % 1e9 : raw ? [...raw].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7) >>> 0 : (Math.random() * 1e9) | 0;
-      store.del(SAVE_KEY); store.del(OLD_SAVE_KEY);
+      store.del(SAVE_KEY); OLD_SAVE_KEYS.forEach((k) => store.del(k));
       store.set("lisiere-newseed", seed % 1e9);
       this.noSave = true;
       location.reload();
@@ -483,10 +485,12 @@ class Game {
     if (p && (!best || p.dist < best.dist)) best = { type: "prop", ...p };
     if (s && (!best || s.dist < best.dist)) best = { type: "structure", ...s };
     if (!best && dir.y < -0.05) {
-      const t = (0 - eye.y) / dir.y;
-      if (t > 0 && t < 4.2) {
-        const x = eye.x + dir.x * t, z = eye.z + dir.z * t;
-        if (this.world.heightAt(x, z) < -0.05) best = { type: "water", dist: t };
+      // On avance le long du regard : de l'eau (mer, lac ou ruisseau) au-dessus du sol ?
+      for (let t = 0.5; t < 4.5; t += 0.25) {
+        const x = eye.x + dir.x * t, y = eye.y + dir.y * t, z = eye.z + dir.z * t;
+        const wl = this.world.waterLevelAt(x, z), gh = this.world.heightAt(x, z);
+        if (gh > y) break;
+        if (y <= wl && gh < wl - 0.05) { best = { type: "water", dist: t }; break; }
       }
     }
     if (!best && this.player.swimming) best = { type: "water", dist: 0 };
@@ -500,7 +504,7 @@ class Game {
     if (t.type === "water") return [`<b>Eau</b><small>${use} Boire${this.inv.count("gourde") ? " et remplir la gourde" : ""}</small>`, true];
     if (t.type === "creature") {
       const c = t.creature;
-      const name = { deer: "Cerf", wolf: "Loup", bear: "Ours", squirrel: "Écureuil" }[c.type];
+      const name = c.sp.name;
       if (c.dead) return [`<b>${name} (mort)</b><small>${use} Dépecer</small>`, true];
       if (t.dist > TOOLS[this.tool].reach) return [`<b>${name}</b>`, false];
       return [`<b>${name}</b><small>${hit} Attaquer</small><div class="hpbar"><i style="width:${(c.hp / c.sp.hp) * 100}%"></i></div>`, true];
@@ -528,6 +532,11 @@ class Game {
     }
     if (def.kind === "bush") return [`<b>${p.state ? "Buisson à baies" : "Buisson"}</b><small>${p.state ? `${use} Cueillir` : "Les baies repousseront"}</small>`, !!p.state];
     if (def.kind === "pickup") return [`<b>${def.name}</b><small>${use} Ramasser</small>`, true];
+    if (def.kind === "decor") return [`<b>Fougère</b><small>${use} Cueillir (fibre)</small>`, true];
+    if (def.kind === "log") {
+      const ok = TOOLS[this.tool].tree > 0;
+      return [`<b>Tronc couché</b><small>${ok ? `${hit} Débiter (bois)` : "Il faut une hache"}</small>`, ok];
+    }
     return ["", false];
   }
 
@@ -543,7 +552,7 @@ class Game {
       if (c.dead) return;
       const dmg = tool.damage * (0.85 + Math.random() * 0.3);
       this.sounds.hitFlesh();
-      if (this.creatures.damage(c, dmg, this.player.pos)) this.ui.toast({ deer: "Tu as abattu un cerf", wolf: "Tu as tué un loup", bear: "Tu as vaincu un ours !", squirrel: "Tu as attrapé un écureuil" }[c.type]);
+      if (this.creatures.damage(c, dmg, this.player.pos)) this.ui.toast(`${c.sp.name} : abattu${c.type === "bear" || c.type === "moose" ? " !" : ""}`);
       return;
     }
     if (target.type !== "prop" || target.dist > tool.reach) { this.sounds.swing(); return; }
@@ -562,6 +571,12 @@ class Game {
         }
       } else if (Math.random() < 0.45) this.give("branche", 1);
       else if (!this.toldAxe) { this.toldAxe = true; this.ui.toast("Avec une hache, tu pourrais l'abattre pour du bois."); }
+    } else if (def.kind === "log") {
+      this.sounds.chop();
+      if (tool.tree > 0) {
+        p.hp -= tool.tree;
+        if (p.hp <= 0.01) { this.props.remove(id, this.totalHours, 200); this.give("bois", 3); this.give("branche", 1); }
+      } else this.ui.toast("Il te faut une hache pour débiter ce tronc.", true);
     } else if (def.kind === "rock") {
       this.sounds.rockHit();
       this.props.hit(id);
@@ -587,10 +602,7 @@ class Game {
     if (target.type === "creature") {
       const c = target.creature;
       if (!c.dead) return;
-      this.give("viande_crue", c.sp.meat);
-      if (c.sp.hide) this.give("peau", c.sp.hide);
-      if (c.sp.fur) this.give("fourrure", c.sp.fur);
-      if (c.sp.nuts) this.give("noisettes", c.sp.nuts);
+      for (const [id, n] of Object.entries(c.sp.drops)) this.give(id, n);
       this.creatures.remove(c);
       return;
     }
@@ -621,6 +633,12 @@ class Game {
       this.props.remove(target.id, this.totalHours, 30 + Math.random() * 30);
       this.give(pr.t === "stick" ? "branche" : "pierre", 1);
       this.sounds.pickup();
+    } else if (def.kind === "decor") {
+      this.props.remove(target.id, this.totalHours, 30 + Math.random() * 20);
+      this.give("fibre", 2);
+      this.sounds.pickup();
+    } else if (def.kind === "log") {
+      this.attack(target);
     } else if (def.kind === "bush") {
       if (!pr.state) { this.ui.toast("Plus de baies ici pour le moment."); return; }
       this.props.setBush(target.id, 0, this.totalHours, 40);
@@ -682,6 +700,7 @@ class Game {
   // ---------- Sauvegarde ----------
   save() {
     if (this.noSave || !this.player) return;
+    if (!this.oldCleaned) { this.oldCleaned = true; OLD_SAVE_KEYS.forEach((k) => store.del(k)); }
     store.set(SAVE_KEY, {
       v: 1, seed: this.seed, hours: this.hours, day: this.day, totalHours: this.totalHours, tool: this.tool,
       player: this.player.serialize(), inv: this.inv.serialize(), props: this.props.serialize(), structures: this.structures.serialize(),
@@ -785,6 +804,7 @@ class Game {
       this.sounds.ambient(dt, {
         day: this.env.dayFactor, altitude: p.pos.y, inWater: p.swimming, fireDist: ctx.fireDist,
         coastDist: Math.max(0, this.world.heightAt(p.pos.x, p.pos.z)) * 6, speed: Math.hypot(p.vel.x, p.vel.z),
+        streamDist: (this._sd = (this.frameN = (this.frameN || 0) + 1) % 15 === 0 ? this.world.streamNear(p.pos.x, p.pos.z) : this._sd ?? 40),
       });
       if (p.dead && this.state === "play") this.die();
 
@@ -805,6 +825,7 @@ class Game {
     }
 
     this.props.update(dt, p.pos, this.totalHours);
+    this.world.updateTerrain(this.camera.position, Q.viewDistance, Q.lodScale);
     this.grass.update(dt, this.camera.position);
     this.world.waterUniforms.uTime.value += dt;
     this.env.update(this.hours, dt, this.camera.position, p.pos);
