@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { mergeGeometries, mergeVertices } from "../vendor/addons/BufferGeometryUtils.js";
 import { mulberry32, fbm, smoothstep, createNoise2D } from "./noise.js";
-import { makeAtlas, makeBroadleaf, makeConifer, makeTallBroadleaf, makeScotsPine, makeLeafBush, makeFern, makeLog, makeTreeImpostor, makeReeds, makeKelp, makeVegetationMaterial, vegUniforms } from "./trees.js";
+import { makeAtlas, makeBroadleaf, makeConifer, makeTallBroadleaf, makeScotsPine, makeLeafBush, makeFern, makeLog, makeTreeImpostor, makeReeds, makeKelp, makeCoral, makeVegetationMaterial, vegUniforms } from "./trees.js";
 
 // ---------- Fabrication des modèles ----------
 
@@ -107,6 +107,7 @@ export const PROP_TYPES = {
   log:   { kind: "log", hp: 3, radius: 0, near: 70, maxDist: 150, center: 0.3, name: "Tronc couché" },
   reed:  { kind: "decor", hp: 1, radius: 0, near: 70, maxDist: 90, center: 0.6, name: "Roseaux" },
   kelp:  { kind: "decor", hp: 1, radius: 0, near: 45, maxDist: 55, center: 1.0, name: "Algues" },
+  coral: { kind: "decor", hp: 1, radius: 0, near: 45, maxDist: 55, center: 0.3, name: "Corail" },
 };
 const CANDIDATES = 750000; // même nombre quelle que soit la qualité : l'île est identique partout
 
@@ -185,6 +186,7 @@ export class Props {
         const bi = W.biomeAt(x, z), wl = W.waterLevelAt(x, z);
         if (bi.w > 0.3 && h > -0.8 && h < 1.6) { if (rand() < 0.55 * bi.w) this.add("reed", x, z, 0.8 + rand() * 0.5, rand); }
         else if (h < -1.5 && h > -14 && wl - h > 1.5 && rand() < 0.1) this.add("kelp", x, z, 0.7 + rand() * 0.7, rand);
+        else if (h < -1.2 && h > -8 && wl < 0.5 && rand() < 0.05) this.add("coral", x, z, 1.6 + rand() * 1.6, rand);
         else if (h < -1 && h > -14 && rand() < 0.012 && !tooClose(x, z, 3)) this.add("rock", x, z, 0.6 + rand() * 1.4, rand);
         continue;
       }
@@ -300,6 +302,7 @@ export class Props {
       fern: [makeFern(5)],
       reed: [makeReeds(13)],
       kelp: [makeKelp(17)],
+      coral: [makeCoral(23)],
       log: [makeLog(3)],
       stick: [makeStick()],
       flint: [makeFlint()],

@@ -83,6 +83,15 @@ export class Fish {
     }
     this.turtles = [0, 1].map(() => { const t = turtleModel(); t.group.visible = false; scene.add(t.group); return { ...t, pos: t.group.position, heading: 0, active: false, phase: 0 }; });
     this.checkTimer = 0;
+    // Particules en suspension (visibles seulement sous l'eau)
+    const NP = 700, pp = new Float32Array(NP * 3);
+    for (let i = 0; i < NP * 3; i++) pp[i] = (this.rand() - 0.5) * 24;
+    const pg = new THREE.BufferGeometry();
+    pg.setAttribute("position", new THREE.BufferAttribute(pp, 3));
+    this.dust = new THREE.Points(pg, new THREE.PointsMaterial({ color: 0xcfe8e0, size: 0.04, transparent: true, opacity: 0.55, depthWrite: false, fog: false }));
+    this.dust.frustumCulled = false;
+    this.dust.visible = false;
+    scene.add(this.dust);
     this.m4 = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.e = new THREE.Euler(); this.v = new THREE.Vector3(); this.one = new THREE.Vector3(1, 1, 1);
   }
 
@@ -95,6 +104,20 @@ export class Fish {
       if (wl - g > minDepth) return new THREE.Vector3(x, g + 0.6 + this.rand() * (wl - g - 1.4), z);
     }
     return null;
+  }
+
+  particles(dt, cam, under) {
+    this.dust.visible = under;
+    if (!under) return;
+    const a = this.dust.geometry.attributes.position, t = performance.now() * 0.0003;
+    for (let i = 0; i < a.count; i++) {
+      let x = a.getX(i), y = a.getY(i) + dt * 0.05, z = a.getZ(i);
+      // Le nuage reste centré sur le plongeur (repli sur un cube de 24 m)
+      const wrap = (v, c) => c + ((((v - c) + 12) % 24) + 24) % 24 - 12;
+      x = wrap(x + Math.sin(t + i) * dt * 0.08, cam.x); y = wrap(y, cam.y); z = wrap(z, cam.z);
+      a.setXYZ(i, x, y, z);
+    }
+    a.needsUpdate = true;
   }
 
   depthAt(x, z) { return this.world.waterLevelAt(x, z) - this.world.heightAt(x, z); }

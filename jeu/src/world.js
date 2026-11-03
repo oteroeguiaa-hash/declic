@@ -28,6 +28,7 @@ export class World {
     this.nBio = createNoise2D(seed + 151);
     this._out = { h: 0, stream: 0, water: -1e3 };
     this.treeDist = { value: 500 };
+    this.waterUniforms = { uTime: { value: 0 } };
     this.buildHeights();
   }
 
@@ -395,6 +396,7 @@ export class World {
       sh.uniforms.uStep = { value: step };
       sh.uniforms.tBiome = { value: this.biomeTex };
       sh.uniforms.uTreeDist = this.treeDist;
+      sh.uniforms.uTime = this.waterUniforms.uTime;
       sh.vertexShader = sh.vertexShader
         .replace("#include <common>", "#include <common>\nuniform sampler2D tHeight; uniform vec2 uHM; uniform float uTexel; uniform float uStep;\nvarying vec3 vWPos;\nvarying vec3 vWN;")
         .replace("#include <beginnormal_vertex>", `
@@ -405,7 +407,7 @@ export class World {
         .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWPos = transformed;\nvWN = objectNormal;");
       sh.fragmentShader = sh.fragmentShader
         .replace("#include <common>", `#include <common>
-uniform sampler2D tDetail; uniform sampler2D tHeight; uniform vec2 uHM; uniform sampler2D tBiome; uniform float uTreeDist;
+uniform sampler2D tDetail; uniform sampler2D tHeight; uniform vec2 uHM; uniform sampler2D tBiome; uniform float uTreeDist; uniform float uTime;
 varying vec3 vWPos;
 varying vec3 vWN;
 vec3 srgb(vec3 c){ return pow(c, vec3(2.2)); }
@@ -455,7 +457,17 @@ vec3 terrainColor(){
   c = mix(c, forestCol * (0.8 + 0.3 * d2.g), far * smoothstep(0.2, 0.6, canopy) * 0.9);
   return c;
 }`)
-        .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb = terrainColor();");
+        .replace("#include <color_fragment>", `#include <color_fragment>
+  diffuseColor.rgb = terrainColor();
+  // Fond marin : sable mouillé plus sombre et reflets lumineux (caustiques) qui dansent
+  if (vWPos.y < -0.2) {
+    float dd = -vWPos.y;
+    vec2 q = vWPos.xz * 0.55;
+    float ca = sin(q.x + uTime * 0.9) + sin(q.y * 1.1 - uTime * 0.7) + sin((q.x + q.y) * 0.7 + uTime * 0.6) + sin((q.x - q.y) * 1.4 - uTime);
+    ca = pow(abs(ca) * 0.25, 3.0);
+    diffuseColor.rgb *= mix(vec3(1.0), vec3(0.75, 0.92, 0.95), smoothstep(0.0, 3.0, dd));
+    diffuseColor.rgb += ca * 1.4 * exp(-dd * 0.12) * diffuseColor.rgb;
+  }`);
     };
     return mat;
   }
@@ -531,52 +543,146 @@ ${REFL_PARS}`)
     return mesh;
   }
 
+  // Hauteur des vagues de mer à un endroit (même formule que le shader), pour faire flotter canoë et nageur.
+  waveHeight(x, z, t) {
+    const ground = this.heightAt(x, z);
+    const amp = WAVE_AMP * smoothstep(0, 7, -ground);
+    if (amp <= 0) return 0;
+    let y = 0;
+    for (const [dx, dz, L, st, sp] of WAVES) {
+      const k = (2 * Math.PI) / L, c = Math.sqrt(9.8 / k) * sp;
+      y += (st / k) * Math.sin(k * (dx * x + dz * z - c * t));
+    }
+    return y * amp;
+  }
+
+  // Mer et lacs : surface déformée par des vagues de Gerstner, réfraction du fond, couleur selon la profondeur,
+  // écume sur les crêtes et vaguelettes qui viennent lécher les berges.
   buildWater(waterNormalTex) {
-    const geo = new THREE.PlaneGeometry(16000, 16000, 1, 1);
-    geo.rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x1b4d5c, roughness: 0.06, metalness: 0.0, transparent: true, depthWrite: true, side: THREE.DoubleSide });
-    const uniforms = { uTime: { value: 0 } };
-    this.waterUniforms = uniforms;
+    // Grille polaire centrée sur la caméra : dense près du joueur, large au loin (jusqu'à l'horizon)
+    const RING = 190, SEG = 128;
+    const pos = [0, 0, 0], idx = [];
+    for (let i = 1; i <= RING; i++) {
+      const r = 1.6 * (Math.pow(1.046, i) - 1);
+      for (let j = 0; j < SEG; j++) { const a = (j / SEG) * Math.PI * 2; pos.push(Math.cos(a) * r, 0, Math.sin(a) * r); }
+    }
+    for (let j = 0; j < SEG; j++) idx.push(0, 1 + ((j + 1) % SEG), 1 + j);
+    for (let i = 1; i < RING; i++) for (let j = 0; j < SEG; j++) {
+      const a = 1 + (i - 1) * SEG + j, b = 1 + (i - 1) * SEG + ((j + 1) % SEG), c = a + SEG, d = b + SEG;
+      idx.push(a, b, c, b, d, c);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ color: 0x0e3a46, roughness: 0.04, metalness: 0.0, side: THREE.DoubleSide });
+    const uniforms = this.waterUniforms;
+    const waveGLSL = WAVES.map(([dx, dz, L, st, sp]) => `gw(p, vec2(${dx.toFixed(4)}, ${dz.toFixed(4)}), ${L.toFixed(2)}, ${st.toFixed(3)}, ${sp.toFixed(3)}, amp, disp, nrm);`).join("\n    ");
     mat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, reflUniforms);
       sh.uniforms.uTime = uniforms.uTime;
       sh.uniforms.tHeight = { value: this.heightTex };
       sh.uniforms.uHM = { value: this.hmTransform };
       sh.uniforms.tWaterN = { value: waterNormalTex };
-      Object.assign(sh.uniforms, reflUniforms);
+      sh.uniforms.tRefr = refrUniforms.tRefr;
+      sh.uniforms.uRefrOn = refrUniforms.uRefrOn;
       sh.vertexShader = sh.vertexShader
-        .replace("#include <common>", "#include <common>\nvarying vec3 vWPos;")
-        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed,1.0)).xyz;");
+        .replace("#include <common>", `#include <common>
+uniform float uTime; uniform sampler2D tHeight; uniform vec2 uHM;
+varying vec3 vWPos; varying vec3 vGN; varying float vCrest; varying float vDepth;
+void gw(vec2 p, vec2 d, float L, float st, float sp, float amp, inout vec3 disp, inout vec3 nrm) {
+  float k = 6.2831853 / L, c = sqrt(9.8 / k) * sp, a = st / k * amp;
+  float f = k * (dot(d, p) - c * uTime);
+  float cf = cos(f), sf = sin(f);
+  disp.xz += d * (a * cf * 0.6);
+  disp.y += a * sf;
+  nrm.xz -= d * (k * a * cf);
+  nrm.y -= 0.6 * k * a * sf;
+}`)
+        .replace("#include <begin_vertex>", `#include <begin_vertex>
+  vec3 wp0 = (modelMatrix * vec4(transformed, 1.0)).xyz;
+  float ground = texture2D(tHeight, wp0.xz * uHM.x + uHM.y).r;
+  vDepth = max(0.0, -ground);
+  float distC = length(wp0.xz - cameraPosition.xz);
+  float amp = ${WAVE_AMP.toFixed(3)} * smoothstep(0.0, 7.0, vDepth) * (1.0 - smoothstep(180.0, 480.0, distC));
+  vec3 disp = vec3(0.0), nrm = vec3(0.0, 1.0, 0.0);
+  vec2 p = wp0.xz;
+  if (amp > 0.0001) {
+    ${waveGLSL}
+  }
+  // Vaguelettes du rivage : l'eau monte et descend doucement sur le sable
+  float swash = (1.0 - smoothstep(0.0, 1.5, vDepth)) * smoothstep(-1.5, 0.0, -vDepth) * 0.06 * sin(uTime * 0.9 - vDepth * 3.0 + wp0.x * 0.05);
+  transformed += disp;
+  transformed.y += swash;
+  vGN = normalize(nrm);
+  vCrest = disp.y / max(0.001, ${WAVE_AMP.toFixed(3)});
+  vWPos = wp0 + disp;`);
       sh.fragmentShader = sh.fragmentShader
         .replace("#include <common>", `#include <common>
 uniform float uTime; uniform sampler2D tHeight; uniform vec2 uHM; uniform sampler2D tWaterN;
-varying vec3 vWPos;
+uniform sampler2D tRefr; uniform float uRefrOn;
+varying vec3 vWPos; varying vec3 vGN; varying float vCrest; varying float vDepth;
+vec3 wRefr; float wTrans; float wFoam;
 ${REFL_PARS}`)
         .replace("#include <color_fragment>", `#include <color_fragment>
   float ground = texture2D(tHeight, vWPos.xz * uHM.x + uHM.y).r;
-  float depth = max(0.0, -ground);
-  vec3 shallow = vec3(0.10, 0.36, 0.34);
-  vec3 deep = vec3(0.012, 0.07, 0.10);
-  diffuseColor.rgb = mix(shallow, deep, smoothstep(0.0, 9.0, depth));
-  float foamN = texture2D(tWaterN, vWPos.xz * 0.21 + vec2(uTime * 0.03, 0.0)).b;
-  float foam = (1.0 - smoothstep(0.0, 0.55, depth)) * smoothstep(0.35, 0.65, foamN + 0.25 * sin(uTime * 1.3 + vWPos.x * 0.4));
-  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.85), foam * 0.7);
-  diffuseColor.a = mix(0.28, 0.93, smoothstep(0.0, 3.5, depth)) + foam * 0.4;`)
+  float depth = max(0.0, vWPos.y - ground);
+  float viewDist = length(cameraPosition - vWPos);
+  // Couleur de l'eau diffusée : turquoise en eau peu profonde, bleu nuit au large
+  vec3 shallowC = vec3(0.07, 0.42, 0.40), deepC = vec3(0.006, 0.05, 0.085);
+  diffuseColor.rgb = mix(shallowC, deepC, smoothstep(0.5, 14.0, depth));
+  // Écume : bande du rivage (vaguelettes qui avancent) + crêtes des vagues au large
+  float fN = texture2D(tWaterN, vWPos.xz * 0.17 + vec2(uTime * 0.02, -uTime * 0.013)).b;
+  float fN2 = texture2D(tWaterN, vWPos.xz * 0.05 - vec2(uTime * 0.01, 0.0)).b;
+  float band = sin(depth * 5.0 - uTime * 1.6 + fN2 * 6.0) * 0.5 + 0.5;
+  float shoreFoam = (1.0 - smoothstep(0.0, 0.9, depth)) * smoothstep(0.45, 0.85, fN * 0.7 + band * 0.55);
+  float crestFoam = smoothstep(0.55, 0.95, vCrest + fN * 0.35) * smoothstep(3.0, 8.0, depth) * 0.6;
+  wFoam = clamp(shoreFoam + crestFoam, 0.0, 1.0);
+  diffuseColor.a = 1.0;`)
         .replace("#include <normal_fragment_maps>", `
-  vec3 n1 = texture2D(tWaterN, vWPos.xz * 0.045 + vec2(uTime * 0.018, uTime * 0.011)).xyz * 2.0 - 1.0;
-  vec3 n2 = texture2D(tWaterN, vWPos.xz * 0.12 - vec2(uTime * 0.013, -uTime * 0.021)).xyz * 2.0 - 1.0;
-  vec2 nxy = (n1.xy + n2.xy) * 0.55;
-  vec3 wn = normalize(vec3(nxy.x, 1.0, -nxy.y));
-  normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);`)
-        .replace("#include <opaque_fragment>", REFL_APPLY);
+  // Normales : vagues + trois échelles de détail (moins de répétition), qui s'effacent au loin
+  float vd = length(cameraPosition - vWPos);
+  float detail = 1.0 - smoothstep(60.0, 420.0, vd);
+  vec2 n1 = texture2D(tWaterN, vWPos.xz * 0.031 + vec2(uTime * 0.012, uTime * 0.007)).xy * 2.0 - 1.0;
+  vec2 n2 = texture2D(tWaterN, mat2(0.8, -0.6, 0.6, 0.8) * vWPos.xz * 0.11 - vec2(uTime * 0.021, -uTime * 0.015)).xy * 2.0 - 1.0;
+  vec2 n3 = texture2D(tWaterN, mat2(0.28, 0.96, -0.96, 0.28) * vWPos.xz * 0.37 + vec2(uTime * 0.05, uTime * 0.03)).xy * 2.0 - 1.0;
+  vec2 nxy = n1 * 0.35 + (n2 * 0.4 + n3 * 0.22) * detail;
+  vec3 wn = normalize(vec3(vGN.x + nxy.x * 0.6, vGN.y, vGN.z - nxy.y * 0.6));
+  if (!gl_FrontFacing) wn = -wn;
+  normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);
+  // Réfraction : on voit le fond, déformé par les vagues, et absorbé selon la profondeur
+  vec2 suv = gl_FragCoord.xy / vec2(textureSize(tRefr, 0)) * uRefrScale;
+  vec2 ruv = clamp(suv + nxy * 0.03 * (1.0 - smoothstep(0.0, 120.0, vd)), 0.001, 0.999);
+  wRefr = texture2D(tRefr, ruv).rgb;
+  float thick = gl_FrontFacing ? depth : min(vd, 30.0);
+  vec3 absorb = vec3(0.42, 0.11, 0.075);
+  vec3 tr = exp(-absorb * thick * 1.3);
+  wTrans = uRefrOn * dot(tr, vec3(0.333)) * (1.0 - wFoam);
+  diffuseColor.rgb *= 1.0 - wTrans;
+  wRefr *= tr;`)
+        .replace("#include <opaque_fragment>", `
+  outgoingLight += wRefr * wTrans * (gl_FrontFacing ? 1.0 : 1.0);
+  outgoingLight = mix(outgoingLight, vec3(0.9, 0.93, 0.95) * (0.35 + 0.65 * dot(normal, normalize((viewMatrix * vec4(0.3, 0.9, 0.2, 0.0)).xyz)) ) * 1.1, wFoam * 0.85);
+${REFL_APPLY}`);
+      sh.fragmentShader = sh.fragmentShader.replace("uniform sampler2D tRefr; uniform float uRefrOn;", "uniform sampler2D tRefr; uniform float uRefrOn; uniform float uRefrScale;");
+      sh.uniforms.uRefrScale = refrUniforms.uRefrScale;
     };
     const mesh = new THREE.Mesh(geo, mat);
     this.seaMesh = mesh;
     mesh.position.y = SEA_LEVEL;
+    mesh.frustumCulled = false;
     mesh.receiveShadow = false;
+    mesh.layers.set(1);   // rendue dans une 2ᵉ passe, après le reste (pour la réfraction)
     mesh.renderOrder = 2;
+    mesh.onBeforeRender = (r, sc, cam) => { mesh.position.x = cam.position.x; mesh.position.z = cam.position.z; mesh.updateMatrixWorld(); };
     return mesh;
   }
 }
+
+// Trains de vagues : direction (x, z), longueur d'onde (m), cambrure, vitesse relative
+const WAVE_AMP = 0.42;
+const WAVES = [[0.96, 0.28, 34, 0.16, 1], [0.45, 0.89, 19, 0.14, 1], [-0.7, 0.71, 11, 0.12, 1.05], [0.87, -0.5, 6.5, 0.1, 1.1], [0.2, 0.98, 3.7, 0.07, 1.2]];
+export const refrUniforms = { tRefr: { value: null }, uRefrOn: { value: 0 }, uRefrScale: { value: 1 } };
 
 // --- Textures procédurales (aucun fichier image à télécharger) ---
 

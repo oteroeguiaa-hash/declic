@@ -476,6 +476,32 @@ export function makeReeds(seed = 13) {
   return b.build();
 }
 
+// Corail : colonie ramifiée aux couleurs vives (orange, rose, violet, jaune).
+export function makeCoral(seed = 23) {
+  const rand = mulberry32(seed);
+  const b = new Builder();
+  const WH = [0.37, 0.38, 0.005, 0.04];
+  const cols = [0xe8703a, 0xd8507a, 0x8a5ad0, 0xe8c040, 0xf0907a];
+  const branch = (p, dir, len, r, depth, col) => {
+    const e = p.clone().addScaledVector(dir, len);
+    const m = p.clone().lerp(e, 0.5).add(V((rand() - 0.5) * 0.06, 0, (rand() - 0.5) * 0.06));
+    b.tube([p, m, e], [r, r * 0.8, r * 0.6], 5, WH, col, 1);
+    if (depth > 0) for (let k = 0; k < 2 + (rand() < 0.4 ? 1 : 0); k++) {
+      const nd = dir.clone().add(V((rand() - 0.5) * 1.2, 0.3 + rand() * 0.4, (rand() - 0.5) * 1.2)).normalize();
+      branch(e, nd, len * (0.6 + rand() * 0.2), r * 0.7, depth - 1, col);
+    } else b.blob(e, r * 1.3, col.clone().multiplyScalar(1.15));
+  };
+  for (let c = 0; c < 4; c++) {
+    const col = tint(cols[Math.floor(rand() * cols.length)], 0.9 + rand() * 0.2);
+    const base = V((rand() - 0.5) * 0.9, -0.1, (rand() - 0.5) * 0.9);
+    if (rand() < 0.35) {
+      // corail « cerveau » : boule bosselée
+      for (let k = 0; k < 6; k++) b.blob(base.clone().add(V((rand() - 0.5) * 0.3, 0.15 + rand() * 0.15, (rand() - 0.5) * 0.3)), 0.16, col);
+    } else branch(base, V(0, 1, 0), 0.32, 0.05, 2, col);
+  }
+  return b.build();
+}
+
 // Algues sous-marines : longs rubans ondulants.
 export function makeKelp(seed = 17) {
   const rand = mulberry32(seed);

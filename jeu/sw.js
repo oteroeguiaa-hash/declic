@@ -1,5 +1,5 @@
 /* Lisière : service worker. Tout le jeu est mis en cache pour jouer hors connexion. */
-const VERSION = "lisiere-v8";
+const VERSION = "lisiere-v9";
 const FILES = [
   "./", "./index.html", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png",
   "./vendor/three.module.min.js", "./vendor/addons/Sky.js", "./vendor/addons/BufferGeometryUtils.js",

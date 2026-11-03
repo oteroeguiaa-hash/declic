@@ -195,6 +195,7 @@ class Game {
     this.player.update(0, this.input, this.ctx(0, 0));
     this.props.rebuild(this.player.pos);
     this.world.updateTerrain(this.player.pos, Q.viewDistance, Q.lodScale);
+    this.scene.traverse((o) => { if (o.isLight) o.layers.enable(1); });
     this.post = new Post(renderer, Q);
     this.post.setSize(this.viewW * this.pixelRatio, this.viewH * this.pixelRatio);
     this.refl = new Reflection(renderer, Q);
@@ -905,6 +906,13 @@ class Game {
     this.ui.updateHUD(p, this.hours, this.day, settings.fps ? this.fpsText : null);
     this.resize(); // filet de sécurité : rotation d'écran en mode appli (iOS)
     this.env.sunInfo.under = this.state === "play" && !!p.underwater;
+    this.env.sunInfo.surf = p.surfaceY ?? 0;
+    if (this.wasUnder && !this.env.sunInfo.under) this.wetT = 1.6;
+    this.wetT = Math.max(0, (this.wetT || 0) - dt);
+    this.env.sunInfo.wet = this.wetT / 1.6;
+    this.wasUnder = this.env.sunInfo.under;
+    this.sounds.setUnderwater(this.env.sunInfo.under);
+    this.fish.particles(dt, this.camera.position, this.env.sunInfo.under);
     this.env.sunInfo.day = this.env.dayFactor;
     if (this.fish) this.fish.update(dt, this.camera.position, this.env.dayFactor);
     this.refl.render(this.scene, this.camera, settings.reflections && !p.underwater ? this.nearWaterLevel(dt) : null);
