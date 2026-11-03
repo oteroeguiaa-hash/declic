@@ -103,6 +103,8 @@ body.nocompass #compass, body.nocross #crosshair { display: none; }
   .home { background: linear-gradient(90deg, rgba(8,12,9,0.9) 0%, rgba(8,12,9,0.65) 55%, rgba(8,12,9,0.1) 85%); }
   .homepanel { padding-top: 16px; padding-bottom: 16px; overflow: auto; }
   .homenav .btn { padding: 10px 16px; margin-top: 8px; }
+  .quick { margin-top: 10px; padding-top: 10px; gap: 6px; }
+  .seg button { padding: 5px 4px; }
 }
 
 /* HUD */
@@ -200,11 +202,26 @@ body.touch #compass { display: none; }
   #bag .wrap, #storage .wrap { grid-template-columns: 1fr; }
   h1.logo { font-size: 44px; }
 }
+/* Écran « mettez votre téléphone en horizontal » : affiché avant tout, tant que le téléphone est vertical */
 @media (orientation: portrait) and (pointer: coarse) {
   #rotate { display: flex !important; }
 }
-#rotate { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: none; align-items: center; justify-content: center; text-align: center; padding: 24px; color: var(--muted); flex-direction: column; gap: 12px; }
-#rotate b { font-size: 48px; }
+#rotate { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center; text-align: center; padding: 32px 24px; color: var(--ink); flex-direction: column; gap: 18px;
+  background: radial-gradient(ellipse at 50% 35%, rgba(233,162,59,0.16), transparent 60%), linear-gradient(180deg, #0f1a13, #070b08); }
+#rotate .phone { width: 64px; height: 108px; border: 3px solid var(--ink); border-radius: 14px; position: relative; animation: turn 2.4s ease-in-out infinite; box-shadow: 0 0 30px rgba(233,162,59,0.25); }
+#rotate .phone::after { content: ""; position: absolute; left: 50%; bottom: 7px; width: 14px; height: 3px; margin-left: -7px; border-radius: 2px; background: var(--ink); opacity: .6; }
+#rotate .phone::before { content: ""; position: absolute; inset: 9px 6px 16px; border-radius: 6px; background: linear-gradient(160deg, #5c8a3c, #2d5a2a 55%, #2b6a86); }
+@keyframes turn { 0%, 20% { transform: rotate(0); } 55%, 80% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
+#rotate h2 { margin: 6px 0 0; font: 600 26px/1.2 Georgia, serif; }
+#rotate p { margin: 0; color: var(--muted); font-size: 15px; max-width: 320px; }
+#rotate .logo { font: 600 20px Georgia, serif; color: var(--accent); letter-spacing: .08em; text-transform: uppercase; opacity: .9; }
+/* Réglages rapides sur l'accueil */
+.quick { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
+.quick .ql { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.seg { display: flex; gap: 4px; background: rgba(255,255,255,0.05); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+.seg button { flex: 1; padding: 7px 4px; border: 0; border-radius: 7px; background: transparent; font-size: 13px; }
+.seg button.sel { background: var(--accent); color: #1c1307; font-weight: 600; }
+.quick .qrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; }
 </style>
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.min.js" } }
@@ -324,6 +341,13 @@ body.touch #compass { display: none; }
       <button class="btn" id="btnSettings">Réglages</button>
       <button class="btn" id="btnHelp">Comment jouer</button>
     </nav>
+    <div class="quick" id="quick">
+      <div class="ql">Graphismes</div>
+      <div class="seg" id="qQuality"><button data-v="auto">Auto</button><button data-v="low">Rapide</button><button data-v="medium">Équilibré</button><button data-v="high">Beau</button></div>
+      <div class="qrow"><span>Moment de la journée</span><div class="seg" id="qTime" style="flex:0 0 60%"><button data-v="7">Aube</button><button data-v="11">Jour</button><button data-v="18.5">Soir</button></div></div>
+      <div class="qrow"><span>Son</span><button class="toggle" id="qSound" aria-label="Son"></button></div>
+      <button class="btn primary hidden" id="qReload">Appliquer (redémarre le jeu)</button>
+    </div>
     <div class="homeinfo" id="homeInfo"></div>
   </div>
 </div>
@@ -418,7 +442,12 @@ body.touch #compass { display: none; }
   </div>
 </div>
 
-<div id="rotate"><b>↻</b>Tourne ton téléphone en mode paysage pour jouer.</div>
+<div id="rotate" role="dialog" aria-label="Mettez votre téléphone en horizontal">
+  <div class="logo">Lisière</div>
+  <div class="phone" aria-hidden="true"></div>
+  <h2>Mettez votre téléphone<br>en horizontal</h2>
+  <p>Pour une expérience de jeu immersive, tournez votre téléphone en mode paysage. Le jeu se prépare pendant ce temps.</p>
+</div>
 
 <script type="module" src="src/main.js"></script>
 </body>
