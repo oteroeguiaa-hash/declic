@@ -145,20 +145,21 @@ class Game {
 
     await step(15, "Formation de l'île…");
     this.world = new World(this.seed);
-    await step(32, "Érosion et rivages…");
+    await step(35, "Les forêts poussent…");
+    this.props = new Props(this.scene, this.world, Q, this.seed, renderer);
+    this.world.applyCanopy(this.props.list);
+
+    await step(55, "Érosion et rivages…");
     const detail = makeDetailTexture(renderer, 7);
     const waterN = makeWaterNormalTexture(renderer, 3);
     this.world.buildHeightTexture();
     this.scene.add(this.world.buildTerrain(detail));
     this.scene.add(this.world.buildWater(waterN));
     this.scene.add(this.world.buildStreams(waterN));
-
-    await step(48, "Le ciel se lève…");
-    this.env = new Environment(this.scene, renderer, Q);
-
-    await step(60, "Les forêts poussent…");
-    this.props = new Props(this.scene, this.world, Q, this.seed, renderer);
     this.grass = new Grass(this.scene, this.world, Q);
+
+    await step(65, "Le ciel se lève…");
+    this.env = new Environment(this.scene, renderer, Q);
 
     await step(78, "Les animaux s'installent…");
     this.sounds = new Sounds();

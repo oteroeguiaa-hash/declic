@@ -332,6 +332,33 @@ export function makeLeafBush(withBerries, seed = 9) {
   return b.build();
 }
 
+// Silhouette très lointaine (3ᵉ niveau de détail) : une forme simple, couleur feuillage.
+export function makeTreeImpostor(kind) {
+  const b = new Builder();
+  const add = (geo, color) => {
+    const g = geo.index ? geo.toNonIndexed() : geo;
+    const p = g.attributes.position, n = g.attributes.normal;
+    for (let i = 0; i < p.count; i++) {
+      const v = V(p.getX(i), p.getY(i), p.getZ(i));
+      b.v(v, V(n.getX(i), n.getY(i), n.getZ(i)), UV.white[0], UV.white[1], color.clone().multiplyScalar(0.55 + 0.45 * Math.min(1, v.y / 8)));
+    }
+  };
+  if (kind === "pine") {
+    const cone = new THREE.ConeGeometry(2.7, 8.6, 7, 1, true); cone.translate(0, 1.6 + 4.3, 0);
+    add(cone, tint(0x2f4a28));
+    const tr = new THREE.CylinderGeometry(0.15, 0.3, 2, 4, 1, true); tr.translate(0, 0.8, 0);
+    add(tr, tint(0x4a3828));
+  } else {
+    const birch = kind === "birch";
+    const crown = new THREE.IcosahedronGeometry(1, 0);
+    crown.scale(birch ? 1.8 : 3.3, birch ? 2.6 : 2.5, birch ? 1.8 : 3.3); crown.translate(0, birch ? 6.4 : 5.9, 0);
+    add(crown, tint(birch ? 0x5a7a30 : 0x3e5a24));
+    const tr = new THREE.CylinderGeometry(0.12, birch ? 0.18 : 0.38, birch ? 5 : 3.6, 4, 1, true); tr.translate(0, birch ? 2.4 : 1.7, 0);
+    add(tr, tint(birch ? 0xd8d4c8 : 0x4a3828));
+  }
+  return b.build();
+}
+
 // Fougère : frondes arquées (on réutilise la texture du rameau, teintée vert tendre).
 export function makeFern(seed = 5) {
   const rand = mulberry32(seed);
