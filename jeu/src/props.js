@@ -54,22 +54,66 @@ function finish(parts, smooth = true) {
 
 const lin = (hex) => new THREE.Color(hex);
 
-function makeRock(lod, seed) {
-  const g = prep(new THREE.IcosahedronGeometry(1, lod ? 0 : 1));
+// Bruit 3D de valeur (pour sculpter les rochers)
+function vnoise3(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  let fx = x - xi, fy = y - yi, fz = z - zi;
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy); fz = fz * fz * (3 - 2 * fz);
+  const h = (a, b, c) => hash3(xi + a, yi + b, zi + c);
+  const l = (a, b, t) => a + (b - a) * t;
+  return l(l(l(h(0, 0, 0), h(1, 0, 0), fx), l(h(0, 1, 0), h(1, 1, 0), fx), fy), l(l(h(0, 0, 1), h(1, 0, 1), fx), l(h(0, 1, 1), h(1, 1, 1), fx), fy), fz) * 2 - 1;
+}
+function fbm3(x, y, z, o) { let s = 0, a = 0.5, f = 1; for (let i = 0; i < o; i++) { s += a * vnoise3(x * f, y * f, z * f); a *= 0.5; f *= 2.1; } return s; }
+
+// Rocher : forme asymétrique, cassures planes, fissures, strates, mousse. style 0 granite, 1 grès, 2 roche sombre.
+function makeRock(lod, seed, style = 0) {
+  const rand = mulberry32(seed * 97 + style * 13);
+  let g = new THREE.IcosahedronGeometry(1, lod ? 1 : 3);
+  g.deleteAttribute("uv"); g.deleteAttribute("normal");
+  g = mergeVertices(g, 1e-4);
   const p = g.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const n = hash3(Math.round(x * 50 + seed), Math.round(y * 50), Math.round(z * 50)) * 0.45 + 0.75;
-    x *= n * 1.25; z *= n; y *= n * 0.7;
-    if (y < -0.15) y = -0.15 + (y + 0.15) * 0.3;
-    p.setXYZ(i, x, y, z);
+  const sx = 1.1 + rand() * 0.5, sy = 0.55 + rand() * 0.35, sz = 0.85 + rand() * 0.3;
+  const o = seed * 3.7 + style * 11;
+  // Plans de cassure (faces planes nettes, comme une roche fracturée)
+  const planes = [];
+  for (let k = 0; k < 5 + Math.floor(rand() * 3); k++) {
+    const n = new THREE.Vector3(rand() * 2 - 1, rand() * 1.4 - 0.3, rand() * 2 - 1).normalize();
+    planes.push([n, 0.55 + rand() * 0.3]);
   }
-  paint(g, (x, y, z, c) => {
-    c.set(0x6d6a64).lerp(lin(0x8a867c), hash3(x * 4, y * 4, z * 4));
-    if (y > 0.35 && hash3(x * 9, y, z * 9) > 0.55) c.lerp(lin(0x5c6b3a), 0.55); // mousse
-    c.multiplyScalar(0.6 + 0.4 * Math.min(1, (y + 0.2) / 0.8));
-  });
-  return finish([g], false);
+  const v = new THREE.Vector3(), cav = new Float32Array(p.count);
+  for (let i = 0; i < p.count; i++) {
+    v.set(p.getX(i), p.getY(i), p.getZ(i));
+    const n0 = v.clone().normalize();
+    let r = 1 + fbm3(v.x * 1.6 + o, v.y * 1.6, v.z * 1.6, lod ? 2 : 4) * 0.42;
+    // strates horizontales (surtout grès)
+    r *= 1 + Math.sin(v.y * (style === 1 ? 22 : 13) + fbm3(v.x * 3, 0, v.z * 3 + o, 2) * 2) * (style === 1 ? 0.035 : 0.018);
+    // fissures : sillons fins et profonds
+    const cr = Math.abs(fbm3(v.x * 3.2 + o, v.y * 3.2, v.z * 3.2 - o, 2));
+    if (!lod && cr < 0.035) r -= (0.035 - cr) * 2.2;
+    v.copy(n0).multiplyScalar(r);
+    for (const [n, d] of planes) { const t = v.dot(n) - d; if (t > 0) v.addScaledVector(n, -t * 0.88); }
+    v.x *= sx; v.y *= sy; v.z *= sz;
+    if (v.y < -0.12) v.y = -0.12 + (v.y + 0.12) * 0.25;   // base enfoncée dans le sol
+    cav[i] = r;
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  const nrm = g.attributes.normal;
+  const pal = [[0x7a7872, 0x9a978e], [0x9a8266, 0xb8a080], [0x4e4c4a, 0x6a6660]][style];
+  const A = lin(pal[0]), B = lin(pal[1]), moss = lin(0x4a6a24), lichen = lin(0x9a9a5a);
+  const col = new Float32Array(p.count * 3), c = new THREE.Color();
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), ny = nrm.getY(i);
+    c.copy(A).lerp(B, vnoise3(x * 2.5 + o, y * 2.5, z * 2.5) * 0.5 + 0.5);
+    c.multiplyScalar(0.55 + 0.5 * Math.min(1, Math.max(0, (cav[i] - 0.7) * 1.6)));    // creux plus sombres
+    c.multiplyScalar(0.75 + 0.25 * Math.min(1, (y + 0.15) * 2));                      // base dans l'ombre
+    if (ny > 0.45 && vnoise3(x * 3 + o, y * 3, z * 3) > -0.1) c.lerp(moss, Math.min(0.85, (ny - 0.45) * 2));   // mousse
+    else if (vnoise3(x * 9, y * 9 + o, z * 9) > 0.55) c.lerp(lichen, 0.35);                                      // lichen
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  g.computeBoundingSphere();
+  return g;
 }
 
 function makeStick() {
@@ -156,7 +200,12 @@ export class Props {
   add(t, x, z, s, rand, state = 1) {
     const id = this.list.length;
     const y = this.world.heightAt(x, z);
-    this.list.push({ t, x, y, z, ry: rand() * Math.PI * 2, s, hp: PROP_TYPES[t].hp, alive: true, state, respawnAt: 0, s0: state });
+    // Rochers : posés au point le plus bas sous leur emprise (jamais en l'air sur une pente)
+    let yy = y;
+    if (t === "rock") for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; yy = Math.min(yy, this.world.heightAt(x + Math.cos(a) * s * 0.9, z + Math.sin(a) * s * 0.9)); }
+    const item = { t, x, y: yy, z, ry: rand() * Math.PI * 2, s, hp: PROP_TYPES[t].hp, alive: true, state, respawnAt: 0, s0: state };
+    if (t === "rock") { const bi = this.world.biomeAt(x, z); item.v = bi.m > 0.4 ? (rand() < 0.75 ? 0 : 2) : rand() < 0.45 ? 0 : rand() < 0.6 ? 1 : 2; }
+    this.list.push(item);
     this.byType[t].push(id);
     this.addToGrid(id);
     return id;
@@ -219,6 +268,14 @@ export class Props {
         if (r < 0.285) { this.add("log", x, z, 0.8 + rand() * 0.4, rand); continue; }
       }
 
+      // Montagne : gros affleurements rocheux et éboulis au pied des pentes
+      if (bi.m > 0.3 && h > 25) {
+        if (slope > 0.3 && rand() < 0.06 && !tooClose(x, z, 6)) { this.add("rock", x, z, 2.5 + rand() * 4, rand); continue; }
+        if (slope > 0.18 && slope < 0.45 && rand() < 0.05) {
+          for (let k = 0; k < 4; k++) { const [rx, rz] = near(x, z, 5); if (!tooClose(rx, rz, 1.2)) this.add("rock", rx, rz, 0.35 + rand() * 0.8, rand); }
+          continue;
+        }
+      }
       // Rochers (en forêt aussi) et cailloux au sol
       if (rand() < 0.01 + slope * 0.3 && h < 85) {
         if (!tooClose(x, z, 3)) { this.add("rock", x, z, 0.6 + rand() * 1.6, rand); continue; }
@@ -286,7 +343,32 @@ export class Props {
     const depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: atlas, alphaTest: 0.42, side: THREE.DoubleSide });
     this.depthMat = depthMat;
     const plain = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 });
-    const rockMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, flatShading: true });
+    const rockMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 });
+    // Détail de surface projeté sur 3 axes (grain, aspérités) : la texture vient du terrain
+    this.rockUniforms = { tDetail: { value: null } };
+    rockMat.onBeforeCompile = (sh) => {
+      sh.uniforms.tDetail = this.rockUniforms.tDetail;
+      sh.vertexShader = sh.vertexShader
+        .replace("#include <common>", "#include <common>\nvarying vec3 vRP; varying vec3 vRN;")
+        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvRP = transformed * 1.7; vRN = objectNormal;");
+      sh.fragmentShader = sh.fragmentShader
+        .replace("#include <common>", `#include <common>
+uniform sampler2D tDetail; varying vec3 vRP; varying vec3 vRN;
+float rtri(vec3 p, vec3 n){ vec3 w = pow(abs(n), vec3(4.0)); w /= w.x + w.y + w.z;
+  return texture2D(tDetail, p.zy).r * w.x + texture2D(tDetail, p.xz).r * w.y + texture2D(tDetail, p.xy).r * w.z; }`)
+        .replace("#include <color_fragment>", `#include <color_fragment>
+  float rg = rtri(vRP * 0.3, normalize(vRN)), rg2 = rtri(vRP * 0.9 + 3.1, normalize(vRN));
+  diffuseColor.rgb *= 0.78 + 0.3 * rg + 0.12 * (rg2 - 0.5);`)
+        .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>
+  {
+    float hb = rtri(vRP * 0.3, normalize(vRN)) * 0.7;
+    vec3 sx = dFdx(-vViewPosition), sy = dFdy(-vViewPosition);
+    vec3 R1 = cross(sy, normal), R2 = cross(normal, sx);
+    float det = dot(sx, R1);
+    vec2 dH = vec2(dFdx(hb), dFdy(hb)) * 0.9;
+    normal = normalize(abs(det) * normal - sign(det) * (dH.x * R1 + dH.y * R2));
+  }`);
+    };
     this.materials = { tree: mat, rock: rockMat };
 
     const geos = {
@@ -296,7 +378,9 @@ export class Props {
       pine: [makeConifer(false, 11), makeConifer(true, 11), makeTreeImpostor("pine")],
       young: [makeBroadleaf(false, 21), makeBroadleaf(true, 21), makeTreeImpostor("young")],
       birch: [makeBroadleaf(false, 31, true), makeBroadleaf(true, 31, true), makeTreeImpostor("birch")],
-      rock: [makeRock(false, 1), makeRock(true, 1)],
+      rock0: [makeRock(0, 1, 0), makeRock(1, 1, 0)],
+      rock1: [makeRock(0, 2, 1), makeRock(1, 2, 1)],
+      rock2: [makeRock(0, 3, 2), makeRock(1, 3, 2)],
       bush: [makeLeafBush(true)],
       bushEmpty: [makeLeafBush(false)],
       fern: [makeFern(5)],
@@ -310,7 +394,7 @@ export class Props {
     this.geos = geos;
     this.meshes = {};
     for (const key in geos) {
-      const baseType = key === "bushEmpty" ? "bush" : key;
+      const baseType = key === "bushEmpty" ? "bush" : key.startsWith("rock") ? "rock" : key;
       const cap = this.byType[baseType].length + 4;
       const kind = PROP_TYPES[baseType].kind;
       const m = kind === "rock" ? rockMat : kind === "pickup" ? plain : mat;
@@ -337,7 +421,7 @@ export class Props {
     for (let i = 0; i < this.list.length; i++) {
       const p = this.list[i];
       q.setFromAxisAngle(up, p.ry);
-      const sy = PROP_TYPES[p.t].kind === "rock" ? p.s * (0.8 + hash3(i, 1, 2) * 0.6) : p.s;
+      const sy = PROP_TYPES[p.t].kind === "rock" ? p.s * (p.s > 2 ? 1.3 + hash3(i, 1, 2) * 0.8 : 0.9 + hash3(i, 1, 2) * 0.6) : p.s;
       const sink = PROP_TYPES[p.t].kind === "tree" ? -0.25 : PROP_TYPES[p.t].kind === "rock" ? -0.15 * p.s : 0;
       m4.compose(new THREE.Vector3(p.x, p.y + sink, p.z), q, new THREE.Vector3(p.s, sy, p.s));
       m4.toArray(this.matrices, i * 16);
@@ -347,6 +431,7 @@ export class Props {
 
   renderKey(p) {
     if (p.t === "bush" && p.state === 0) return "bushEmpty";
+    if (p.t === "rock") return "rock" + (p.v ?? 0);
     return p.t;
   }
 

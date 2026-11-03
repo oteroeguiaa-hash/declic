@@ -155,6 +155,7 @@ class Game {
 
     await step(55, "Érosion et rivages…");
     const detail = makeDetailTexture(renderer, 7);
+    this.props.rockUniforms.tDetail.value = detail;
     const waterN = makeWaterNormalTexture(renderer, 3);
     this.world.buildHeightTexture();
     this.scene.add(this.world.buildTerrain(detail));

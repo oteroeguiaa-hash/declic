@@ -55,10 +55,26 @@ export class World {
     const mreg = fbm(this.nM, x / 1700 + 4.2, z / 1700 - 7.7, 2) * 0.5 + 0.5;
     const M = smoothstep(0.56, 0.68, mreg) * smoothstep(0.84, 0.55, d);
     if (M > 0) {
-      const r = ridged(this.nM, wx / 650, wz / 650, 6);
+      // Domaine fortement déformé : silhouettes irrégulières, pas de cônes
+      const qx = wx + fbm(this.nM, x / 420 + 3, z / 420 - 8, 3) * 140;
+      const qz = wz + fbm(this.nM, x / 420 - 6, z / 420 + 2, 3) * 140;
+      const main = ridged(this.nM, qx / 1050, qz / 1050, 7);                    // grandes crêtes
       const broad = fbm(this.nM, x / 900 + 9, z / 900 - 3, 2) * 0.5 + 0.5;
-      const hm = 25 + broad * 70 + Math.pow(r, 1.7) * 240;
-      h = lerp(h, Math.max(h, hm), M * M * (3 - 2 * M));
+      let hm = 22 + broad * 70 + Math.pow(main, 1.25) * 185;
+      // Arêtes secondaires et sommets découpés, surtout en altitude
+      const hi = smoothstep(60, 180, hm);
+      hm += ridged(this.nM, qx / 320 + 5.3, qz / 320 - 1.1, 4) * 26 * (0.25 + hi);
+      // Ravines et couloirs (crevasses) qui entaillent les versants
+      const gully = 1 - Math.abs(fbm(this.nM, qx / 230 + 17, qz / 230 + 4, 3));
+      hm -= Math.pow(gully, 9) * 30 * smoothstep(40, 120, hm);
+      // Paliers rocheux (strates) : petites falaises successives
+      const st = 8.5, fr = hm / st - Math.floor(hm / st);
+      const terr = (Math.floor(hm / st) + smoothstep(0.25, 0.85, fr)) * st;
+      hm = lerp(hm, terr, 0.45 * smoothstep(50, 110, hm));
+      // Rugosité fine
+      hm += fbm(this.nM, x / 28, z / 28, 3) * 2.2 * smoothstep(40, 120, hm);
+      const k = M * M * (3 - 2 * M);
+      h = lerp(h, Math.max(h, hm), k);
     }
     // Prairies (vallées ouvertes), forêts d'automne, marais
     const P = smoothstep(0.6, 0.68, fbm(this.nBio, x / 1100, z / 1100, 2) * 0.5 + 0.5) * (1 - M);
@@ -366,7 +382,7 @@ export class World {
       mesh.receiveShadow = true;
       mesh.matrixAutoUpdate = false;
       group.add(mesh);
-      this.chunks.push({ mesh, geo, cx, cz, size, lod: 4, underwater: maxY < -6 });
+      this.chunks.push({ mesh, geo, cx, cz, size, lod: 4, underwater: maxY < -6, tall: maxY > 55 });
     }
     this.terrain = group;
     return group;
@@ -377,10 +393,11 @@ export class World {
     const showDist = viewDistance * 1.6;
     for (const c of this.chunks) {
       const d = Math.max(0, Math.hypot(c.cx - cam.x, c.cz - cam.z) - c.size * 0.71);
-      c.mesh.visible = d < showDist + 50 && !c.underwater;
+      c.mesh.visible = (d < showDist + 50 || (c.tall && d < 3200)) && !c.underwater;
       if (!c.mesh.visible) continue;
       const k = d / lodScale;
-      const lod = k < 70 ? 0 : k < 200 ? 1 : k < 420 ? 2 : k < 750 ? 3 : 4;
+      let lod = k < 70 ? 0 : k < 200 ? 1 : k < 420 ? 2 : k < 750 ? 3 : 4;
+      if (c.tall) lod = Math.min(lod, k < 900 ? 2 : 3);   // montagnes : jamais de pyramides grossières
       if (lod !== c.lod) { c.lod = lod; c.geo.setIndex(this.lodIndex[lod]); }
     }
   }
@@ -411,8 +428,31 @@ uniform sampler2D tDetail; uniform sampler2D tHeight; uniform vec2 uHM; uniform 
 varying vec3 vWPos;
 varying vec3 vWN;
 vec3 srgb(vec3 c){ return pow(c, vec3(2.2)); }
+float gRock = 0.0;   // part de roche (partagée avec le calcul du relief au pixel)
+// Texture projetée sur les 3 axes : pas d'étirement sur les falaises verticales
+vec3 tri(vec3 p, vec3 n, float s){
+  vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y + w.z);
+  return texture2D(tDetail, p.zy * s).rgb * w.x + texture2D(tDetail, p.xz * s).rgb * w.y + texture2D(tDetail, p.xy * s).rgb * w.z;
+}
+vec3 rockColor(vec3 p, vec3 n, vec4 bio){
+  vec3 t1 = tri(p, n, 0.23), t2 = tri(p, n, 0.045), t3 = tri(p, n, 0.9);
+  // Teinte : granite gris, parfois plus chaud (grès) selon la zone
+  vec3 base = mix(srgb(vec3(0.50, 0.49, 0.46)), srgb(vec3(0.56, 0.48, 0.38)), smoothstep(0.4, 0.7, t2.g));
+  base *= 0.55 + 0.6 * t1.r * (0.7 + 0.3 * t3.g);
+  // Strates géologiques horizontales
+  float strata = sin(p.y * 1.7 + t2.b * 5.0) * 0.5 + 0.5;
+  base *= 0.82 + 0.22 * strata;
+  // Fissures sombres
+  base *= 1.0 - 0.55 * smoothstep(0.62, 0.8, t3.b) * smoothstep(0.3, 0.6, t1.g);
+  // Lichens (jaune-vert, orangé) et mousse sur les replats
+  base = mix(base, srgb(vec3(0.55, 0.55, 0.30)), smoothstep(0.72, 0.85, t3.r) * 0.45);
+  base = mix(base, srgb(vec3(0.30, 0.36, 0.14)) * (0.8 + 0.3 * t1.g), smoothstep(0.55, 0.85, n.y) * smoothstep(0.45, 0.7, t2.r) * 0.6);
+  return base;
+}
 vec3 terrainColor(){
   vec3 d1 = texture2D(tDetail, vWPos.xz * 0.21).rgb;
+  float slope0 = 1.0 - normalize(vWN).y;
+  if (slope0 > 0.15) d1 = mix(d1, tri(vWPos, normalize(vWN), 0.21), smoothstep(0.15, 0.35, slope0));   // pas d'étirement sur les pentes
   vec3 d2 = texture2D(tDetail, vWPos.xz * 0.019).rgb;
   vec3 d3 = texture2D(tDetail, vWPos.xz * 0.0041).rgb;
   float h = vWPos.y;
@@ -425,7 +465,7 @@ vec3 terrainColor(){
   grass *= 0.75 + 0.5 * d1.g;
   vec3 dirt = srgb(vec3(0.33,0.29,0.18)) * (0.75 + 0.5 * d1.b);
   vec3 sand = srgb(vec3(0.80,0.72,0.54)) * (0.88 + 0.24 * d1.r);
-  vec3 rock = srgb(vec3(0.46,0.44,0.41)) * (0.55 + 0.7 * d1.r * (0.6 + 0.4 * d2.g));
+  vec3 rock = rockColor(vWPos, normalize(vWN), bio);
   vec3 mud = mix(srgb(vec3(0.28,0.24,0.17)), srgb(vec3(0.45,0.42,0.36)), smoothstep(0.45, 0.7, d1.r)) * (0.8 + 0.3 * d1.g);
   grass = mix(grass, srgb(vec3(0.52, 0.50, 0.22)) * (0.8 + 0.4 * d1.g), bio.g * 0.55);      // prairie dorée
   grass = mix(grass, srgb(vec3(0.24, 0.30, 0.12)) * (0.8 + 0.4 * d1.g), bio.b * 0.6);       // marais
@@ -446,9 +486,14 @@ vec3 terrainColor(){
   c = mix(c, sand, beach);
   c = mix(c, sand * 0.55, 1.0 - smoothstep(-0.3, 0.5, h));
   // Roche seulement sur les vraies falaises (plus tôt en montagne), neige sur les sommets
-  float rockStart = mix(0.56, 0.42, bio.r);
+  float rockStart = mix(0.5, 0.33, bio.r);
   float rockAmt = smoothstep(rockStart, rockStart + 0.14, slope + (d1.g - 0.5) * 0.12) + smoothstep(135.0, 160.0, h + d2.r * 20.0) * 0.6;
-  c = mix(c, rock, clamp(rockAmt, 0.0, 1.0) * (1.0 - smoothstep(0.1, 0.3, stream)));
+  // Éboulis : gravier clair au pied des falaises en montagne
+  float scree = smoothstep(rockStart - 0.18, rockStart - 0.02, slope) * bio.r * (1.0 - smoothstep(0.1, 0.3, stream));
+  vec3 gravel = srgb(vec3(0.55, 0.53, 0.49)) * (0.6 + 0.6 * d1.r * d1.g + 0.2 * d1.b);
+  c = mix(c, gravel, scree * smoothstep(0.35, 0.65, d1.b + d2.r * 0.4) * 0.85);
+  gRock = clamp(rockAmt, 0.0, 1.0) * (1.0 - smoothstep(0.1, 0.3, stream));
+  c = mix(c, rock, gRock);
   float snow = smoothstep(150.0, 175.0, h + (d2.r - 0.5) * 30.0) * (1.0 - smoothstep(0.62, 0.82, slope));
   c = mix(c, srgb(vec3(0.92, 0.94, 0.98)) * (0.92 + 0.08 * d1.g), snow);
   // Au-delà de la distance d'affichage des arbres, le sol prend la couleur de la forêt
@@ -457,6 +502,25 @@ vec3 terrainColor(){
   c = mix(c, forestCol * (0.8 + 0.3 * d2.g), far * smoothstep(0.2, 0.6, canopy) * 0.9);
   return c;
 }`)
+        .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>
+  // Relief au pixel (roche, éboulis) : la lumière accroche les aspérités
+  {
+    vec3 nW = normalize(vWN);
+    float hb = dot(tri(vWPos, nW, 0.12), vec3(0.6, 0.25, 0.15)) + tri(vWPos, nW, 0.035).g * 0.5;
+    float bumpK = (1.4 * gRock) * (1.0 - smoothstep(30.0, 140.0, length(vWPos - cameraPosition)));
+    vec3 sx = dFdx(-vViewPosition), sy = dFdy(-vViewPosition);
+    vec3 R1 = cross(sy, normal), R2 = cross(normal, sx);
+    float det = dot(sx, R1);
+    vec2 dH = vec2(dFdx(hb), dFdy(hb)) * bumpK;
+    normal = normalize(abs(det) * normal - sign(det) * (dH.x * R1 + dH.y * R2));
+  }`)
+        .replace("#include <fog_fragment>", `
+#ifdef USE_FOG
+  // Brume plus légère en altitude : les sommets lointains restent visibles, voilés de bleu
+  float fogF = smoothstep(fogNear, fogFar, vFogDepth);
+  fogF *= 1.0 - 0.72 * smoothstep(30.0, 190.0, vWPos.y);
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogF);
+#endif`)
         .replace("#include <color_fragment>", `#include <color_fragment>
   diffuseColor.rgb = terrainColor();
   // Fond marin : sable mouillé plus sombre et reflets lumineux (caustiques) qui dansent
@@ -695,7 +759,7 @@ function periodicValueNoise(size, cells, rand) {
       const gx = (x / size) * cells, gy = (y / size) * cells;
       const x0 = Math.floor(gx), y0 = Math.floor(gy);
       let fx = gx - x0, fy = gy - y0;
-      fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+      fx = fx * fx * fx * (fx * (fx * 6 - 15) + 10); fy = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
       const x1 = (x0 + 1) % cells, y1 = (y0 + 1) % cells;
       const a = lattice[y0 * cells + x0], b = lattice[y0 * cells + x1];
       const c = lattice[y1 * cells + x0], d = lattice[y1 * cells + x1];
@@ -720,7 +784,7 @@ function tileableFbm(size, baseCells, octaves, seed) {
 }
 
 export function makeDetailTexture(renderer, seed) {
-  const size = 256;
+  const size = 512;
   const r = tileableFbm(size, 8, 5, seed + 1);
   const g = tileableFbm(size, 4, 5, seed + 2);
   const b = tileableFbm(size, 16, 4, seed + 3);
