@@ -352,6 +352,7 @@ export class Props {
 
   buildMeshes(renderer) {
     const atlas = makeAtlas(renderer);
+    this.atlas = atlas;
     const mat = makeVegetationMaterial(atlas);
     const depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: atlas, alphaTest: 0.42, side: THREE.DoubleSide });
     this.depthMat = depthMat;
@@ -765,4 +766,59 @@ attribute vec4 aOff; attribute float bt; varying float vT; varying float vVar; v
     this.uniforms.uTime.value += dt;
     this.uniforms.uCam.value.set(cam.x, cam.z);
   }
+}
+
+// ---------- Sous-bois dense (GPU) ----------
+// Touffes de feuillage bas (ronces, myrtilles, fougères basses, jeunes pousses) posées partout sur la terre ferme
+// autour du joueur, sans coût CPU : les positions se recyclent dans le shader comme l'herbe.
+export class Undergrowth {
+  constructor(scene, world, quality, atlas) {
+    const count = quality.undergrowth, R = quality.undergrowthRadius;
+    // Une touffe = deux couches de feuilles (basse et plus haute), très peu de triangles
+    const low = makeGroundCover(71), high = makeGroundCover(72);
+    high.scale(0.75, 2.2, 0.75); high.translate(0, -0.05, 0);
+    const base = mergeGeometries([low, high]);
+    const geo = new THREE.InstancedBufferGeometry();
+    geo.index = base.index;
+    for (const k of ["position", "normal", "uv", "color"]) geo.setAttribute(k, base.attributes[k]);
+    const off = new Float32Array(count * 4), rand = mulberry32(1234);
+    for (let i = 0; i < count; i++) { off[i * 4] = (rand() * 2 - 1) * R; off[i * 4 + 1] = (rand() * 2 - 1) * R; off[i * 4 + 2] = rand() * 6.28; off[i * 4 + 3] = 0.6 + rand() * 0.9; }
+    geo.setAttribute("aOff", new THREE.InstancedBufferAttribute(off, 4));
+    geo.instanceCount = count;
+    this.uniforms = { uCam: { value: new THREE.Vector2() }, uR: { value: R }, tHeight: { value: world.heightTex }, uHM: { value: world.hmTransform } };
+    const mat = new THREE.MeshStandardMaterial({ map: atlas, vertexColors: true, roughness: 0.85, alphaTest: 0.42, side: THREE.DoubleSide });
+    mat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, this.uniforms, { uTime: vegUniforms.uTime });
+      sh.vertexShader = sh.vertexShader
+        .replace("#include <common>", `#include <common>
+uniform vec2 uCam; uniform float uR; uniform sampler2D tHeight; uniform vec2 uHM; uniform float uTime; attribute vec4 aOff; varying float vUG;`)
+        .replace("#include <begin_vertex>", `
+  vec2 wxz = uCam + mod(aOff.xy - uCam + uR, 2.0 * uR) - uR;
+  vec4 hm = texture2D(tHeight, wxz * uHM.x + uHM.y);
+  float rnd = fract(sin(dot(floor(wxz * 3.0), vec2(12.9898, 78.233))) * 43758.5453);
+  // partout sur la terre ferme, plus dense sous les arbres ; pas dans les ruisseaux ni sur la plage
+  float dens = clamp(0.55 + hm.a * 0.6, 0.0, 0.95) * smoothstep(2.0, 3.2, hm.r) * (1.0 - smoothstep(0.05, 0.3, hm.b)) * step(0.02, hm.g + hm.a);
+  float keep = step(rnd, dens);
+  float dist = length(wxz - uCam);
+  float s = aOff.w * keep * (1.0 - smoothstep(uR * 0.7, uR, dist));
+  float c = cos(aOff.z), sn = sin(aOff.z);
+  vec3 p = position * s;
+  p = vec3(p.x * c - p.z * sn, p.y, p.x * sn + p.z * c);
+  p.x += sin(uTime * 1.3 + wxz.x * 0.4) * 0.03 * position.y * s;
+  vec3 transformed = vec3(wxz.x, hm.r - 0.05, wxz.y) + p;
+  vUG = fract(rnd * 17.0);`)
+        .replace("#include <beginnormal_vertex>", `#include <beginnormal_vertex>
+  objectNormal = normalize(objectNormal + vec3(0.0, 0.6, 0.0));`);
+      sh.fragmentShader = sh.fragmentShader
+        .replace("#include <common>", "#include <common>\nvarying float vUG;")
+        .replace("#include <color_fragment>", `#include <color_fragment>
+  // variété : vert sombre, vert tendre, roussi
+  diffuseColor.rgb *= mix(vec3(0.85, 1.0, 0.8), vec3(1.15, 0.95, 0.65), step(0.78, vUG)) * (0.75 + 0.45 * vUG);`);
+    };
+    this.mesh = new THREE.Mesh(geo, mat);
+    this.mesh.frustumCulled = false;
+    this.mesh.receiveShadow = true;
+    scene.add(this.mesh);
+  }
+  update(cam) { this.uniforms.uCam.value.set(cam.x, cam.z); }
 }

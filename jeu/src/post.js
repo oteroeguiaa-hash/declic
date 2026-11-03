@@ -54,7 +54,7 @@ export class Post {
     });
 
     this.brightMat = new THREE.ShaderMaterial({
-      uniforms: { tColor: { value: null }, uThreshold: { value: 1.2 } },
+      uniforms: { tColor: { value: null }, uThreshold: { value: 1.7 } },
       vertexShader: VERT,
       fragmentShader: `
         uniform sampler2D tColor; uniform float uThreshold; varying vec2 vUv;
@@ -228,7 +228,7 @@ export class Post {
     this.compMat.uniforms.uRayCol.value.copy(sun.color).multiplyScalar(rayK);
 
     // Bloom
-    this.compMat.uniforms.uBloom.value = this.bloom ? 0.5 : 0;
+    this.compMat.uniforms.uBloom.value = this.bloom ? 0.28 : 0;
     if (this.bloom) {
     this.brightMat.uniforms.tColor.value = this.sceneRT.texture;
     this.pass(this.brightMat, this.bloomA);

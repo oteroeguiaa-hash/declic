@@ -2,7 +2,7 @@
 import * as THREE from "three";
 import { World, makeDetailTexture, makeWaterNormalTexture } from "./world.js";
 import { Environment } from "./sky.js";
-import { Props, Grass, PROP_TYPES } from "./props.js";
+import { Props, Grass, Undergrowth, PROP_TYPES } from "./props.js";
 import { Creatures } from "./creatures.js";
 import { Structures } from "./structures.js";
 import { Player } from "./player.js";
@@ -31,9 +31,9 @@ const store = {
 };
 
 const PRESETS = {
-  low:    { reflections: 0, msaa: 0, raySamples: 24, rayScale: 0.25, terrainCells: 256, shadows: true, shadowSize: 1024, shadowRange: 34, viewDistance: 330, grassCount: 11000, grassRadius: 17, treeCandidates: 120000, lodScale: 0.55, envInterval: 20, maxDeer: 5, maxSquirrels: 3, maxWolves: 4, maxCreatures: 12, antialias: false, maxPixelRatio: 1.0 },
-  medium: { reflections: 0.25, msaa: 0, raySamples: 40, rayScale: 0.4, terrainCells: 384, shadows: true, shadowSize: 2048, shadowRange: 48, viewDistance: 480, grassCount: 26000, grassRadius: 24, treeCandidates: 120000, lodScale: 0.85, envInterval: 10, maxDeer: 6, maxSquirrels: 4, maxWolves: 5, maxCreatures: 15, antialias: true, maxPixelRatio: 1.6 },
-  high:   { reflections: 0.35, msaa: 2, raySamples: 40, rayScale: 0.4, terrainCells: 512, shadows: true, shadowSize: 2048, shadowRange: 58, viewDistance: 620, grassCount: 46000, grassRadius: 31, treeCandidates: 120000, lodScale: 1.25, envInterval: 6, maxDeer: 8, maxSquirrels: 5, maxWolves: 6, maxCreatures: 20, antialias: true, maxPixelRatio: 1.6 },
+  low:    { reflections: 0, msaa: 0, raySamples: 24, rayScale: 0.25, terrainCells: 256, shadows: true, shadowSize: 1024, shadowRange: 34, viewDistance: 330, grassCount: 6000, grassRadius: 15, undergrowth: 2600, undergrowthRadius: 20, treeCandidates: 120000, lodScale: 0.55, envInterval: 20, maxDeer: 5, maxSquirrels: 3, maxWolves: 4, maxCreatures: 12, antialias: false, maxPixelRatio: 1.0 },
+  medium: { reflections: 0.25, msaa: 0, raySamples: 40, rayScale: 0.4, terrainCells: 384, shadows: true, shadowSize: 2048, shadowRange: 48, viewDistance: 480, grassCount: 13000, grassRadius: 21, undergrowth: 5000, undergrowthRadius: 28, treeCandidates: 120000, lodScale: 0.85, envInterval: 10, maxDeer: 6, maxSquirrels: 4, maxWolves: 5, maxCreatures: 15, antialias: true, maxPixelRatio: 1.6 },
+  high:   { reflections: 0.35, msaa: 2, raySamples: 40, rayScale: 0.4, terrainCells: 512, shadows: true, shadowSize: 2048, shadowRange: 58, viewDistance: 620, grassCount: 22000, grassRadius: 26, undergrowth: 8000, undergrowthRadius: 36, treeCandidates: 120000, lodScale: 1.25, envInterval: 6, maxDeer: 8, maxSquirrels: 5, maxWolves: 6, maxCreatures: 20, antialias: true, maxPixelRatio: 1.6 },
 };
 
 function detectQuality() {
@@ -167,6 +167,7 @@ class Game {
     this.scene.add(this.world.buildWater(waterN));
     this.scene.add(this.world.buildStreams(waterN));
     this.grass = new Grass(this.scene, this.world, Q);
+    this.under = new Undergrowth(this.scene, this.world, Q, this.props.atlas);
     this.fish = new Fish(this.scene, this.world, Q);
     this.birds = new Birds(this.scene, this.world, this.props);
     this.insects = new Insects(this.scene, this.world);
@@ -213,7 +214,7 @@ class Game {
     this.post = new Post(renderer, Q);
     this.post.setSize(this.viewW * this.pixelRatio, this.viewH * this.pixelRatio);
     this.refl = new Reflection(renderer, Q);
-    this.refl.hidden = [this.grass.mesh, this.world.streamMesh, this.world.seaMesh];
+    this.refl.hidden = [this.grass.mesh, this.under.mesh, this.world.streamMesh, this.world.seaMesh];
     this.refl.setSize(this.viewW * this.pixelRatio, this.viewH * this.pixelRatio);
     if (this.refl.enabled) this.refl.render(this.scene, this.camera, this.world.waterLevelAt(this.player.pos.x, this.player.pos.z)); // précompile les shaders avec découpe
     renderer.compile(this.scene, this.camera);
@@ -270,7 +271,7 @@ class Game {
     const vd = VIEW[settings.viewDist] || baseView;
     if (vd !== Q.viewDistance) {
       Q.viewDistance = vd;
-      this.scene.fog.near = vd * 0.35; this.scene.fog.far = vd * 1.55;
+      this.scene.fog.near = vd * 0.6; this.scene.fog.far = vd * 2.6;
       this.props.dirty = true;
     }
   }
@@ -1059,7 +1060,19 @@ class Game {
     const max = Math.min(devicePixelRatio, Q.maxPixelRatio);
     let pr = this.pixelRatio;
     if (!settings.dynres) return;
-    if (avg > 1 / 40 && pr > 0.6) pr = Math.max(0.6, pr - 0.15);
+    // D'abord on allège les effets coûteux (image toujours nette), puis seulement un peu la résolution
+    this.perfLevel = this.perfLevel || 0;
+    if (avg > 1 / 50 && this.perfLevel < 5) {
+      this.perfLevel++;
+      if (this.perfLevel === 1) this.post.rays = false;
+      if (this.perfLevel === 2) this.refl.enabled = false;
+      if (this.perfLevel === 3) this.post.bloom = false;
+      if (this.perfLevel === 4) { this.renderer.shadowMap.enabled = false; this.scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; }); }
+      if (this.perfLevel === 5) this.grass.mesh.visible = false;
+      return;
+    }
+    const minPr = Math.max(0.85, max * 0.75);
+    if (avg > 1 / 42 && pr > minPr) pr = Math.max(minPr, pr - 0.1);
     else if (avg < 1 / 58 && pr < max) pr = Math.min(max, pr + 0.1);
     if (pr !== this.pixelRatio) { this.pixelRatio = pr; this.renderer.setPixelRatio(pr); this.renderer.setSize(this.viewW, this.viewH, false); this.post.setSize(this.viewW * pr, this.viewH * pr); this.refl.setSize(this.viewW * pr, this.viewH * pr); }
   }
@@ -1155,6 +1168,7 @@ class Game {
     this.props.update(dt, p.pos, this.totalHours);
     this.world.updateTerrain(this.camera.position, Q.viewDistance, Q.lodScale);
     this.grass.update(dt, this.camera.position);
+    this.under.update(this.camera.position);
     this.world.waterUniforms.uTime.value += dt;
     this.env.update(this.hours, dt, this.camera.position, p.pos);
 
