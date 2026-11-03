@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { mergeGeometries, mergeVertices } from "../vendor/addons/BufferGeometryUtils.js";
 import { mulberry32, fbm, smoothstep, createNoise2D } from "./noise.js";
-import { makeAtlas, makeBroadleaf, makeConifer, makeLeafBush, makeFern, makeLog, makeTreeImpostor, makeVegetationMaterial, vegUniforms } from "./trees.js";
+import { makeAtlas, makeBroadleaf, makeConifer, makeTallBroadleaf, makeScotsPine, makeLeafBush, makeFern, makeLog, makeTreeImpostor, makeVegetationMaterial, vegUniforms } from "./trees.js";
 
 // ---------- Fabrication des modèles ----------
 
@@ -93,9 +93,12 @@ function makeFlint() {
 // ---------- Types d'objets ----------
 
 export const PROP_TYPES = {
-  pine:  { kind: "tree", hp: 6, radius: 0.32, near: 75, center: 1.4, name: "Pin" },
-  oak:   { kind: "tree", hp: 7, radius: 0.42, near: 75, center: 1.4, name: "Chêne" },
-  birch: { kind: "tree", hp: 5, radius: 0.24, near: 75, center: 1.4, name: "Bouleau" },
+  beech: { kind: "tree", hp: 12, radius: 0.5, near: 95, center: 1.4, crown: 6.5, wood: 9, name: "Hêtre" },
+  oak:   { kind: "tree", hp: 13, radius: 0.62, near: 95, center: 1.4, crown: 7.5, wood: 10, name: "Chêne" },
+  scots: { kind: "tree", hp: 10, radius: 0.4, near: 95, center: 1.4, crown: 3.8, wood: 8, name: "Pin sylvestre" },
+  pine:  { kind: "tree", hp: 8, radius: 0.3, near: 85, center: 1.4, crown: 2.6, wood: 6, name: "Épicéa" },
+  birch: { kind: "tree", hp: 6, radius: 0.22, near: 85, center: 1.4, crown: 2.2, wood: 4, name: "Bouleau" },
+  young: { kind: "tree", hp: 4, radius: 0.3, near: 75, center: 1.4, crown: 3, wood: 2, name: "Jeune arbre" },
   rock:  { kind: "rock", hp: 6, radius: 1.05, near: 70, center: 0.4, name: "Rocher" },
   bush:  { kind: "bush", hp: 1, radius: 0.0, near: 90, maxDist: 110, center: 0.5, name: "Buisson" },
   stick: { kind: "pickup", hp: 1, radius: 0, near: 45, maxDist: 45, center: 0.08, name: "Branche" },
@@ -175,7 +178,11 @@ export class Props {
       if (h < 2.2) continue;
       const st = W.streamAt(x, z);
       const r = rand();
-      if (st > 0.02) continue;
+      if (st > 0.02) {
+        // Rochers moussus dans le lit des ruisseaux (pas dans les rivières profondes)
+        if (st > 0.25 && W.waterLevelAt(x, z) - h < 1.3 && rand() < 0.05 && !tooClose(x, z, 1.6)) this.add("rock", x, z, 0.3 + rand() * 0.5, rand);
+        continue;
+      }
       const slope = W.slopeAt(x, z);
       const moist = W.moisture(x, z);
       const forest = fbm(forestN, x / 180, z / 180, 3) * 0.5 + 0.5;
@@ -191,8 +198,7 @@ export class Props {
           continue;
         }
         if (r < 0.28) {
-          const t = rand() < 0.5 ? "birch" : "oak";
-          if (!tooClose(x, z, 2.2)) this.add(t, x, z, 0.45 + rand() * 0.3, rand);
+          if (!tooClose(x, z, 2.2)) { if (rand() < 0.5) this.add("birch", x, z, 0.9 + rand() * 0.5, rand); else this.add("young", x, z, 0.6 + rand() * 0.5, rand); }
           continue;
         }
         if (r < 0.285) { this.add("log", x, z, 0.8 + rand() * 0.4, rand); continue; }
@@ -209,18 +215,29 @@ export class Props {
         const clearing = smoothstep(0.64, 0.74, forest) * (bank ? 0.3 : 1);
         const dens = (1 - clearing) * smoothstep(3.2, 6.5, h) * (1 - smoothstep(42, 62, h)) * (0.82 + 0.18 * moist);
         if (r < dens * 0.97) {
+          // Forêt tempérée : hêtres, chênes et pins sylvestres de 20 à 30 m ; épicéas en altitude
           let t;
-          if (h > 30 || moist < 0.35) t = "pine";
-          else if ((moist > 0.62 || bank) && rand() < 0.5) t = "birch";
-          else t = rand() < 0.45 ? "pine" : "oak";
-          if (!tooClose(x, z, t === "oak" ? 3.6 : t === "birch" ? 2.4 : 2.7)) {
-            this.add(t, x, z, 0.75 + rand() * 0.55, rand);
+          const u = rand();
+          if (rand() < smoothstep(26, 40, h) * 0.85) t = "pine";
+          else if (((moist > 0.62 && u < 0.25) || (bank && u < 0.45))) t = "birch";
+          else if (moist < 0.32 && u < 0.35) t = "scots";
+          else t = u < 0.55 ? "beech" : u < 0.88 ? "oak" : "scots";
+          const space = { beech: 7.5, oak: 8.2, scots: 6, pine: 4.6, birch: 4 }[t];
+          const sc = t === "pine" ? 1.9 + rand() * 0.6 : t === "birch" ? 1.6 + rand() * 0.6 : 0.82 + rand() * 0.32;
+          if (!tooClose(x, z, space)) {
+            this.add(t, x, z, sc, rand);
             // Sous-bois
             const r2 = rand();
             if (r2 < 0.16) { const [sx, sz] = near(x, z, 4); if (dry(sx, sz)) this.add("stick", sx, sz, 0.8 + rand() * 0.4, rand); }
             else if (r2 < 0.42) { const [fx, fz] = near(x, z, 3.5); if (dry(fx, fz)) this.add("fern", fx, fz, 0.7 + rand() * 0.5, rand); }
             else if (r2 < 0.5) { const [bx, bz] = near(x, z, 4); if (dry(bx, bz) && !tooClose(bx, bz, 1.5)) this.add("bush", bx, bz, 0.7 + rand() * 0.5, rand, rand() < 0.35 ? 1 : 0); }
-            else if (r2 < 0.512) { const [lx, lz] = near(x, z, 5); if (dry(lx, lz)) this.add("log", lx, lz, 0.8 + rand() * 0.4, rand); }
+            else if (r2 < 0.53) { const [lx, lz] = near(x, z, 6); if (dry(lx, lz)) this.add("log", lx, lz, 0.8 + rand() * 0.4, rand); }
+          } else if (rand() < 0.3) {
+            // Sous-bois sous les grands arbres : jeunes arbres, fougères, buissons
+            const k = rand();
+            if (k < 0.3) { if (!tooClose(x, z, 2.5)) this.add("young", x, z, 0.5 + rand() * 0.6, rand); }
+            else if (k < 0.75) { if (dry(x, z)) this.add("fern", x, z, 0.8 + rand() * 0.6, rand); }
+            else if (!tooClose(x, z, 1.5)) this.add("bush", x, z, 0.7 + rand() * 0.5, rand, rand() < 0.3 ? 1 : 0);
           }
           continue;
         }
@@ -230,7 +247,7 @@ export class Props {
         const edge = smoothstep(0.6, 0.66, forest) * (1 - smoothstep(0.7, 0.76, forest));
         if (edge > 0.2 && h > 3.5 && h < 45 && slope < 0.3 && rand() < 0.35 * edge) {
           if (rand() < 0.7) { if (!tooClose(x, z, 1.8)) this.add("bush", x, z, 0.7 + rand() * 0.6, rand, rand() < 0.5 ? 1 : 0); }
-          else if (!tooClose(x, z, 2.4)) this.add(rand() < 0.6 ? "birch" : "oak", x, z, 0.4 + rand() * 0.3, rand);
+          else if (!tooClose(x, z, 2.4)) { if (rand() < 0.5) this.add("birch", x, z, 1 + rand() * 0.6, rand); else this.add("young", x, z, 0.6 + rand() * 0.6, rand); }
           continue;
         }
       }
@@ -254,8 +271,11 @@ export class Props {
     this.materials = { tree: mat, rock: rockMat };
 
     const geos = {
+      beech: [makeTallBroadleaf(0, 41, "beech"), makeTallBroadleaf(1, 41, "beech"), makeTreeImpostor("beech")],
+      oak: [makeTallBroadleaf(0, 43, "oak"), makeTallBroadleaf(1, 43, "oak"), makeTreeImpostor("oak")],
+      scots: [makeScotsPine(0, 47), makeScotsPine(1, 47), makeTreeImpostor("scots")],
       pine: [makeConifer(false, 11), makeConifer(true, 11), makeTreeImpostor("pine")],
-      oak: [makeBroadleaf(false, 21), makeBroadleaf(true, 21), makeTreeImpostor("oak")],
+      young: [makeBroadleaf(false, 21), makeBroadleaf(true, 21), makeTreeImpostor("young")],
       birch: [makeBroadleaf(false, 31, true), makeBroadleaf(true, 31, true), makeTreeImpostor("birch")],
       rock: [makeRock(false, 1), makeRock(true, 1)],
       bush: [makeLeafBush(true)],
@@ -308,7 +328,7 @@ export class Props {
     const far2 = this.quality.viewDistance ** 2;
     const counts = {};
     for (const k in this.meshes) counts[k] = [0, 0, 0];
-    const mid2 = (230 * this.quality.lodScale) ** 2;
+    const mid2 = (260 * this.quality.lodScale) ** 2;
     this.slot.fill(-1);
     for (let i = 0; i < this.list.length; i++) {
       const p = this.list[i];

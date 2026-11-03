@@ -11,9 +11,10 @@ import { Sounds } from "./audio.js";
 import { UI } from "./ui.js";
 import { ITEMS, TOOLS, RECIPES, TOOL_SLOTS, Inventory } from "./items.js";
 import { Post } from "./post.js";
+import { Reflection } from "./reflection.js";
 
-const SAVE_KEY = "lisiere-save-v3";        // v3 : île 2,5 × plus grande, ruisseaux, bosquets
-const OLD_SAVE_KEYS = ["lisiere-save-v2", "lisiere-save-v1"];
+const SAVE_KEY = "lisiere-save-v4";        // v4 : grande forêt de feuillus, rivières navigables
+const OLD_SAVE_KEYS = ["lisiere-save-v3", "lisiere-save-v2", "lisiere-save-v1"];
 const SETTINGS_KEY = "lisiere-settings";
 const $ = (id) => document.getElementById(id);
 
@@ -24,9 +25,9 @@ const store = {
 };
 
 const PRESETS = {
-  low:    { msaa: 0, raySamples: 24, rayScale: 0.25, terrainCells: 256, shadows: true, shadowSize: 1024, shadowRange: 34, viewDistance: 330, grassCount: 16000, grassRadius: 19, treeCandidates: 120000, lodScale: 0.55, envInterval: 20, maxDeer: 5, maxSquirrels: 3, maxWolves: 4, maxCreatures: 16, antialias: false, maxPixelRatio: 1.25 },
-  medium: { msaa: 2, raySamples: 40, rayScale: 0.4, terrainCells: 384, shadows: true, shadowSize: 2048, shadowRange: 48, viewDistance: 480, grassCount: 38000, grassRadius: 26, treeCandidates: 120000, lodScale: 0.85, envInterval: 10, maxDeer: 6, maxSquirrels: 4, maxWolves: 5, maxCreatures: 22, antialias: true, maxPixelRatio: 1.6 },
-  high:   { msaa: 4, raySamples: 60, rayScale: 0.5, terrainCells: 512, shadows: true, shadowSize: 4096, shadowRange: 62, viewDistance: 680, grassCount: 75000, grassRadius: 34, treeCandidates: 120000, lodScale: 1.25, envInterval: 6, maxDeer: 8, maxSquirrels: 5, maxWolves: 6, maxCreatures: 28, antialias: true, maxPixelRatio: 2 },
+  low:    { reflections: 0, msaa: 0, raySamples: 24, rayScale: 0.25, terrainCells: 256, shadows: true, shadowSize: 1024, shadowRange: 34, viewDistance: 330, grassCount: 16000, grassRadius: 19, treeCandidates: 120000, lodScale: 0.55, envInterval: 20, maxDeer: 5, maxSquirrels: 3, maxWolves: 4, maxCreatures: 16, antialias: false, maxPixelRatio: 1.25 },
+  medium: { reflections: 0.35, msaa: 2, raySamples: 40, rayScale: 0.4, terrainCells: 384, shadows: true, shadowSize: 2048, shadowRange: 48, viewDistance: 480, grassCount: 38000, grassRadius: 26, treeCandidates: 120000, lodScale: 0.85, envInterval: 10, maxDeer: 6, maxSquirrels: 4, maxWolves: 5, maxCreatures: 22, antialias: true, maxPixelRatio: 1.6 },
+  high:   { reflections: 0.5, msaa: 4, raySamples: 60, rayScale: 0.5, terrainCells: 512, shadows: true, shadowSize: 4096, shadowRange: 62, viewDistance: 680, grassCount: 75000, grassRadius: 34, treeCandidates: 120000, lodScale: 1.25, envInterval: 6, maxDeer: 8, maxSquirrels: 5, maxWolves: 6, maxCreatures: 28, antialias: true, maxPixelRatio: 2 },
 };
 
 function detectQuality() {
@@ -38,7 +39,7 @@ function detectQuality() {
 }
 
 const DEFAULTS = {
-  quality: "auto", shadows: "auto", grass: "auto", viewDist: "auto", rays: true, bloom: true, mist: true, dynres: true,
+  quality: "auto", shadows: "auto", grass: "auto", viewDist: "auto", rays: true, bloom: true, mist: true, reflections: true, dynres: true,
   difficulty: "normal", dayMinutes: 16, hints: true,
   sens: 1, invertY: false, fov: 72, headBob: true,
   volume: 80,
@@ -78,6 +79,7 @@ const SCHEMA = [
     { k: "rays", l: "Rayons de soleil", t: "toggle" },
     { k: "bloom", l: "Halo lumineux", t: "toggle" },
     { k: "mist", l: "Brume du matin", t: "toggle" },
+    { k: "reflections", l: "Reflets dans l'eau", h: "Indisponible en qualité Rapide", t: "toggle" },
     { k: "dynres", l: "Résolution dynamique", h: "Baisse la netteté si le jeu ralentit", t: "toggle" },
   ]],
   ["Jeu", [
@@ -148,7 +150,7 @@ class Game {
     this.world = new World(this.seed);
     await step(35, "Les forêts poussent…");
     this.props = new Props(this.scene, this.world, Q, this.seed, renderer);
-    this.world.applyCanopy(this.props.list);
+    this.world.applyCanopy(this.props.list, (p) => (PROP_TYPES[p.t].kind === "tree" ? PROP_TYPES[p.t].crown * p.s : 0));
 
     await step(55, "Érosion et rivages…");
     const detail = makeDetailTexture(renderer, 7);
@@ -193,6 +195,10 @@ class Game {
     this.world.updateTerrain(this.player.pos, Q.viewDistance, Q.lodScale);
     this.post = new Post(renderer, Q);
     this.post.setSize(this.viewW * this.pixelRatio, this.viewH * this.pixelRatio);
+    this.refl = new Reflection(renderer, Q);
+    this.refl.hidden = [this.grass.mesh, this.world.streamMesh, this.world.seaMesh];
+    this.refl.setSize(this.viewW * this.pixelRatio, this.viewH * this.pixelRatio);
+    if (this.refl.enabled) this.refl.render(this.scene, this.camera, this.world.waterLevelAt(this.player.pos.x, this.player.pos.z)); // précompile les shaders avec découpe
     renderer.compile(this.scene, this.camera);
     this.post.render(this.scene, this.camera, this.env.sunInfo);
 
@@ -571,6 +577,23 @@ class Game {
     return best;
   }
 
+  // Altitude de la surface d'eau visible la plus proche (pour les reflets), recalculée 2 fois par seconde.
+  nearWaterLevel(dt) {
+    this.wlTimer = (this.wlTimer || 0) - dt;
+    if (this.wlTimer > 0) return this.wlCache;
+    this.wlTimer = 0.5;
+    const c = this.player.boat ? this.player.boat.pos : this.camera.position;
+    let best = null, bd = 1e9;
+    for (let r = 0; r <= 70; r += 7) for (let k = 0; k < (r ? 12 : 1); k++) {
+      const a = (k / 12) * Math.PI * 2;
+      const x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r;
+      const wl = this.world.waterLevelAt(x, z);
+      if (wl - this.world.heightAt(x, z) > 0.6 && r < bd && Math.abs(wl - c.y) < 40) { bd = r; best = wl; }
+    }
+    this.wlCache = best;
+    return best;
+  }
+
   isNight() { return this.hours >= 20.5 || this.hours < 5.5; }
 
   attack(target) {
@@ -597,7 +620,7 @@ class Game {
           const away = new THREE.Vector3(p.x - this.player.pos.x, 0, p.z - this.player.pos.z);
           this.props.remove(id, this.totalHours, 96, away);
           this.sounds.treeFall();
-          const wood = 3 + Math.round(p.s * 2);
+          const wood = Math.max(2, Math.round(def.wood * (p.t === "pine" || p.t === "birch" ? p.s / 2 : p.s)));
           setTimeout(() => { this.give("bois", wood); this.give("branche", 2); }, 900);
         }
       } else if (Math.random() < 0.45) this.give("branche", 1);
@@ -769,6 +792,7 @@ class Game {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h, false);
     this.post.setSize(w * this.pixelRatio, h * this.pixelRatio);
+    this.refl.setSize(w * this.pixelRatio, h * this.pixelRatio);
   }
 
   // Résolution dynamique : garde le jeu fluide sur les appareils modestes.
@@ -784,7 +808,7 @@ class Game {
     if (!settings.dynres) return;
     if (avg > 1 / 40 && pr > 0.6) pr = Math.max(0.6, pr - 0.15);
     else if (avg < 1 / 58 && pr < max) pr = Math.min(max, pr + 0.1);
-    if (pr !== this.pixelRatio) { this.pixelRatio = pr; this.renderer.setPixelRatio(pr); this.renderer.setSize(this.viewW, this.viewH, false); this.post.setSize(this.viewW * pr, this.viewH * pr); }
+    if (pr !== this.pixelRatio) { this.pixelRatio = pr; this.renderer.setPixelRatio(pr); this.renderer.setSize(this.viewW, this.viewH, false); this.post.setSize(this.viewW * pr, this.viewH * pr); this.refl.setSize(this.viewW * pr, this.viewH * pr); }
   }
 
   // ---------- Boucle ----------
@@ -869,6 +893,7 @@ class Game {
 
     this.ui.updateHUD(p, this.hours, this.day, settings.fps ? this.fpsText : null);
     this.resize(); // filet de sécurité : rotation d'écran en mode appli (iOS)
+    this.refl.render(this.scene, this.camera, settings.reflections ? this.nearWaterLevel(dt) : null);
     this.post.render(this.scene, this.camera, this.env.sunInfo);
     input.endFrame();
 
