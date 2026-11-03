@@ -236,6 +236,8 @@ export class Player {
       const d = Math.hypot(this.pos.x - p.x, this.pos.z - p.z);
       if (d < 1.0 * p.s && this.pos.y >= p.y + p.s * 0.6) floor = Math.max(floor, p.y + p.s * 0.75);
     });
+    // Constructions : planchers, fondations, escaliers
+    if (this.structures.build) floor = Math.max(floor, this.structures.build.groundAt(this.pos.x, this.pos.z, this.pos.y));
 
     if (!this.swimming && this.pos.y <= floor) {
       if (!this.onGround && this.fallStartY !== null) {

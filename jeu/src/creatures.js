@@ -415,6 +415,7 @@ export class Creatures {
         c.speed *= 0.5;
       } else { c.pos.x = nx; c.pos.z = nz; }
       if (sp.radius > 0.2) this.props.collide(c.pos, sp.radius);
+      if (this.build) this.build.collide(c.pos, Math.max(0.15, sp.radius), c.height * 1.5);
       c.pos.y = this.world.heightAt(c.pos.x, c.pos.z);
       c.group.rotation.y = c.yaw;
       const ahead = this.world.heightAt(c.pos.x + Math.sin(c.yaw), c.pos.z + Math.cos(c.yaw));

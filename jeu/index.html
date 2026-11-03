@@ -139,6 +139,9 @@ body.nocompass #compass, body.nocross #crosshair { display: none; }
 
 /* Sac */
 #bag { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(6,9,7,0.55); backdrop-filter: blur(2px); }
+#buildMenu { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(6,9,7,0.55); backdrop-filter: blur(2px); }
+#buildMenu .wrap { width: min(620px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
+#buildMenu h2 { margin: 0 0 8px; font: 600 20px Georgia, serif; }
 #bag .wrap { width: min(860px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 18px; padding: 18px; display: grid; grid-template-columns: 1fr 1.2fr; gap: 18px; }
 #bag h2 { margin: 0 0 12px; font: 600 20px Georgia, serif; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
@@ -172,6 +175,7 @@ body.touch.playing #touchArea, body.touch.playing #touchUI { display: block; }
 #btnUse { right: calc(max(28px, env(safe-area-inset-right)) + 96px); bottom: 70px; }
 #btnJump { right: max(28px, env(safe-area-inset-right)); bottom: 24px; width: 58px; height: 58px; }
 #btnBag { right: max(16px, env(safe-area-inset-right)); top: max(14px, env(safe-area-inset-top)); width: 50px; height: 50px; font-size: 22px; }
+#btnBuild { right: calc(max(16px, env(safe-area-inset-right)) + 120px); top: max(14px, env(safe-area-inset-top)); width: 50px; height: 50px; font-size: 22px; }
 #btnTool { right: calc(max(16px, env(safe-area-inset-right)) + 60px); top: max(14px, env(safe-area-inset-top)); width: 50px; height: 50px; font-size: 22px; }
 #btnPause { left: max(16px, env(safe-area-inset-left)); top: max(14px, env(safe-area-inset-top)); width: 44px; height: 44px; font-size: 18px; }
 body.touch #stats { width: 150px; bottom: auto; top: calc(max(14px, env(safe-area-inset-top)) + 56px); }
@@ -224,7 +228,19 @@ body.touch #compass { display: none; }
   <button class="tbtn" id="btnJump" aria-label="Sauter">⤒</button>
   <button class="tbtn" id="btnBag" aria-label="Sac">🎒</button>
   <button class="tbtn" id="btnTool" aria-label="Changer d'outil">🔁</button>
+  <button class="tbtn" id="btnBuild" aria-label="Construire">🔨</button>
   <button class="tbtn" id="btnPause" aria-label="Pause">⏸</button>
+</div>
+
+<div id="buildMenu" class="hidden">
+  <div class="wrap one">
+    <div>
+      <button class="btn small closebag" id="closeBuild">Fermer</button>
+      <h2>Construire</h2>
+      <p class="empty" style="margin:0 0 10px">Les pièces s'accrochent automatiquement aux autres (fondations en grille de 3 m, murs sur les bords, étages sur les murs). Démonter rend toutes les ressources.</p>
+      <div id="buildList"></div>
+    </div>
+  </div>
 </div>
 
 <div id="bag" class="hidden">

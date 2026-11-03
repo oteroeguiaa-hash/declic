@@ -13,6 +13,7 @@ import { ITEMS, TOOLS, RECIPES, TOOL_SLOTS, Inventory } from "./items.js";
 import { Post } from "./post.js";
 import { Reflection } from "./reflection.js";
 import { Fish } from "./fish.js";
+import { BuildSystem, PIECES, BUILD_CATS } from "./build.js";
 
 const SAVE_KEY = "lisiere-save-v6";        // v6 : forêts variées, montagnes et rochers refaits
 const OLD_SAVE_KEYS = ["lisiere-save-v5", "lisiere-save-v4", "lisiere-save-v3", "lisiere-save-v2", "lisiere-save-v1"];
@@ -172,6 +173,9 @@ class Game {
     this.sounds.setVolume(settings.volume / 100);
     this.structures = new Structures(this.scene, this.world);
     this.creatures = new Creatures(this.scene, this.world, this.props, Q, this.sounds);
+    this.build = new BuildSystem(this.scene, this.world, this.props);
+    this.structures.build = this.build;
+    this.creatures.build = this.build;
     this.player = new Player(this.camera, this.world, this.props, this.structures);
     this.inv = new Inventory();
     this.input = new Input(canvas);
@@ -319,10 +323,11 @@ class Game {
     $("btnReload").onclick = () => { this.save(); location.reload(); };
     document.querySelectorAll("[data-back]").forEach((b) => (b.onclick = () => this.openPanel(null)));
     $("howKeys").innerHTML = touch
-      ? `<p>Joystick à gauche pour marcher (pousse à fond pour courir), glisse à droite pour regarder.<br>✊ frapper · ✋ ramasser, boire, cuire · 🎒 sac · 🔁 changer d'outil · ⤒ sauter.</p>`
+      ? `<p>Joystick à gauche pour marcher (pousse à fond pour courir), glisse à droite pour regarder.<br>✊ frapper · ✋ ramasser, boire, cuire · 🎒 sac · 🔨 construire · 🔁 changer d'outil · ⤒ sauter.</p>`
       : `<p><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> ou <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> se déplacer · <kbd>Maj</kbd> courir · <kbd>Espace</kbd> sauter · <kbd>C</kbd> s'accroupir<br>
-         <kbd>Clic</kbd> frapper · <kbd>E</kbd> ou <kbd>clic droit</kbd> ramasser, boire, cuire · <kbd>Tab</kbd> sac · <kbd>1</kbd>–<kbd>6</kbd> ou molette : outil · <kbd>F</kbd> manger · <kbd>Échap</kbd> pause</p>`;
+         <kbd>Clic</kbd> frapper · <kbd>E</kbd> ou <kbd>clic droit</kbd> ramasser, boire, cuire · <kbd>Tab</kbd> sac · <kbd>B</kbd> construire · <kbd>1</kbd>–<kbd>6</kbd> ou molette : outil · <kbd>F</kbd> manger · <kbd>Échap</kbd> pause</p>`;
     $("closeBag").onclick = () => this.toggleBag(false);
+    $("closeBuild").onclick = () => this.toggleBuildMenu(false);
     // Barre d'outils : toucher / cliquer un emplacement sélectionne l'outil
     const pickSlot = (e) => {
       const slot = e.target.closest(".slot");
@@ -401,6 +406,80 @@ class Game {
     $("menuTag").textContent = "Pause · partie sauvegardée";
     this.save();
     this.showMenu();
+  }
+
+  // ---------- Construction ----------
+  toggleBuildMenu(open) {
+    open = open ?? !this.buildMenuOpen;
+    this.buildMenuOpen = open;
+    $("buildMenu").classList.toggle("hidden", !open);
+    if (open) { this.renderBuildMenu(); this.input.exitLock(); }
+    else if (this.state === "play") this.input.requestLock();
+  }
+
+  renderBuildMenu() {
+    const inv = this.inv;
+    const all = { ...PIECES, ...this.build.extraDefs };
+    const cats = [...BUILD_CATS, ...(this.build.extraCats || [])];
+    const card = (id, d) => {
+      const can = Object.entries(d.cost).every(([k, n]) => inv.count(k) >= n);
+      const needs = Object.entries(d.cost).map(([k, n]) => `<span class="${inv.count(k) >= n ? "ok" : "ko"}">${ITEMS[k].icon} ${inv.count(k)}/${n}</span>`).join(" · ");
+      return `<div class="recipe"><div class="ic">${d.icon}</div><div class="info"><b>${d.name}</b>${d.desc ? `<div class="desc">${d.desc}</div>` : ""}<div class="needs">${needs}</div></div>
+        <button class="btn small" data-piece="${id}" ${can ? "" : "disabled"}>Placer</button></div>`;
+    };
+    $("buildList").innerHTML = `<button class="btn" id="btnEdit">🔧 Démonter ou déplacer une construction</button>` +
+      cats.map((c) => `<h3 class="rgroup">${c}</h3>` + Object.entries(all).filter(([, d]) => d.cat === c).map(([id, d]) => card(id, d)).join("")).join("");
+    $("buildList").querySelectorAll("button[data-piece]").forEach((b) => (b.onclick = () => {
+      this.build.rotUser = 0;
+      this.build.select(b.dataset.piece);
+      this.editMode = false;
+      this.toggleBuildMenu(false);
+      if (settings.hints && !this.buildHintShown) { this.buildHintShown = true; this.ui.showHint(this.input.touch ? "✊ poser · ✋ tourner · 🔨 terminer. Les pièces s'accrochent toutes seules aux autres (vert = possible)." : "[Clic] poser · [R] ou molette : tourner · [E] annuler · [B] terminer. Les pièces s'accrochent toutes seules aux autres (vert = possible).", 8000); }
+    }));
+    $("btnEdit").onclick = () => { this.build.cancel(); this.editMode = true; this.toggleBuildMenu(false); };
+  }
+
+  exitBuild() {
+    const b = this.build;
+    if (b.moving) { // pièce en cours de déplacement : on la rend (ressources + contenu)
+      for (const [k, n] of Object.entries(b.def(b.moving.type).cost)) this.inv.add(k, n);
+      if (b.moving.state?.items) for (const [k, n] of Object.entries(b.moving.state.items)) this.inv.add(k, n);
+    }
+    b.cancel();
+    this.editMode = false;
+    this.ui.setTarget("", false);
+  }
+
+  updateBuild(input) {
+    const b = this.build, touch = this.input.touch;
+    const H = touch ? "✊" : "[Clic]", U = touch ? "✋" : "[E]";
+    if (this.editMode) {
+      const t = b.pickPiece(this.camera, 8);
+      if (t) {
+        const d = b.def(t.piece.type);
+        this.ui.setTarget(`<b>${d.name}</b><small>${H} Démonter (ressources rendues) · ${touch ? "✋" : "[G]"} Déplacer · ${touch ? "🔨" : "[B]"} Terminer</small>`, true);
+        if (input.was("Attack")) { b.dismantle(t.piece, this.inv); this.sounds.chop(); this.ui.toast(`${d.icon} ${d.name} démonté`); this.save(); }
+        else if (input.was("KeyG") || input.was("KeyE")) { b.pickUp(t.piece); this.editMode = false; }
+      } else this.ui.setTarget(`<b>Démonter ou déplacer</b><small>Vise une construction · ${touch ? "🔨" : "[B]"} Terminer</small>`, false);
+      return;
+    }
+    if (input.was("WheelUp")) b.rotate(-1);
+    if (input.was("WheelDown") || input.was("KeyR") || (touch && input.was("KeyE"))) b.rotate(1);
+    if (!touch && input.was("KeyE")) { this.exitBuild(); return; }
+    b.update(this.camera, this.inv);
+    const d = b.def(b.selected);
+    if (!d) return;
+    const why = b.valid ? "" : `<br><span style="color:#ff9a8a">${b.reason || "Impossible ici"}</span>`;
+    this.ui.setTarget(`<b>${d.icon} ${d.name}${b.moving ? " (déplacement)" : ""}</b><small>${H} Poser · ${touch ? "✋" : "[R]"} Tourner · ${touch ? "🔨" : "[E]"} ${b.moving ? "Annuler" : "Terminer"}${why}</small>`, b.valid);
+    if (input.was("Attack")) {
+      if (!b.valid) { this.sounds.error(); return; }
+      const moving = b.moving;
+      b.place(this.inv, moving?.state);
+      this.sounds.chop();
+      this.save();
+      if (moving) b.cancel();
+      else if (!Object.entries(d.cost).every(([k, n]) => this.inv.count(k) >= n)) { this.ui.toast("Plus assez de ressources pour en poser une autre.", true); }
+    }
   }
 
   toggleBag(open, silent) {
@@ -521,6 +600,12 @@ class Game {
     if (c) best = { type: "creature", ...c };
     if (p && (!best || p.dist < best.dist)) best = { type: "prop", ...p };
     if (s && (!best || s.dist < best.dist)) best = { type: "structure", ...s };
+    const bp = this.build.pickPiece(this.camera, 3.4);
+    if (bp) {
+      const d = this.build.def(bp.piece.type);
+      if (d.door || d.use) { if (!best || bp.dist < best.dist + 0.3) best = { type: "piece", ...bp }; }
+      else if (best && bp.dist < best.dist) best = null;   // un mur cache ce qu'il y a derrière
+    }
     if (!best && dir.y < -0.05) {
       // On avance le long du regard : de l'eau (mer, lac ou ruisseau) au-dessus du sol ?
       for (let t = 0.5; t < 4.5; t += 0.25) {
@@ -538,6 +623,11 @@ class Game {
     if (!t) return ["", false];
     const use = this.input.touch ? "✋" : "[E]";
     const hit = this.input.touch ? "✊" : "[Clic]";
+    if (t.type === "piece") {
+      const d = this.build.def(t.piece.type);
+      if (d.door) return [`<b>${d.name}</b><small>${use} ${t.piece.state.open ? "Fermer" : "Ouvrir"}</small>`, true];
+      if (d.use) return [`<b>${d.name}</b><small>${use} ${d.useLabel ? d.useLabel(t.piece, this) : "Utiliser"}</small>`, true];
+    }
     if (t.type === "water") return [`<b>Eau</b><small>${use} Boire${this.inv.count("gourde") ? " et remplir la gourde" : ""}</small>`, true];
     if (t.type === "creature") {
       const c = t.creature;
@@ -657,6 +747,11 @@ class Game {
 
   interact(target) {
     if (!target) return;
+    if (target.type === "piece") {
+      const pc = target.piece, d = this.build.def(pc.type);
+      if (d.door) { this.build.setDoor(pc, !pc.state.open); this.sounds.chop(); return; }
+      if (d.use) { d.use(pc, this); this.save(); return; }
+    }
     const p = this.player;
     if (target.type === "water") {
       p.water = Math.min(100, p.water + 30);
@@ -771,7 +866,7 @@ class Game {
     if (!this.oldCleaned) { this.oldCleaned = true; OLD_SAVE_KEYS.forEach((k) => store.del(k)); }
     store.set(SAVE_KEY, {
       v: 1, seed: this.seed, hours: this.hours, day: this.day, totalHours: this.totalHours, tool: this.tool,
-      player: this.player.serialize(), inv: this.inv.serialize(), props: this.props.serialize(), structures: this.structures.serialize(),
+      player: this.player.serialize(), inv: this.inv.serialize(), props: this.props.serialize(), structures: this.structures.serialize(), builds: this.build.serialize(),
       intro: this.introShown,
     });
   }
@@ -792,6 +887,7 @@ class Game {
     this.inv.restore(s.inv);
     this.props.restore(s.props);
     this.structures.restore(s.structures);
+    this.build.restore(s.builds);
     this.tool = s.tool && (s.tool === "main" || this.inv.count(s.tool)) ? s.tool : "main";
     this.introShown = s.intro;
   }
@@ -837,19 +933,26 @@ class Game {
       this.advanceTime(gameDt);
       const ctx = this.ctx(dt, gameDt);
 
-      if (input.was("Tab") || input.was("KeyI")) this.toggleBag();
+      if ((input.was("Tab") || input.was("KeyI")) && !this.buildMenuOpen) this.toggleBag();
       if (input.was("Escape") && this.bagOpen) this.toggleBag(false);
+      // Construction : B (ou 🔨) ouvre le menu, ou quitte le mode construction
+      if ((input.was("KeyB") || input.was("Build")) && !this.bagOpen) {
+        if (this.build.selected || this.editMode) this.exitBuild(); else this.toggleBuildMenu();
+      }
+      if (input.was("Escape") && this.buildMenuOpen) this.toggleBuildMenu(false);
+      const building = !!this.build.selected || this.editMode;
       if (input.was("KeyF")) this.quickEat();
       const tools = this.ownedTools();
       for (let i = 0; i < tools.length; i++) if (input.was("Digit" + (i + 1))) this.selectTool(tools[i]);
-      if (input.was("WheelDown") || input.was("WheelUp")) {
+      if (!building && (input.was("WheelDown") || input.was("WheelUp"))) {
         const i = tools.indexOf(this.tool);
         this.selectTool(tools[(i + (input.was("WheelUp") ? tools.length - 1 : 1)) % tools.length]);
       }
       if (!tools.includes(this.tool)) this.selectTool("main");
 
-      if (this.bagOpen) { input.consumeLook(); input.move.x = input.move.y = 0; }
-      const frozenInput = this.bagOpen ? { consumeLook: () => ({ x: 0, y: 0 }), axis: () => ({ x: 0, y: 0 }), sprint: false, crouch: false, jump: false } : input;
+      const menu = this.bagOpen || this.buildMenuOpen;
+      if (menu) { input.consumeLook(); input.move.x = input.move.y = 0; }
+      const frozenInput = menu ? { consumeLook: () => ({ x: 0, y: 0 }), axis: () => ({ x: 0, y: 0 }), sprint: false, crouch: false, jump: false } : input;
       p.update(dt, frozenInput, ctx);
 
       this.attackCd -= dt;
@@ -859,13 +962,15 @@ class Game {
         this.ui.setTarget(shore ? `<b>Canoë</b><small>${this.input.touch ? "✋" : "[E]"} Débarquer</small>` : `<b>Canoë</b><small>Approche-toi d'une rive pour débarquer</small>`, !!shore);
         if (!this.bagOpen && input.was("KeyE") && shore) { p.leave(shore[0], shore[1]); this.sounds.step("water"); }
       }
-      const target = this.bagOpen || p.boat ? null : this.findTarget();
-      if (!p.boat) { const [html, active] = this.describeTarget(target); this.ui.setTarget(html, active); }
-      if (!this.bagOpen && !p.boat) {
+      if (building && !menu && !p.boat) this.updateBuild(input);
+      const target = menu || p.boat || building ? null : this.findTarget();
+      if (!p.boat && !building) { const [html, active] = this.describeTarget(target); this.ui.setTarget(html, active); }
+      if (!menu && !p.boat && !building) {
         if ((input.was("Attack") || input.attackHeld) && this.attackCd <= 0) this.attack(target);
         if (input.was("KeyE")) this.interact(target);
       }
 
+      this.build.animate(dt);
       this.creatures.update(dt, p, {
         night: this.isNight(), day: this.day, fires: this.structures.fires, diff: this.diff,
         onAttack: (dmg, c) => {

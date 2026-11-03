@@ -205,7 +205,7 @@ export class Props {
     // Rochers : posés au point le plus bas sous leur emprise (jamais en l'air sur une pente)
     let yy = y;
     if (t === "rock") for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; yy = Math.min(yy, this.world.heightAt(x + Math.cos(a) * s * 0.9, z + Math.sin(a) * s * 0.9)); }
-    const item = { t, x, y: yy, z, ry: rand() * Math.PI * 2, s, hp: PROP_TYPES[t].hp, alive: true, state, respawnAt: 0, s0: state };
+    const item = { r0: PROP_TYPES[t].radius * s, t, x, y: yy, z, ry: rand() * Math.PI * 2, s, hp: PROP_TYPES[t].hp, alive: true, state, respawnAt: 0, s0: state };
     if (PROP_TYPES[t].kind === "tree") item.v = Math.floor(hash3(x * 0.37, z * 0.53, 7) * 3);
     if (t === "shrub") item.v = Math.floor(hash3(x * 0.41, z * 0.29, 3) * 2);
     if (t === "rock") { const bi = this.world.biomeAt(x, z); item.v = bi.m > 0.4 ? (rand() < 0.75 ? 0 : 2) : rand() < 0.45 ? 0 : rand() < 0.6 ? 1 : 2; }
