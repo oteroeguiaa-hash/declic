@@ -38,6 +38,15 @@ export class Sounds {
     surf.connect(sf).connect(this.surfGain).connect(this.master);
     surf.start();
 
+    // Ruisseau (bruit aigu filtré, clapotis)
+    const brook = ctx.createBufferSource();
+    brook.buffer = this.noise; brook.loop = true; brook.playbackRate.value = 1.3;
+    const bf = ctx.createBiquadFilter(); bf.type = "bandpass"; bf.frequency.value = 1800; bf.Q.value = 0.7;
+    this.brookGain = ctx.createGain(); this.brookGain.gain.value = 0;
+    brook.connect(bf).connect(this.brookGain).connect(this.master);
+    brook.start();
+    this.brookFilter = bf;
+
     // Grillons
     const cr = ctx.createOscillator(); cr.frequency.value = 4400; cr.type = "sine";
     const lfo = ctx.createOscillator(); lfo.frequency.value = 28;
@@ -145,8 +154,11 @@ export class Sounds {
   }
 
   // Ambiance générale, appelée chaque image.
-  ambient(dt, { day, altitude, inWater, fireDist, coastDist, speed }) {
+  ambient(dt, { day, altitude, inWater, fireDist, coastDist, speed, streamDist = 40 }) {
     if (!this.ctx) return;
+    const bv = Math.max(0, 1 - streamDist / 35) * 0.09;
+    this.brookGain.gain.value += (bv - this.brookGain.gain.value) * Math.min(1, dt * 2);
+    this.brookFilter.frequency.value = 1500 + Math.sin(performance.now() * 0.0021) * 400 + Math.sin(performance.now() * 0.0057) * 200;
     const w = 0.035 + Math.min(0.12, Math.max(0, altitude - 20) * 0.0015) + speed * 0.004;
     this.windGain.gain.value += (w - this.windGain.gain.value) * Math.min(1, dt * 2);
     this.windFilter.frequency.value = 320 + Math.sin(performance.now() * 0.0003) * 120;

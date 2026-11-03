@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { mergeGeometries, mergeVertices } from "../vendor/addons/BufferGeometryUtils.js";
 import { mulberry32, fbm, smoothstep, createNoise2D } from "./noise.js";
-import { makeAtlas, makeBroadleaf, makeConifer, makeLeafBush, makeVegetationMaterial, vegUniforms } from "./trees.js";
+import { makeAtlas, makeBroadleaf, makeConifer, makeLeafBush, makeFern, makeLog, makeVegetationMaterial, vegUniforms } from "./trees.js";
 
 // ---------- Fabrication des modèles ----------
 
@@ -100,7 +100,10 @@ export const PROP_TYPES = {
   bush:  { kind: "bush", hp: 1, radius: 0.0, near: 90, maxDist: 110, center: 0.5, name: "Buisson" },
   stick: { kind: "pickup", hp: 1, radius: 0, near: 45, maxDist: 45, center: 0.08, name: "Branche" },
   flint: { kind: "pickup", hp: 1, radius: 0, near: 45, maxDist: 45, center: 0.08, name: "Pierre" },
+  fern:  { kind: "decor", hp: 1, radius: 0, near: 55, maxDist: 60, center: 0.35, name: "Fougère" },
+  log:   { kind: "log", hp: 3, radius: 0, near: 70, maxDist: 150, center: 0.3, name: "Tronc couché" },
 };
+const CANDIDATES = 750000; // même nombre quelle que soit la qualité : l'île est identique partout
 
 const CELL = 16;
 
@@ -141,10 +144,10 @@ export class Props {
     }
   }
 
-  add(t, x, z, s, rand) {
+  add(t, x, z, s, rand, state = 1) {
     const id = this.list.length;
     const y = this.world.heightAt(x, z);
-    this.list.push({ t, x, y, z, ry: rand() * Math.PI * 2, s, hp: PROP_TYPES[t].hp, alive: true, state: 1, respawnAt: 0 });
+    this.list.push({ t, x, y, z, ry: rand() * Math.PI * 2, s, hp: PROP_TYPES[t].hp, alive: true, state, respawnAt: 0, s0: state });
     this.byType[t].push(id);
     this.addToGrid(id);
     return id;
@@ -154,55 +157,79 @@ export class Props {
     const rand = mulberry32(seed + 1234);
     const W = this.world;
     const forestN = createNoise2D(seed + 777);
-    const R = W.half * 0.92;
-    const candidates = this.quality.treeCandidates;
+    const thickN = createNoise2D(seed + 901);
+    const R = W.half * 0.94;
     const tooClose = (x, z, d) => {
       let hit = false;
       this.query(x, z, d, (id, p) => {
-        if (!hit && PROP_TYPES[p.t].kind !== "pickup" && (p.x - x) ** 2 + (p.z - z) ** 2 < d * d) hit = true;
+        const k = PROP_TYPES[p.t].kind;
+        if (!hit && (k === "tree" || k === "rock" || k === "bush") && (p.x - x) ** 2 + (p.z - z) ** 2 < d * d) hit = true;
       });
       return hit;
     };
-    for (let i = 0; i < candidates; i++) {
+    const near = (x, z, d) => { const a = rand() * 6.283, r = d * (0.4 + rand() * 0.6); return [x + Math.cos(a) * r, z + Math.sin(a) * r]; };
+    const dry = (x, z) => W.streamAt(x, z) < 0.02 && W.heightAt(x, z) > 2.4;
+    for (let i = 0; i < CANDIDATES; i++) {
       const x = (rand() * 2 - 1) * R, z = (rand() * 2 - 1) * R;
-      // Décisions sur le relief analytique : même résultat quelle que soit la qualité graphique.
-      const h = W.rawHeight(x, z);
+      const h = W.heightAt(x, z);
       if (h < 2.2) continue;
-      const slope = W.rawSlope(x, z);
+      const st = W.streamAt(x, z);
+      const r = rand();
+      if (st > 0.02) continue;
+      const slope = W.slopeAt(x, z);
       const moist = W.moisture(x, z);
       const forest = fbm(forestN, x / 180, z / 180, 3) * 0.5 + 0.5;
-      const r = rand();
+      const thicket = fbm(thickN, x / 110, z / 110, 2);
+      const bank = W.streamAt(x + 7, z) + W.streamAt(x - 7, z) + W.streamAt(x, z + 7) + W.streamAt(x, z - 7) > 0.05;
+
+      // Bosquets : buissons partout, fougères, jeunes arbres, branches et troncs couchés
+      if (thicket > 0.33 && h > 3 && h < 45 && slope < 0.28) {
+        if (r < 0.22) {
+          if (!tooClose(x, z, 1.6)) this.add("bush", x, z, 0.7 + rand() * 0.6, rand, rand() < 0.6 ? 1 : 0);
+          for (let k = 0; k < 2; k++) { const [fx, fz] = near(x, z, 2.2); if (dry(fx, fz)) this.add("fern", fx, fz, 0.7 + rand() * 0.6, rand); }
+          if (rand() < 0.35) { const [sx, sz] = near(x, z, 2.5); if (dry(sx, sz)) this.add("stick", sx, sz, 0.8 + rand() * 0.4, rand); }
+          continue;
+        }
+        if (r < 0.28) {
+          const t = rand() < 0.5 ? "birch" : "oak";
+          if (!tooClose(x, z, 2.2)) this.add(t, x, z, 0.45 + rand() * 0.3, rand);
+          continue;
+        }
+        if (r < 0.285) { this.add("log", x, z, 0.8 + rand() * 0.4, rand); continue; }
+      }
 
       // Arbres
       if (h > 3.2 && h < 62 && slope < 0.32) {
-        const dens = smoothstep(0.38, 0.68, forest * 0.75 + moist * 0.4) * (1 - smoothstep(45, 62, h));
+        const dens = smoothstep(0.38, 0.68, forest * 0.75 + moist * 0.4 + (bank ? 0.15 : 0)) * (1 - smoothstep(45, 62, h));
         if (r < dens * 0.9) {
           let t;
           if (h > 30 || moist < 0.35) t = "pine";
-          else if (moist > 0.62 && rand() < 0.5) t = "birch";
+          else if ((moist > 0.62 || bank) && rand() < 0.5) t = "birch";
           else t = rand() < 0.45 ? "pine" : "oak";
           if (!tooClose(x, z, t === "oak" ? 4.2 : 3.0)) {
             this.add(t, x, z, 0.75 + rand() * 0.55, rand);
-            if (rand() < 0.22) {
-              const a = rand() * 6.28, d = 1.5 + rand() * 3;
-              this.add("stick", x + Math.cos(a) * d, z + Math.sin(a) * d, 0.8 + rand() * 0.4, rand);
-            }
+            const r2 = rand();
+            if (r2 < 0.22) { const [sx, sz] = near(x, z, 4); if (dry(sx, sz)) this.add("stick", sx, sz, 0.8 + rand() * 0.4, rand); }
+            else if (r2 < 0.42) { const [fx, fz] = near(x, z, 3.5); if (dry(fx, fz)) this.add("fern", fx, fz, 0.7 + rand() * 0.5, rand); }
+            else if (r2 < 0.435) { const [lx, lz] = near(x, z, 5); if (dry(lx, lz)) this.add("log", lx, lz, 0.8 + rand() * 0.4, rand); }
           }
           continue;
         }
       }
       // Rochers
-      if (r < 0.03 + slope * 0.25 && h < 85) {
+      if (rand() < 0.014 + slope * 0.3 && h < 85) {
         if (!tooClose(x, z, 3)) this.add("rock", x, z, 0.6 + rand() * 1.6, rand);
         continue;
       }
-      // Buissons
-      if (h > 3 && h < 40 && slope < 0.25 && r < 0.06 * (0.4 + moist)) {
+      // Buissons (plus nombreux au bord des ruisseaux)
+      if (h > 3 && h < 40 && slope < 0.25 && r < 0.06 * (0.4 + moist) * (bank ? 3 : 1)) {
         if (!tooClose(x, z, 2)) this.add("bush", x, z, 0.8 + rand() * 0.5, rand);
         continue;
       }
+      // Fougères au bord de l'eau
+      if (bank && r < 0.2) { this.add("fern", x, z, 0.8 + rand() * 0.5, rand); continue; }
       // Pierres au sol
-      if (r < 0.085 && slope < 0.3) this.add("flint", x, z, 0.8 + rand() * 0.6, rand);
+      if (rand() < 0.04 && slope < 0.3) this.add("flint", x, z, 0.8 + rand() * 0.6, rand);
     }
   }
 
@@ -222,6 +249,8 @@ export class Props {
       rock: [makeRock(false, 1), makeRock(true, 1)],
       bush: [makeLeafBush(true)],
       bushEmpty: [makeLeafBush(false)],
+      fern: [makeFern(5)],
+      log: [makeLog(3)],
       stick: [makeStick()],
       flint: [makeFlint()],
     };
@@ -237,7 +266,7 @@ export class Props {
         if (m === mat) im.customDepthMaterial = depthMat;
         im.count = 0;
         im.frustumCulled = false;
-        im.castShadow = lod === 0 && PROP_TYPES[baseType].kind !== "pickup";
+        im.castShadow = lod === 0 && kind !== "pickup" && kind !== "decor";
         im.receiveShadow = true;
         im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         this.scene.add(im);
@@ -371,7 +400,7 @@ export class Props {
         if (t < 0) return;
         const closest = origin.clone().addScaledVector(dir, t);
         distToRay = closest.distanceTo(new THREE.Vector3(p.x, cy, p.z));
-        const rad = def.kind === "rock" ? 1.1 * p.s : def.kind === "bush" ? 0.95 * p.s : 0.45;
+        const rad = def.kind === "rock" ? 1.1 * p.s : def.kind === "bush" ? 0.95 * p.s : def.kind === "log" ? 1.3 : def.kind === "decor" ? 0.7 * p.s : 0.45;
         if (distToRay > rad) return;
         t = Math.max(0, t - rad * 0.6);
       }
@@ -440,7 +469,7 @@ export class Props {
     const out = [];
     for (let i = 0; i < this.list.length; i++) {
       const p = this.list[i];
-      if (!p.alive || p.state !== 1 || p.hp !== PROP_TYPES[p.t].hp) out.push([i, p.alive ? 1 : 0, p.state, p.hp, Math.round(p.respawnAt * 100) / 100]);
+      if (!p.alive || p.state !== p.s0 || p.hp !== PROP_TYPES[p.t].hp) out.push([i, p.alive ? 1 : 0, p.state, p.hp, Math.round(p.respawnAt * 100) / 100]);
     }
     return out;
   }
