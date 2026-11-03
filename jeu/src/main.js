@@ -14,8 +14,8 @@ import { Post } from "./post.js";
 import { Reflection } from "./reflection.js";
 import { Fish } from "./fish.js";
 
-const SAVE_KEY = "lisiere-save-v5";        // v5 : biomes (montagnes, prairies, marais, automne), monde sous-marin
-const OLD_SAVE_KEYS = ["lisiere-save-v4", "lisiere-save-v3", "lisiere-save-v2", "lisiere-save-v1"];
+const SAVE_KEY = "lisiere-save-v6";        // v6 : forêts variées, montagnes et rochers refaits
+const OLD_SAVE_KEYS = ["lisiere-save-v5", "lisiere-save-v4", "lisiere-save-v3", "lisiere-save-v2", "lisiere-save-v1"];
 const SETTINGS_KEY = "lisiere-settings";
 const $ = (id) => document.getElementById(id);
 

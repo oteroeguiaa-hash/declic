@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { mergeGeometries, mergeVertices } from "../vendor/addons/BufferGeometryUtils.js";
 import { mulberry32, fbm, smoothstep, createNoise2D } from "./noise.js";
-import { makeAtlas, makeBroadleaf, makeConifer, makeTallBroadleaf, makeScotsPine, makeLeafBush, makeFern, makeLog, makeTreeImpostor, makeReeds, makeKelp, makeCoral, makeVegetationMaterial, vegUniforms } from "./trees.js";
+import { makeAtlas, makeBroadleaf, makeConifer, makeTallBroadleaf, makeScotsPine, makeLeafBush, makeFern, makeLog, makeTreeImpostor, makeReeds, makeKelp, makeCoral, makeShrub, makeGroundCover, makeVegetationMaterial, vegUniforms } from "./trees.js";
 
 // ---------- Fabrication des modèles ----------
 
@@ -151,6 +151,8 @@ export const PROP_TYPES = {
   log:   { kind: "log", hp: 3, radius: 0, near: 70, maxDist: 150, center: 0.3, name: "Tronc couché" },
   reed:  { kind: "decor", hp: 1, radius: 0, near: 70, maxDist: 90, center: 0.6, name: "Roseaux" },
   kelp:  { kind: "decor", hp: 1, radius: 0, near: 45, maxDist: 55, center: 1.0, name: "Algues" },
+  shrub: { kind: "decor", hp: 1, radius: 0.0, near: 80, maxDist: 140, center: 1.0, name: "Arbuste" },
+  cover: { kind: "decor", hp: 1, radius: 0, near: 45, maxDist: 50, center: 0.1, name: "Couvre-sol" },
   coral: { kind: "decor", hp: 1, radius: 0, near: 45, maxDist: 55, center: 0.3, name: "Corail" },
 };
 const CANDIDATES = 750000; // même nombre quelle que soit la qualité : l'île est identique partout
@@ -204,6 +206,8 @@ export class Props {
     let yy = y;
     if (t === "rock") for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; yy = Math.min(yy, this.world.heightAt(x + Math.cos(a) * s * 0.9, z + Math.sin(a) * s * 0.9)); }
     const item = { t, x, y: yy, z, ry: rand() * Math.PI * 2, s, hp: PROP_TYPES[t].hp, alive: true, state, respawnAt: 0, s0: state };
+    if (PROP_TYPES[t].kind === "tree") item.v = Math.floor(hash3(x * 0.37, z * 0.53, 7) * 3);
+    if (t === "shrub") item.v = Math.floor(hash3(x * 0.41, z * 0.29, 3) * 2);
     if (t === "rock") { const bi = this.world.biomeAt(x, z); item.v = bi.m > 0.4 ? (rand() < 0.75 ? 0 : 2) : rand() < 0.45 ? 0 : rand() < 0.6 ? 1 : 2; }
     this.list.push(item);
     this.byType[t].push(id);
@@ -216,6 +220,7 @@ export class Props {
     const W = this.world;
     const forestN = createNoise2D(seed + 777);
     const thickN = createNoise2D(seed + 901);
+    const groveN = createNoise2D(seed + 913);
     const R = W.half * 0.94;
     const tooClose = (x, z, d) => {
       let hit = false;
@@ -297,8 +302,13 @@ export class Props {
           else if (((moist > 0.62 && u < 0.25) || (bank && u < 0.45))) t = "birch";
           else if (moist < 0.32 && u < 0.35) t = "scots";
           else t = u < 0.55 ? "beech" : u < 0.88 ? "oak" : "scots";
-          const space = { beech: 7.5, oak: 8.2, scots: 6, pine: 4.6, birch: 4 }[t];
-          const sc = t === "pine" ? 1.9 + rand() * 0.6 : t === "birch" ? 1.6 + rand() * 0.6 : 0.82 + rand() * 0.32;
+          // Bosquets serrés et zones plus ouvertes ; espacement irrégulier
+          const grove = fbm(groveN, x / 70, z / 70, 3) * 0.5 + 0.5;
+          const spaceK = 0.55 + 0.7 * smoothstep(0.3, 0.75, 1 - grove) + (rand() - 0.5) * 0.3;
+          const space = { beech: 6, oak: 6.8, scots: 5, pine: 3.6, birch: 3.2 }[t] * spaceK;
+          // Hauteurs et âges variés : vieux géants, arbres adultes, arbres plus jeunes
+          const age = rand();
+          const sc = (t === "pine" ? 1.9 : t === "birch" ? 1.6 : 0.88) * (age < 0.15 ? 0.6 + rand() * 0.15 : age > 0.9 ? 1.15 + rand() * 0.25 : 0.8 + rand() * 0.3);
           if (!tooClose(x, z, space)) {
             const tid = this.add(t, x, z, sc, rand);
             if (bi.a > 0.2 && t !== "pine" && t !== "scots" && rand() < bi.a * 0.95) this.list[tid].tint = 1 + Math.floor(rand() * 3);
@@ -308,6 +318,9 @@ export class Props {
             else if (r2 < 0.42) { const [fx, fz] = near(x, z, 3.5); if (dry(fx, fz)) this.add("fern", fx, fz, 0.7 + rand() * 0.5, rand); }
             else if (r2 < 0.5) { const [bx, bz] = near(x, z, 4); if (dry(bx, bz) && !tooClose(bx, bz, 1.5)) this.add("bush", bx, bz, 0.7 + rand() * 0.5, rand, rand() < 0.35 ? 1 : 0); }
             else if (r2 < 0.53) { const [lx, lz] = near(x, z, 6); if (dry(lx, lz)) this.add("log", lx, lz, 0.8 + rand() * 0.4, rand); }
+            else if (r2 < 0.62) { const [ax, az] = near(x, z, 6); if (dry(ax, az) && !tooClose(ax, az, 2)) this.add("shrub", ax, az, 0.7 + rand() * 0.6, rand); }
+            // Couvre-sol au pied des arbres (souvent)
+            if (rand() < 0.55) { const [cx, cz] = near(x, z, 5); if (dry(cx, cz)) this.add("cover", cx, cz, 0.8 + rand() * 0.6, rand); }
           } else if (rand() < 0.3) {
             // Sous-bois sous les grands arbres : jeunes arbres, fougères, buissons
             const k = rand();
@@ -372,17 +385,22 @@ float rtri(vec3 p, vec3 n){ vec3 w = pow(abs(n), vec3(4.0)); w /= w.x + w.y + w.
     this.materials = { tree: mat, rock: rockMat };
 
     const geos = {
-      beech: [makeTallBroadleaf(0, 41, "beech"), makeTallBroadleaf(1, 41, "beech"), makeTreeImpostor("beech")],
-      oak: [makeTallBroadleaf(0, 43, "oak"), makeTallBroadleaf(1, 43, "oak"), makeTreeImpostor("oak")],
-      scots: [makeScotsPine(0, 47), makeScotsPine(1, 47), makeTreeImpostor("scots")],
-      pine: [makeConifer(false, 11), makeConifer(true, 11), makeTreeImpostor("pine")],
-      young: [makeBroadleaf(false, 21), makeBroadleaf(true, 21), makeTreeImpostor("young")],
-      birch: [makeBroadleaf(false, 31, true), makeBroadleaf(true, 31, true), makeTreeImpostor("birch")],
+      // 3 variantes par espèce : troncs, inclinaisons et couronnes différents
+      ...Object.fromEntries([0, 1, 2].flatMap((v) => [
+        ["beech" + v, [makeTallBroadleaf(0, 41 + v * 100, "beech"), makeTallBroadleaf(1, 41 + v * 100, "beech"), makeTreeImpostor("beech")]],
+        ["oak" + v, [makeTallBroadleaf(0, 43 + v * 100, "oak"), makeTallBroadleaf(1, 43 + v * 100, "oak"), makeTreeImpostor("oak")]],
+        ["scots" + v, [makeScotsPine(0, 47 + v * 100), makeScotsPine(1, 47 + v * 100), makeTreeImpostor("scots")]],
+        ["pine" + v, [makeConifer(false, 11 + v * 100), makeConifer(true, 11 + v * 100), makeTreeImpostor("pine")]],
+        ["young" + v, [makeBroadleaf(false, 21 + v * 100), makeBroadleaf(true, 21 + v * 100), makeTreeImpostor("young")]],
+        ["birch" + v, [makeBroadleaf(false, 31 + v * 100, true), makeBroadleaf(true, 31 + v * 100, true), makeTreeImpostor("birch")]],
+      ])),
       rock0: [makeRock(0, 1, 0), makeRock(1, 1, 0)],
       rock1: [makeRock(0, 2, 1), makeRock(1, 2, 1)],
       rock2: [makeRock(0, 3, 2), makeRock(1, 3, 2)],
       bush: [makeLeafBush(true)],
       bushEmpty: [makeLeafBush(false)],
+      shrub0: [makeShrub(61)], shrub1: [makeShrub(62)],
+      cover: [makeGroundCover(71)],
       fern: [makeFern(5)],
       reed: [makeReeds(13)],
       kelp: [makeKelp(17)],
@@ -394,7 +412,7 @@ float rtri(vec3 p, vec3 n){ vec3 w = pow(abs(n), vec3(4.0)); w /= w.x + w.y + w.
     this.geos = geos;
     this.meshes = {};
     for (const key in geos) {
-      const baseType = key === "bushEmpty" ? "bush" : key.startsWith("rock") ? "rock" : key;
+      const baseType = key === "bushEmpty" ? "bush" : key.replace(/\d+$/, "");
       const cap = this.byType[baseType].length + 4;
       const kind = PROP_TYPES[baseType].kind;
       const m = kind === "rock" ? rockMat : kind === "pickup" ? plain : mat;
@@ -421,9 +439,16 @@ float rtri(vec3 p, vec3 n){ vec3 w = pow(abs(n), vec3(4.0)); w /= w.x + w.y + w.
     for (let i = 0; i < this.list.length; i++) {
       const p = this.list[i];
       q.setFromAxisAngle(up, p.ry);
+      const isTree = PROP_TYPES[p.t].kind === "tree";
+      if (isTree) {
+        // légère inclinaison propre à chaque arbre (sol, vent dominant, lumière)
+        const tq = new THREE.Quaternion().setFromEuler(new THREE.Euler((hash3(i, 4, 1) - 0.5) * 0.09, 0, (hash3(i, 5, 2) - 0.5) * 0.09));
+        q.premultiply(tq);
+      }
+      const sw = isTree ? 0.85 + hash3(i, 6, 3) * 0.35 : 1;
       const sy = PROP_TYPES[p.t].kind === "rock" ? p.s * (p.s > 2 ? 1.3 + hash3(i, 1, 2) * 0.8 : 0.9 + hash3(i, 1, 2) * 0.6) : p.s;
       const sink = PROP_TYPES[p.t].kind === "tree" ? -0.25 : PROP_TYPES[p.t].kind === "rock" ? -0.15 * p.s : 0;
-      m4.compose(new THREE.Vector3(p.x, p.y + sink, p.z), q, new THREE.Vector3(p.s, sy, p.s));
+      m4.compose(new THREE.Vector3(p.x, p.y + sink, p.z), q, new THREE.Vector3(p.s * sw, sy, p.s * sw));
       m4.toArray(this.matrices, i * 16);
     }
     this.slot = new Int32Array(this.list.length).fill(-1);
@@ -431,7 +456,7 @@ float rtri(vec3 p, vec3 n){ vec3 w = pow(abs(n), vec3(4.0)); w /= w.x + w.y + w.
 
   renderKey(p) {
     if (p.t === "bush" && p.state === 0) return "bushEmpty";
-    if (p.t === "rock") return "rock" + (p.v ?? 0);
+    if (p.t === "rock" || p.t === "shrub" || PROP_TYPES[p.t].kind === "tree") return p.t + (p.v ?? 0);
     return p.t;
   }
 
@@ -460,6 +485,7 @@ float rtri(vec3 p, vec3 n){ vec3 w = pow(abs(n), vec3(4.0)); w /= w.x + w.y + w.
     for (const k in this.meshes) {
       this.meshes[k].forEach((im, lod) => {
         im.count = counts[k][lod];
+        im.visible = im.count > 0;                 // pas d'appel de dessin pour un groupe vide
         im.instanceMatrix.needsUpdate = true;
         if (im.instanceColor) im.instanceColor.needsUpdate = true;
       });
@@ -564,7 +590,7 @@ float rtri(vec3 p, vec3 n){ vec3 w = pow(abs(n), vec3(4.0)); w /= w.x + w.y + w.
     p.respawnAt = gameHours + respawnHours;
     this.dirty = true;
     if (fall) {
-      const mesh = new THREE.Mesh(this.geos[p.t][0], this.materials.tree);
+      const mesh = new THREE.Mesh(this.geos[this.renderKey(p)][0], this.materials.tree);
       const m4 = new THREE.Matrix4().fromArray(this.matrices, id * 16);
       m4.decompose(mesh.position, mesh.quaternion, mesh.scale);
       mesh.castShadow = true;

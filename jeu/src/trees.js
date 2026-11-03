@@ -216,16 +216,30 @@ class Builder {
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const tint = (hex, k = 1) => new THREE.Color(hex).multiplyScalar(k);
 
-function trunkPoints(h, steps, lean, rand) {
+// Tronc : inclinaison, courbure (l'arbre se redresse vers la lumière) et légères sinuosités.
+function trunkPoints(h, steps, lean, rand, bend = 0) {
   const pts = [];
-  let x = 0, z = 0;
   const dx = (rand() - 0.5) * lean, dz = (rand() - 0.5) * lean;
+  const ba = rand() * Math.PI * 2, ph = rand() * 6.28;
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    x += dx / steps + (rand() - 0.5) * 0.04; z += dz / steps + (rand() - 0.5) * 0.04;
+    const wob = Math.sin(t * Math.PI * 2.2 + ph) * 0.12 * h / 15;
+    const x = dx * t + Math.cos(ba) * bend * (t - t * t * 0.6) + wob * Math.cos(ph) + (rand() - 0.5) * 0.04;
+    const z = dz * t + Math.sin(ba) * bend * (t - t * t * 0.6) + wob * Math.sin(ph) + (rand() - 0.5) * 0.04;
     pts.push(V(x, -0.3 + t * (h + 0.3), z));
   }
   return pts;
+}
+
+// Racines apparentes au pied des grands arbres
+function roots(b, n, r0, len, tintC, rand) {
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + rand() * 0.5, L = len * (0.7 + rand() * 0.6);
+    const p0 = V(Math.cos(a) * r0 * 0.5, 0.7 * r0 + 0.2, Math.sin(a) * r0 * 0.5);
+    const p1 = V(Math.cos(a) * (r0 + L * 0.45), 0.08, Math.sin(a) * (r0 + L * 0.45));
+    const p2 = V(Math.cos(a + (rand() - 0.5) * 0.4) * (r0 + L), -0.25, Math.sin(a + (rand() - 0.5) * 0.4) * (r0 + L));
+    b.tube([p0, p1, p2], [r0 * 0.45, r0 * 0.25, 0.04], 6, UV.bark, tintC, 0.4);
+  }
 }
 
 function flare(n, r0, r1) {
@@ -238,7 +252,7 @@ export function makeBroadleaf(lod, seed, birch = false) {
   const b = new Builder();
   const h = birch ? 6.2 : 3.4;
   const steps = lod ? 3 : 8;
-  const pts = trunkPoints(h, steps, birch ? 0.5 : 0.3, rand);
+  const pts = trunkPoints(h, steps, (birch ? 1.1 : 0.6) * (0.4 + rand()), rand, rand() * (birch ? 1.3 : 0.8));
   b.tube(pts, flare(steps, birch ? 0.2 : 0.42, birch ? 0.08 : 0.26), lod ? 5 : 9, birch ? UV.birch : UV.bark, tint(birch ? 0xffffff : 0xd8c8b8), birch ? 0.35 : 0.3);
   const top = pts[pts.length - 1];
   const crown = birch ? V(top.x, 6.4, top.z) : V(top.x, 5.9, top.z);
@@ -276,7 +290,7 @@ export function makeConifer(lod, seed) {
   const b = new Builder();
   const H = 10.5;
   const steps = lod ? 3 : 9;
-  const pts = trunkPoints(H, steps, 0.15, rand);
+  const pts = trunkPoints(H, steps, 0.35 * rand(), rand, rand() * 0.4);
   b.tube(pts, flare(steps, 0.32, 0.04), lod ? 5 : 8, UV.bark, tint(0xb8a898), 0.3);
   const needleTint = tint(0x9cc088);
   const step = lod ? 1.0 : 0.45;
@@ -339,14 +353,17 @@ export function makeTallBroadleaf(lod, seed, kind = "beech") {
   const rand = mulberry32(seed);
   const b = new Builder();
   const oak = kind === "oak";
-  const H = oak ? 11 : 14;                       // hauteur du fût jusqu'aux premières branches
-  const steps = lod ? 3 : 10;
-  const pts = trunkPoints(H + 3, steps, oak ? 1.2 : 0.6, rand);
+  const H = (oak ? 11 : 14) + (rand() - 0.5) * 5;  // hauteur du fût jusqu'aux premières branches
+  const steps = lod ? 4 : 10;
+  const pts = trunkPoints(H + 3, steps, (oak ? 1.6 : 0.9) * (0.5 + rand()), rand, rand() * (oak ? 2.5 : 1.8));
   const barkTint = oak ? tint(0xd8c4b0) : tint(0xc4c2bc, 1.05);   // hêtre : écorce grise et lisse
   b.tube(pts, flare(steps, oak ? 0.68 : 0.55, oak ? 0.36 : 0.3), lod ? 6 : 12, UV.bark, barkTint, oak ? 0.25 : 0.12);
   const top = pts[pts.length - 1];
-  const crown = V(top.x, H + 8.5, top.z);
+  // Couronne asymétrique, décalée du tronc (l'arbre a poussé vers une trouée de lumière)
+  const crown = V(top.x + (rand() - 0.5) * 3.5, H + 8.5 + (rand() - 0.5) * 2, top.z + (rand() - 0.5) * 3.5);
   const R = oak ? V(8.5, 6.5, 8.5) : V(7, 7.5, 7);
+  R.x *= 0.7 + rand() * 0.55; R.z *= 0.7 + rand() * 0.55; R.y *= 0.85 + rand() * 0.3;
+  if (lod === 0) roots(b, oak ? 6 : 5, oak ? 0.68 : 0.55, oak ? 2.2 : 1.6, barkTint.clone().multiplyScalar(0.85), rand);
   if (lod < 2) {
     const nl = oak ? 6 : 5;
     for (let i = 0; i < nl; i++) {
@@ -380,9 +397,10 @@ export function makeTallBroadleaf(lod, seed, kind = "beech") {
 export function makeScotsPine(lod, seed) {
   const rand = mulberry32(seed);
   const b = new Builder();
-  const H = 24;
-  const steps = lod ? 3 : 10;
-  const pts = trunkPoints(H, steps, 0.9, rand);
+  const H = 24 + (rand() - 0.5) * 6;
+  const steps = lod ? 4 : 10;
+  const pts = trunkPoints(H, steps, 1.4 * (0.4 + rand()), rand, rand() * 2.2);
+  if (lod === 0) roots(b, 4, 0.46, 1.1, tint(0xa89a8c), rand);
   const half = Math.ceil(steps * 0.55);
   b.tube(pts.slice(0, half + 1), flare(half, 0.46, 0.3), lod ? 6 : 10, UV.bark, tint(0xb8aa9c), 0.25);
   b.tube(pts.slice(half), Array.from({ length: steps - half + 1 }, (_, i) => 0.3 - (i / (steps - half)) * 0.2), lod ? 5 : 8, UV.bark, tint(0xe0a070), 0.3);
@@ -524,6 +542,44 @@ export function makeKelp(seed = 17) {
       b.v(q[0], n, W[0], W[1], c0); b.v(q[1], n, W[0], W[1], c0); b.v(q[2], n, W[0], W[1], c1);
       b.v(q[0], n, W[0], W[1], c0); b.v(q[2], n, W[0], W[1], c1); b.v(q[3], n, W[0], W[1], c1);
     }
+  }
+  return b.build();
+}
+
+// Arbuste (noisetier, aubépine…) : plusieurs tiges qui partent du sol, feuillage étagé, 1,5 à 3 m.
+export function makeShrub(seed = 61) {
+  const rand = mulberry32(seed);
+  const b = new Builder();
+  const stems = 4 + Math.floor(rand() * 3);
+  const tipList = [];
+  for (let i = 0; i < stems; i++) {
+    const a = rand() * Math.PI * 2, out = 0.5 + rand() * 0.9, H = 1.6 + rand() * 1.3;
+    const p0 = V(Math.cos(a) * 0.12, -0.1, Math.sin(a) * 0.12);
+    const p1 = V(Math.cos(a) * out * 0.5, H * 0.55, Math.sin(a) * out * 0.5);
+    const p2 = V(Math.cos(a) * out, H, Math.sin(a) * out);
+    b.tube([p0, p1, p2], [0.04, 0.03, 0.012], 5, UV.bark, tint(0x9a8a78), 0.6);
+    tipList.push(p1, p2);
+  }
+  const crown = V(0, 1.4, 0);
+  for (const t of tipList) for (let k = 0; k < 2; k++) {
+    const p = t.clone().add(V((rand() - 0.5) * 0.6, (rand() - 0.4) * 0.5, (rand() - 0.5) * 0.6));
+    b.cluster(p, 0.85 + rand() * 0.4, UV.leaves, tint(0xa0c070, 0.75 + rand() * 0.35), crown, rand, 2);
+  }
+  return b.build();
+}
+
+// Couvre-sol : tapis de petites feuilles (pervenche, lierre, ail des ours) à ras du sol.
+export function makeGroundCover(seed = 71) {
+  const rand = mulberry32(seed);
+  const b = new Builder();
+  const crown = V(0, -1, 0);
+  for (let i = 0; i < 9; i++) {
+    const a = rand() * Math.PI * 2, r = rand() * 0.9;
+    const c = V(Math.cos(a) * r, 0.04 + rand() * 0.2, Math.sin(a) * r);
+    const nrm = V((rand() - 0.5) * 0.5, 1, (rand() - 0.5) * 0.5).normalize();
+    const right = new THREE.Vector3().crossVectors(nrm, V(rand() - 0.5, 0, rand() - 0.5).normalize()).normalize();
+    const up = new THREE.Vector3().crossVectors(right, nrm).normalize();
+    b.card(c, right, up, 0.7 + rand() * 0.5, 0.7 + rand() * 0.5, UV.leaves, tint(0x7aa050, 0.7 + rand() * 0.4), crown, 2.0);
   }
   return b.build();
 }
