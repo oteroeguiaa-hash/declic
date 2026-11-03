@@ -19,15 +19,37 @@ export class World {
     this.buildHeights();
   }
 
+  // Relief « européen » : collines arrondies, vallons, quelques petites montagnes douces et des lacs.
   rawHeight(x, z) {
+    // Déformation du domaine : formes plus naturelles, moins « bruit »
+    const wx = x + fbm(this.nD, x / 500 + 7.3, z / 500 - 2.1, 2) * 90;
+    const wz = z + fbm(this.nD, x / 500 - 4.7, z / 500 + 5.9, 2) * 90;
     const d = Math.hypot(x, z) / this.half;
     const coast = fbm(this.nC, x / 260, z / 260, 3) * 0.2;
-    const continental = 1 - smoothstep(0.52, 0.9, d + coast);
-    const hills = fbm(this.nA, x / 420, z / 420, 5) * 0.5 + 0.5;
-    const mMask = smoothstep(0.1, 0.6, fbm(this.nB, x / 700 + 3.1, z / 700 - 1.7, 2) * 0.9 + 0.3);
-    const m = ridged(this.nB, x / 380, z / 380, 5);
-    let h = 4 + hills * 18 + Math.pow(m, 1.6) * 82 * mMask + fbm(this.nD, x / 45, z / 45, 3) * 1.5;
-    return lerp(-16, h, continental);
+    const continental = 1 - smoothstep(0.55, 0.92, d + coast);
+
+    // Plaine ondulée + collines (formes arrondies : pas de crêtes)
+    const roll = fbm(this.nA, wx / 520, wz / 520, 4) * 0.5 + 0.5;                // 0..1
+    const hills = Math.pow(fbm(this.nA, wx / 230 + 11, wz / 230 - 3, 4) * 0.5 + 0.5, 1.6);
+    let h = 3.5 + roll * 14 + hills * 16;
+
+    // Quelques massifs : bosse large et douce, sommets arrondis (40 à 60 m)
+    const massif = smoothstep(0.25, 0.7, fbm(this.nB, x / 650 + 3.1, z / 650 - 1.7, 2) * 0.9 + 0.35);
+    const mount = fbm(this.nB, wx / 300, wz / 300, 5) * 0.5 + 0.5;
+    h += Math.pow(mount, 2.2) * 62 * massif;
+
+    // Petits détails du sol
+    h += fbm(this.nE, x / 38, z / 38, 3) * 0.9;
+
+    // Lacs : cuvettes sous le niveau de l'eau, à l'intérieur des terres
+    const lakeN = fbm(this.nC, x / 330 + 21, z / 330 - 13, 3);
+    const lake = smoothstep(0.32, 0.5, lakeN) * smoothstep(0.75, 0.45, d) * (1 - massif * 0.8);
+    h = lerp(h, -2.8, lake);
+
+    // Plages en pente douce
+    h = lerp(-14, h, continental);
+    if (h > 0 && h < 3) h = h * h / 3 * 0.6 + h * 0.4;
+    return h;
   }
 
   moisture(x, z) {
@@ -163,16 +185,18 @@ vec3 terrainColor(){
   float slope = 1.0 - normalize(vWN).y;
   vec3 grass = mix(srgb(vec3(0.24,0.36,0.12)), srgb(vec3(0.40,0.43,0.17)), smoothstep(0.3,0.7,d2.r*0.6+d3.g*0.6));
   grass *= 0.75 + 0.5 * d1.g;
-  vec3 dirt = srgb(vec3(0.36,0.28,0.19)) * (0.75 + 0.5 * d1.b);
+  vec3 dirt = srgb(vec3(0.33,0.29,0.18)) * (0.75 + 0.5 * d1.b);
   vec3 sand = srgb(vec3(0.80,0.72,0.54)) * (0.88 + 0.24 * d1.r);
   vec3 rock = srgb(vec3(0.46,0.44,0.41)) * (0.55 + 0.7 * d1.r * (0.6 + 0.4 * d2.g));
   vec3 snow = srgb(vec3(0.93,0.95,0.98)) * (0.92 + 0.08 * d1.g);
   vec3 c = grass;
-  c = mix(c, dirt, smoothstep(0.68, 0.8, d2.b * 0.8 + d1.r * 0.25 + d3.r * 0.2));
+  c = mix(c, dirt, smoothstep(0.72, 0.84, d2.b * 0.8 + d1.r * 0.25 + d3.r * 0.2));
+  // Sous-bois : feuilles mortes et mousse, sol plus sombre
+  c = mix(c, srgb(vec3(0.26, 0.28, 0.12)) * (0.7 + 0.5 * d1.b), smoothstep(0.6, 0.8, d3.b) * 0.3);
   float beach = 1.0 - smoothstep(1.4, 3.0 + d2.g * 1.6, h);
   c = mix(c, sand, beach);
   c = mix(c, sand * 0.55, 1.0 - smoothstep(-0.3, 0.5, h));
-  float rockAmt = smoothstep(0.26, 0.40, slope + (d1.g - 0.5) * 0.14) + smoothstep(52.0, 66.0, h + d2.r * 10.0);
+  float rockAmt = smoothstep(0.30, 0.46, slope + (d1.g - 0.5) * 0.14) + smoothstep(58.0, 72.0, h + d2.r * 10.0);
   c = mix(c, rock, clamp(rockAmt, 0.0, 1.0));
   float snowAmt = smoothstep(74.0, 82.0, h + d2.r * 9.0) * (1.0 - smoothstep(0.32, 0.5, slope));
   c = mix(c, snow, snowAmt);

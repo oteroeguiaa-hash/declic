@@ -1,5 +1,5 @@
 // Interface : barres de survie, horloge, boussole, barre d'outils, messages, sac et fabrication.
-import { ITEMS, TOOLS, RECIPES } from "./items.js";
+import { ITEMS, TOOLS, RECIPES, RECIPE_GROUPS } from "./items.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -63,7 +63,7 @@ export class UI {
     const key = tools.join(",") + "|" + current;
     if (key === this.hotbarKey) return;
     this.hotbarKey = key;
-    this.hotbar.innerHTML = tools.map((t, i) => `<div class="slot ${t === current ? "sel" : ""}" title="${TOOLS[t].name}"><kbd>${i + 1}</kbd>${TOOLS[t].icon}</div>`).join("");
+    this.hotbar.innerHTML = tools.map((t, i) => `<div class="slot ${t === current ? "sel" : ""}" title="${TOOLS[t].name}"><kbd>${i + 1}</kbd>${TOOLS[t].icon}${TOOLS[t].tag ? `<em class="tag-${TOOLS[t].tag}">${TOOLS[t].tag}</em>` : ""}</div>`).join("");
   }
 
   toast(text, warn = false) {
@@ -98,15 +98,18 @@ export class UI {
       box.querySelectorAll(".item.use").forEach((el) => el.addEventListener("click", () => handlers.use(el.dataset.id)));
     }
     const rec = $("recipes");
-    rec.innerHTML = RECIPES.map((r) => {
+    const card = (r) => {
       const outId = Object.keys(r.out)[0];
       const it = outId ? ITEMS[outId] : r;
       const owned = outId && ITEMS[outId].tool && inv.count(outId) > 0;
-      const can = inv.canCraft(r) && !owned;
+      const better = RECIPES.some((o) => o.upgrade === outId && inv.count(Object.keys(o.out)[0]) > 0);
+      const can = inv.canCraft(r) && !owned && !better;
       const needs = Object.entries(r.needs).map(([k, n]) => `<span class="${inv.count(k) >= n ? "ok" : "ko"}">${ITEMS[k].icon} ${inv.count(k)}/${n} ${ITEMS[k].name.toLowerCase()}</span>`).join(" · ");
-      return `<div class="recipe"><div class="ic">${it.icon}</div><div class="info"><b>${it.name}</b><div class="desc">${it.desc}</div><div class="needs">${needs}</div></div>
-        <button class="btn small" data-r="${r.id}" ${can ? "" : "disabled"}>${owned ? "Possédé" : r.place ? "Construire" : "Fabriquer"}</button></div>`;
-    }).join("");
+      const label = owned || better ? "Possédé" : r.place ? "Construire" : r.upgrade && inv.count(r.upgrade) ? "Améliorer" : "Fabriquer";
+      return `<div class="recipe ${owned || better ? "done" : ""}"><div class="ic">${it.icon}</div><div class="info"><b>${it.name}</b><div class="desc">${it.desc}</div><div class="needs">${needs}</div></div>
+        <button class="btn small" data-r="${r.id}" ${can ? "" : "disabled"}>${label}</button></div>`;
+    };
+    rec.innerHTML = RECIPE_GROUPS.map(([g, title]) => `<h3 class="rgroup">${title}</h3>` + RECIPES.filter((r) => r.group === g).map(card).join("")).join("");
     rec.querySelectorAll("button[data-r]").forEach((b) => b.addEventListener("click", () => handlers.craft(b.dataset.r)));
   }
 }

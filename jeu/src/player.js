@@ -54,17 +54,35 @@ export class Player {
     this.models.main = arm;
 
     const handle = new THREE.CylinderGeometry(0.018, 0.022, 0.55, 6);
-    const axe = new THREE.Group();
-    axe.add(mk(handle, wood, 0, 0.1, 0));
-    axe.add(mk(new THREE.BoxGeometry(0.035, 0.12, 0.16), stone, 0, 0.32, 0.06, 0.2));
-    axe.add(mk(new THREE.CylinderGeometry(0.028, 0.028, 0.06, 6), cord, 0, 0.32, 0));
-    this.models.hache = axe;
-
-    const pick = new THREE.Group();
-    pick.add(mk(handle, wood, 0, 0.1, 0));
-    pick.add(mk(new THREE.BoxGeometry(0.04, 0.05, 0.34), stone, 0, 0.36, 0, 0, 0, 0));
-    pick.add(mk(new THREE.CylinderGeometry(0.028, 0.028, 0.06, 6), cord, 0, 0.36, 0));
-    this.models.pioche = pick;
+    const pale = new THREE.MeshStandardMaterial({ color: 0x9a7650, roughness: 0.8 });
+    const makeAxe = (head) => {
+      const g = new THREE.Group();
+      g.add(mk(handle, wood, 0, 0.1, 0));
+      g.add(mk(new THREE.BoxGeometry(0.035, 0.12, 0.16), head, 0, 0.32, 0.06, 0.2));
+      g.add(mk(new THREE.CylinderGeometry(0.028, 0.028, 0.06, 6), cord, 0, 0.32, 0));
+      return g;
+    };
+    const makePick = (head) => {
+      const g = new THREE.Group();
+      g.add(mk(handle, wood, 0, 0.1, 0));
+      g.add(mk(new THREE.BoxGeometry(0.04, 0.05, 0.34), head, 0, 0.36, 0));
+      g.add(mk(new THREE.CylinderGeometry(0.028, 0.028, 0.06, 6), cord, 0, 0.36, 0));
+      return g;
+    };
+    const makeSword = (blade) => {
+      const g = new THREE.Group();
+      g.add(mk(new THREE.CylinderGeometry(0.018, 0.02, 0.16, 6), wood, 0, -0.05, 0));
+      g.add(mk(new THREE.BoxGeometry(0.14, 0.025, 0.035), cord, 0, 0.04, 0));
+      g.add(mk(new THREE.BoxGeometry(0.05, 0.55, 0.014), blade, 0, 0.32, 0));
+      g.add(mk(new THREE.ConeGeometry(0.035, 0.09, 4), blade, 0, 0.64, 0, 0, Math.PI / 4));
+      return g;
+    };
+    this.models.hache_bois = makeAxe(pale);
+    this.models.pioche_bois = makePick(pale);
+    this.models.epee_bois = makeSword(pale);
+    this.models.hache = makeAxe(stone);
+    this.models.pioche = makePick(stone);
+    this.models.epee = makeSword(stone);
 
     const spear = new THREE.Group();
     spear.add(mk(new THREE.CylinderGeometry(0.016, 0.02, 1.5, 6), wood, 0, 0.35, 0));
@@ -127,7 +145,7 @@ export class Player {
     if (this.dead) return;
     const look = input.consumeLook();
     this.yaw -= look.x;
-    this.pitch = clamp(this.pitch - look.y, -1.5, 1.5);
+    this.pitch = clamp(this.pitch - look.y * (this.invertY ? -1 : 1), -1.5, 1.5);
 
     const ax = input.axis();
     const len = Math.hypot(ax.x, ax.y);
@@ -228,7 +246,7 @@ export class Player {
       this.stepAcc += dt * hs;
       if (this.stepAcc > 1.8) { this.stepAcc = 0; sounds.step("water"); }
     }
-    const bobAmt = this.onGround ? Math.min(1, hs / 5) : 0;
+    const bobAmt = (this.onGround ? Math.min(1, hs / 5) : 0) * (this.bobScale ?? 1);
     const cam = this.camera;
     cam.position.set(this.pos.x, this.pos.y + this.eyeY + Math.sin(this.bob * 2) * 0.045 * bobAmt, this.pos.z);
     if (this.swimming) cam.position.y = Math.max(cam.position.y, 0.25 + Math.sin(performance.now() * 0.002) * 0.06);
@@ -250,15 +268,17 @@ export class Player {
 
     // Survie
     const hours = ctx.gameDtHours;
-    this.food -= hours * (this.sprinting ? 5.5 : 3.6);
-    this.water -= hours * (this.sprinting ? 7.5 : 5.2);
+    const hk = ctx.hunger ?? 1;
+    this.food -= hours * (this.sprinting ? 5.5 : 3.6) * hk;
+    this.water -= hours * (this.sprinting ? 7.5 : 5.2) * hk;
     this.food = clamp(this.food, 0, 100);
     this.water = clamp(this.water, 0, 100);
     if (this.food <= 0) this.health -= dt * 0.6;
     if (this.water <= 0) this.health -= dt * 0.9;
     // Froid la nuit (sauf près du feu ou avec une torche)
-    const cold = (1 - ctx.day) * (ctx.nearFire ? 0 : this.tool === "torche" ? 0.4 : 1) + (this.swimming ? 0.6 : 0) + (this.pos.y > 65 ? 0.6 : 0);
-    this.warmth = clamp(this.warmth + (cold > 0.5 ? -cold * dt * 1.2 : dt * 4), 0, 100);
+    const cold = (1 - ctx.day) * (ctx.nearFire ? 0 : this.tool === "torche" ? 0.4 : 1) + (this.swimming ? 0.6 : 0) + (this.pos.y > 55 ? 0.6 : 0);
+    const coldK = ctx.coat ? cold * 0.35 : cold;
+    this.warmth = clamp(this.warmth + (coldK > 0.5 ? -coldK * dt * 1.2 : dt * 4), 0, 100);
     if (this.warmth <= 0) this.health -= dt * 0.5;
     if (this.food > 45 && this.water > 45 && this.warmth > 30) this.health += dt * (ctx.nearFire ? 0.45 : 0.18);
     this.health = clamp(this.health, 0, 100);

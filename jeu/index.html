@@ -59,6 +59,52 @@ select { background: var(--panel-solid); color: var(--ink); border: 1px solid va
 .loadbar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 #loadText { color: var(--muted); font-size: 13px; margin-top: 10px; }
 
+/* Accueil */
+.home { position: fixed; inset: 0; z-index: 30; display: flex; align-items: stretch; background: linear-gradient(90deg, rgba(8,12,9,0.88) 0%, rgba(8,12,9,0.6) 38%, rgba(8,12,9,0) 70%); }
+.homepanel { width: min(420px, 100%); padding: max(28px, env(safe-area-inset-top)) 28px 24px max(32px, env(safe-area-inset-left)); display: flex; flex-direction: column; justify-content: center; }
+.homepanel h1.logo { font-size: 68px; text-align: left; }
+.homepanel .tag { text-align: left; }
+.homenav .btn { text-align: left; padding-left: 20px; }
+.homeinfo { margin-top: 18px; color: var(--muted); font-size: 13px; }
+.card.wide { width: min(620px, 100%); text-align: left; }
+.ptitle { margin: 0 0 14px; font: 600 26px Georgia, serif; }
+.diffs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 6px 0 12px; }
+.diff { text-align: left; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.04); }
+.diff b { display: block; margin-bottom: 4px; }
+.diff span { font-size: 12px; color: var(--muted); }
+.diff.sel { border-color: var(--accent); background: rgba(233,162,59,0.12); }
+input[type=text] { background: var(--panel-solid); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font: inherit; flex: 0 0 52%; min-width: 0; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.tabs button { padding: 8px 12px; border-radius: 99px; border: 1px solid var(--line); background: transparent; font-size: 14px; }
+.tabs button.sel { background: var(--accent); color: #1c1307; border-color: transparent; font-weight: 600; }
+.row small { color: var(--muted); }
+.row .val { min-width: 44px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+.row .ctl { flex: 0 0 52%; display: flex; align-items: center; gap: 8px; }
+.row .ctl select, .row .ctl input[type=range] { flex: 1; min-width: 0; }
+.toggle { position: relative; width: 46px; height: 26px; border-radius: 99px; border: 1px solid var(--line); background: rgba(255,255,255,0.1); flex: 0 0 46px; margin-left: auto; }
+.toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--ink); transition: transform .15s; }
+.toggle.on { background: var(--accent); }
+.toggle.on::after { transform: translateX(20px); background: #1c1307; }
+.reloadnote { margin-top: 10px; font-size: 13px; }
+.howto ol, .howto ul { padding-left: 20px; color: var(--ink); }
+.howto li { margin: 6px 0; }
+.howto h3 { margin: 16px 0 4px; font: 600 17px Georgia, serif; color: var(--accent); }
+.rgroup { margin: 14px 0 8px; font: 600 14px system-ui; color: var(--accent); text-transform: uppercase; letter-spacing: .05em; }
+.rgroup:first-child { margin-top: 0; }
+.recipe.done { opacity: 0.55; }
+.slot em { position: absolute; bottom: 1px; left: 0; right: 0; text-align: center; font: 600 9px system-ui; font-style: normal; text-transform: uppercase; }
+.slot em.tag-bois { color: #d9b07a; }
+.slot em.tag-pierre { color: #c9c9c9; }
+#hud { zoom: var(--ui, 1); }
+body.nocompass #compass, body.nocross #crosshair { display: none; }
+@media (max-width: 700px), (max-height: 500px) {
+  .homepanel h1.logo { font-size: 48px; }
+  .diffs { grid-template-columns: 1fr; }
+  .home { background: linear-gradient(90deg, rgba(8,12,9,0.9) 0%, rgba(8,12,9,0.65) 55%, rgba(8,12,9,0.1) 85%); }
+  .homepanel { padding-top: 16px; padding-bottom: 16px; overflow: auto; }
+  .homenav .btn { padding: 10px 16px; margin-top: 8px; }
+}
+
 /* HUD */
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
 #crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(255,255,255,0.85); box-shadow: 0 0 0 1.5px rgba(0,0,0,0.35); transition: transform .1s; }
@@ -203,39 +249,70 @@ body.touch #compass { display: none; }
   </div>
 </div>
 
-<div id="menu" class="screen dim hidden">
-  <div class="card">
+<div id="menu" class="home hidden">
+  <div class="homepanel">
     <h1 class="logo">Lisière</h1>
-    <p class="tag" id="menuTag">Une île. Personne. Tiens jusqu'au matin.</p>
-    <button class="btn primary" id="btnPlay">Jouer</button>
-    <button class="btn" id="btnNew">Nouvelle île</button>
-    <button class="btn" id="btnSettings">Réglages</button>
-    <div class="help" id="helpKeys">
-      <div><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> ou <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> se déplacer · <kbd>Maj</kbd> courir · <kbd>Espace</kbd> sauter · <kbd>C</kbd> s'accroupir</div>
-      <div><kbd>Clic</kbd> frapper / couper · <kbd>E</kbd> ou <kbd>clic droit</kbd> ramasser, boire, cuire</div>
-      <div><kbd>Tab</kbd> sac et fabrication · <kbd>1</kbd>–<kbd>5</kbd> ou molette : outil · <kbd>F</kbd> manger · <kbd>Échap</kbd> pause</div>
+    <p class="tag" id="menuTag">Une île sauvage. Personne. Tiens jusqu'au matin.</p>
+    <nav class="homenav">
+      <button class="btn primary" id="btnPlay">Jouer</button>
+      <button class="btn" id="btnNew">Nouvelle partie</button>
+      <button class="btn" id="btnSettings">Réglages</button>
+      <button class="btn" id="btnHelp">Comment jouer</button>
+    </nav>
+    <div class="homeinfo" id="homeInfo"></div>
+  </div>
+</div>
+
+<div id="newgame" class="screen dim hidden">
+  <div class="card wide">
+    <h2 class="ptitle">Nouvelle partie</h2>
+    <p class="tag" id="newWarn"></p>
+    <div class="diffs" id="diffs">
+      <button class="diff" data-d="paisible"><b>🌿 Paisible</b><span>Pas d'ours ni de loups. Faim et soif plus lentes. Pour explorer.</span></button>
+      <button class="diff" data-d="normal"><b>🌲 Normal</b><span>L'expérience prévue : la nuit est dangereuse.</span></button>
+      <button class="diff" data-d="difficile"><b>🐺 Difficile</b><span>Plus de prédateurs, coups plus forts, faim plus rapide.</span></button>
     </div>
-    <div class="help hidden" id="helpTouch">
-      <div>Joystick à gauche pour marcher (pousse à fond pour courir), glisse à droite pour regarder.</div>
-      <div>✊ frapper · ✋ ramasser, boire, cuire · 🎒 sac et fabrication · 🔁 changer d'outil.</div>
-    </div>
-    <div class="help">
-      <div><b style="color:var(--ink)">Pour commencer :</b> ramasse des branches et des pierres au sol, cueille un buisson pour la fibre, puis fabrique une hache dans le sac. Avant la nuit, fais un feu.</div>
-    </div>
+    <div class="row"><label for="ngDay">Durée d'une journée</label>
+      <select id="ngDay"><option value="10">10 minutes</option><option value="16">16 minutes</option><option value="24">24 minutes</option><option value="40">40 minutes</option></select></div>
+    <div class="row"><label for="ngSeed">Graine de l'île <small>(vide = au hasard)</small></label><input id="ngSeed" type="text" inputmode="numeric" maxlength="9" placeholder="ex. 123456"></div>
+    <button class="btn primary" id="ngStart">Créer l'île</button>
+    <button class="btn" data-back>Retour</button>
   </div>
 </div>
 
 <div id="settings" class="screen dim hidden">
-  <div class="card">
-    <h2 style="margin:0 0 12px;font:600 24px Georgia,serif">Réglages</h2>
-    <div class="row"><label for="optQuality">Graphismes</label>
-      <select id="optQuality"><option value="auto">Automatique</option><option value="low">Rapide</option><option value="medium">Équilibré</option><option value="high">Beau</option></select></div>
-    <div class="row"><label for="optSens">Sensibilité</label><input type="range" id="optSens" min="0.3" max="2.5" step="0.1"></div>
-    <div class="row"><label for="optFov">Champ de vision</label><input type="range" id="optFov" min="60" max="95" step="1"></div>
-    <div class="row"><label for="optSound">Son</label><select id="optSound"><option value="1">Activé</option><option value="0">Coupé</option></select></div>
-    <div class="row"><label for="optFps">Afficher les FPS</label><select id="optFps"><option value="0">Non</option><option value="1">Oui</option></select></div>
-    <p class="tag" style="font-size:13px;margin:6px 0 0">Changer les graphismes recharge le jeu. Ta partie est sauvegardée.</p>
-    <button class="btn primary" id="btnSettingsOk">OK</button>
+  <div class="card wide">
+    <h2 class="ptitle">Réglages</h2>
+    <div class="tabs" id="setTabs"></div>
+    <div id="setBody"></div>
+    <p class="tag reloadnote hidden" id="reloadNote">Certains changements s'appliquent au redémarrage du jeu.</p>
+    <button class="btn primary hidden" id="btnReload">Redémarrer maintenant</button>
+    <button class="btn" data-back>Retour</button>
+  </div>
+</div>
+
+<div id="howto" class="screen dim hidden">
+  <div class="card wide howto">
+    <h2 class="ptitle">Comment jouer</h2>
+    <h3>Les premiers pas</h3>
+    <ol>
+      <li><b>Ramasse</b> des branches 🥢 et des cailloux 🪨 au sol. Frapper un arbre à mains nues fait aussi tomber des branches.</li>
+      <li><b>Cueille</b> un buisson à baies : baies 🫐 et fibre 🌾.</li>
+      <li>Ouvre le <b>sac</b> et fabrique une <b>hache, une pioche et une épée en bois</b>.</li>
+      <li>Avec la pioche en bois, casse des <b>rochers</b> pour avoir de la pierre, puis passe aux <b>outils en pierre</b>, deux fois plus efficaces.</li>
+      <li>Avant la nuit : un <b>feu de camp</b> (bois + pierre). Il réchauffe, cuit la viande et fait fuir loups et ours.</li>
+      <li>Plus tard : <b>gourde</b>, <b>lance</b>, <b>abri</b> pour dormir, <b>manteau</b> en fourrure d'ours.</li>
+    </ol>
+    <h3>La faune</h3>
+    <ul>
+      <li>🦌 <b>Cerf</b> : fuit dès qu'il t'entend (accroupis-toi pour l'approcher). Viande et peau.</li>
+      <li>🐿️ <b>Écureuil</b> : rapide, dans les bois. Viande et noisettes.</li>
+      <li>🐺 <b>Loup</b> : sort la nuit et chasse en meute. Le feu et la torche le tiennent à distance.</li>
+      <li>🐻 <b>Ours</b> : rôde à partir du 2ᵉ jour. Il charge si tu t'approches. Évite-le ou prends une lance.</li>
+    </ul>
+    <h3>Commandes</h3>
+    <div id="howKeys"></div>
+    <button class="btn" data-back>Retour</button>
   </div>
 </div>
 

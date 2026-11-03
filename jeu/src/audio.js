@@ -55,6 +55,12 @@ export class Sounds {
     this.crackleTimer = 0;
   }
 
+  setVolume(v) {
+    this.volume = v;
+    this.enabled = v > 0;
+    if (this.master) this.master.gain.value = v;
+  }
+
   setEnabled(on) {
     this.enabled = on;
     if (this.master) this.master.gain.value = on ? this.volume : 0;
