@@ -124,7 +124,8 @@ body.nocompass #compass, body.nocross #crosshair { display: none; }
 #clock { position: absolute; top: max(14px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line); border-radius: 99px; padding: 6px 16px; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 #compass { position: absolute; top: calc(max(14px, env(safe-area-inset-top)) + 40px); left: 50%; transform: translateX(-50%); width: 260px; height: 20px; overflow: hidden; mask-image: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent); -webkit-mask-image: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent); font-size: 12px; color: var(--muted); }
 #compass div { position: absolute; top: 0; white-space: nowrap; }
-#hotbar { position: absolute; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
+#hotbar { position: absolute; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); display: flex; gap: 6px; pointer-events: auto; }
+.slot { cursor: pointer; touch-action: manipulation; }
 .slot { width: 52px; height: 52px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); display: grid; place-items: center; font-size: 24px; position: relative; }
 .slot.sel { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(233,162,59,0.4); }
 .slot kbd { position: absolute; top: 2px; left: 5px; font-size: 10px; color: var(--muted); font-family: ui-monospace, monospace; }
@@ -207,6 +208,7 @@ body.touch #compass { display: none; }
     <div class="stat" id="sWater"><span>💧</span><div class="bar"><i style="background:var(--water)"></i></div></div>
     <div class="stat" id="sStamina"><span>⚡</span><div class="bar"><i style="background:var(--stamina)"></i></div></div>
     <div class="stat" id="sWarmth"><span>🌡️</span><div class="bar"><i style="background:var(--warmth)"></i></div></div>
+    <div class="stat" id="sAir" style="display:none"><span>🫧</span><div class="bar"><i style="background:#8fdcf0"></i></div></div>
   </div>
   <div id="hotbar"></div>
   <div id="toasts"></div>
@@ -318,6 +320,8 @@ body.touch #compass { display: none; }
       <li>💧 Les <b>ruisseaux</b> coulent dans certaines forêts : on peut y boire et remplir sa gourde.</li>
       <li>🏞️ De grandes <b>rivières</b> traversent l'île jusqu'à la mer. On peut y nager… ou les descendre en <b>canoë</b> 🛶 (bois, peaux et fibre, à construire face à l'eau).</li>
       <li>🌫️ À l'aube, la <b>brume</b> remplit les vallées.</li>
+      <li>🤿 Dans l'eau profonde, <b>regarde vers le bas en avançant pour plonger</b> (saut pour remonter). Surveille ta jauge d'air 🫧. Poissons et tortues vivent sous la surface.</li>
+      <li>🏔️ L'île a plusieurs <b>biomes</b> : forêts de feuillus, forêts d'automne, prairies, marais à roseaux et une chaîne de montagnes enneigées.</li>
       <li>🌿 Les <b>bosquets</b> regorgent de buissons à baies, de fougères (fibre), de branches et de troncs couchés (bois).</li>
     </ul>
     <h3>Commandes</h3>

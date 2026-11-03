@@ -85,15 +85,27 @@ export class Post {
         uRayCol: { value: new THREE.Color() }, uBloom: { value: 0.5 }, uSat: { value: 1.08 }, uWarm: { value: 0 },
         tDepth: { value: null }, uInvVP: { value: new THREE.Matrix4() }, uCam: { value: new THREE.Vector3() },
         uMist: { value: 0 }, uMistCol: { value: new THREE.Color() },
+        uUnder: { value: 0 }, uUnderCol: { value: new THREE.Color() },
       },
       vertexShader: VERT,
       fragmentShader: `
         uniform sampler2D tColor; uniform sampler2D tRays; uniform sampler2D tBloom;
         uniform vec3 uRayCol; uniform float uBloom; uniform float uSat; uniform float uWarm;
         uniform sampler2D tDepth; uniform mat4 uInvVP; uniform vec3 uCam; uniform float uMist; uniform vec3 uMistCol;
+        uniform float uUnder; uniform vec3 uUnderCol;
         varying vec2 vUv;
         void main(){
           vec3 c = texture2D(tColor, vUv).rgb;
+          // Sous l'eau : lumière bleu-vert qui s'éteint avec la distance, légère ondulation
+          if (uUnder > 0.5) {
+            vec2 wob = vec2(sin(vUv.y * 40.0 + uCam.x * 0.7 + uCam.z * 0.5), 0.0);
+            float d = texture2D(tDepth, vUv + wob * 0.0015).r;
+            vec4 wp = uInvVP * vec4(vUv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+            wp.xyz /= wp.w;
+            float dist = d >= 0.99999 ? 200.0 : length(wp.xyz - uCam);
+            c = texture2D(tColor, vUv + wob * 0.0015).rgb * vec3(0.55, 0.85, 0.9);
+            c = mix(c, uUnderCol, 1.0 - exp(-dist * 0.075));
+          }
           // Brume de vallée : une couche basse qui remplit les creux, plus dense au loin
           if (uMist > 0.001) {
             float d = texture2D(tDepth, vUv).r;
@@ -189,7 +201,9 @@ export class Post {
     u.tDepth.value = this.sceneRT.depthTexture;
     u.uInvVP.value.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse);
     u.uCam.value.copy(camera.position);
-    u.uMist.value = this.mist === false ? 0 : sun.mist || 0;
+    u.uMist.value = this.mist === false || sun.under ? 0 : sun.mist || 0;
+    u.uUnder.value = sun.under ? 1 : 0;
+    if (sun.under) u.uUnderCol.value.setRGB(0.03, 0.16, 0.18).multiplyScalar(0.25 + (sun.day ?? 1) * 0.9);
     if (sun.mistColor) u.uMistCol.value.copy(sun.mistColor);
     u.tColor.value = this.sceneRT.texture;
     u.tRays.value = this.raysRT.texture;
