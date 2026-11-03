@@ -28,6 +28,7 @@ export class World {
     this.nBio = createNoise2D(seed + 151);
     this._out = { h: 0, stream: 0, water: -1e3 };
     this.treeDist = { value: 500 };
+    this.waterUniforms = { uTime: { value: 0 } };
     this.buildHeights();
   }
 
@@ -54,10 +55,26 @@ export class World {
     const mreg = fbm(this.nM, x / 1700 + 4.2, z / 1700 - 7.7, 2) * 0.5 + 0.5;
     const M = smoothstep(0.56, 0.68, mreg) * smoothstep(0.84, 0.55, d);
     if (M > 0) {
-      const r = ridged(this.nM, wx / 650, wz / 650, 6);
+      // Domaine fortement déformé : silhouettes irrégulières, pas de cônes
+      const qx = wx + fbm(this.nM, x / 420 + 3, z / 420 - 8, 3) * 140;
+      const qz = wz + fbm(this.nM, x / 420 - 6, z / 420 + 2, 3) * 140;
+      const main = ridged(this.nM, qx / 1050, qz / 1050, 7);                    // grandes crêtes
       const broad = fbm(this.nM, x / 900 + 9, z / 900 - 3, 2) * 0.5 + 0.5;
-      const hm = 25 + broad * 70 + Math.pow(r, 1.7) * 240;
-      h = lerp(h, Math.max(h, hm), M * M * (3 - 2 * M));
+      let hm = 22 + broad * 70 + Math.pow(main, 1.25) * 185;
+      // Arêtes secondaires et sommets découpés, surtout en altitude
+      const hi = smoothstep(60, 180, hm);
+      hm += ridged(this.nM, qx / 320 + 5.3, qz / 320 - 1.1, 4) * 26 * (0.25 + hi);
+      // Ravines et couloirs (crevasses) qui entaillent les versants
+      const gully = 1 - Math.abs(fbm(this.nM, qx / 230 + 17, qz / 230 + 4, 3));
+      hm -= Math.pow(gully, 9) * 30 * smoothstep(40, 120, hm);
+      // Paliers rocheux (strates) : petites falaises successives
+      const st = 8.5, fr = hm / st - Math.floor(hm / st);
+      const terr = (Math.floor(hm / st) + smoothstep(0.25, 0.85, fr)) * st;
+      hm = lerp(hm, terr, 0.45 * smoothstep(50, 110, hm));
+      // Rugosité fine
+      hm += fbm(this.nM, x / 28, z / 28, 3) * 2.2 * smoothstep(40, 120, hm);
+      const k = M * M * (3 - 2 * M);
+      h = lerp(h, Math.max(h, hm), k);
     }
     // Prairies (vallées ouvertes), forêts d'automne, marais
     const P = smoothstep(0.6, 0.68, fbm(this.nBio, x / 1100, z / 1100, 2) * 0.5 + 0.5) * (1 - M);
@@ -267,6 +284,16 @@ export class World {
     }
   }
 
+  // Dégage l'herbe sous une construction (fondation, plancher posé au sol)
+  clearGround(x0, z0, x1, z1) {
+    if (!this.heightTex) return;
+    const V = this.V, data = this.heightTex.image.data, zero = THREE.DataUtils.toHalfFloat(0);
+    const i0 = Math.max(0, Math.floor((x0 + this.half) / this.step)), i1 = Math.min(this.N, Math.ceil((x1 + this.half) / this.step));
+    const j0 = Math.max(0, Math.floor((z0 + this.half) / this.step)), j1 = Math.min(this.N, Math.ceil((z1 + this.half) / this.step));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) data[(j * V + i) * 4 + 1] = zero;
+    this.heightTex.needsUpdate = true;
+  }
+
   // Texture R = hauteur, G = densité d'herbe, B = ruisseau, A = canopée. Utilisée par le terrain, l'herbe et l'eau.
   buildHeightTexture() {
     const V = this.V;
@@ -365,7 +392,7 @@ export class World {
       mesh.receiveShadow = true;
       mesh.matrixAutoUpdate = false;
       group.add(mesh);
-      this.chunks.push({ mesh, geo, cx, cz, size, lod: 4, underwater: maxY < -6 });
+      this.chunks.push({ mesh, geo, cx, cz, size, lod: 4, underwater: maxY < -6, tall: maxY > 55 });
     }
     this.terrain = group;
     return group;
@@ -376,10 +403,11 @@ export class World {
     const showDist = viewDistance * 1.6;
     for (const c of this.chunks) {
       const d = Math.max(0, Math.hypot(c.cx - cam.x, c.cz - cam.z) - c.size * 0.71);
-      c.mesh.visible = d < showDist + 50 && !c.underwater;
+      c.mesh.visible = (d < showDist + 50 || (c.tall && d < 3200)) && !c.underwater;
       if (!c.mesh.visible) continue;
       const k = d / lodScale;
-      const lod = k < 70 ? 0 : k < 200 ? 1 : k < 420 ? 2 : k < 750 ? 3 : 4;
+      let lod = k < 70 ? 0 : k < 200 ? 1 : k < 420 ? 2 : k < 750 ? 3 : 4;
+      if (c.tall) lod = Math.min(lod, k < 900 ? 2 : 3);   // montagnes : jamais de pyramides grossières
       if (lod !== c.lod) { c.lod = lod; c.geo.setIndex(this.lodIndex[lod]); }
     }
   }
@@ -395,6 +423,7 @@ export class World {
       sh.uniforms.uStep = { value: step };
       sh.uniforms.tBiome = { value: this.biomeTex };
       sh.uniforms.uTreeDist = this.treeDist;
+      sh.uniforms.uTime = this.waterUniforms.uTime;
       sh.vertexShader = sh.vertexShader
         .replace("#include <common>", "#include <common>\nuniform sampler2D tHeight; uniform vec2 uHM; uniform float uTexel; uniform float uStep;\nvarying vec3 vWPos;\nvarying vec3 vWN;")
         .replace("#include <beginnormal_vertex>", `
@@ -405,12 +434,35 @@ export class World {
         .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWPos = transformed;\nvWN = objectNormal;");
       sh.fragmentShader = sh.fragmentShader
         .replace("#include <common>", `#include <common>
-uniform sampler2D tDetail; uniform sampler2D tHeight; uniform vec2 uHM; uniform sampler2D tBiome; uniform float uTreeDist;
+uniform sampler2D tDetail; uniform sampler2D tHeight; uniform vec2 uHM; uniform sampler2D tBiome; uniform float uTreeDist; uniform float uTime;
 varying vec3 vWPos;
 varying vec3 vWN;
 vec3 srgb(vec3 c){ return pow(c, vec3(2.2)); }
+float gRock = 0.0;   // part de roche (partagée avec le calcul du relief au pixel)
+// Texture projetée sur les 3 axes : pas d'étirement sur les falaises verticales
+vec3 tri(vec3 p, vec3 n, float s){
+  vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y + w.z);
+  return texture2D(tDetail, p.zy * s).rgb * w.x + texture2D(tDetail, p.xz * s).rgb * w.y + texture2D(tDetail, p.xy * s).rgb * w.z;
+}
+vec3 rockColor(vec3 p, vec3 n, vec4 bio){
+  vec3 t1 = tri(p, n, 0.23), t2 = tri(p, n, 0.045), t3 = tri(p, n, 0.9);
+  // Teinte : granite gris, parfois plus chaud (grès) selon la zone
+  vec3 base = mix(srgb(vec3(0.50, 0.49, 0.46)), srgb(vec3(0.56, 0.48, 0.38)), smoothstep(0.4, 0.7, t2.g));
+  base *= 0.55 + 0.6 * t1.r * (0.7 + 0.3 * t3.g);
+  // Strates géologiques horizontales
+  float strata = sin(p.y * 1.7 + t2.b * 5.0) * 0.5 + 0.5;
+  base *= 0.82 + 0.22 * strata;
+  // Fissures sombres
+  base *= 1.0 - 0.55 * smoothstep(0.62, 0.8, t3.b) * smoothstep(0.3, 0.6, t1.g);
+  // Lichens (jaune-vert, orangé) et mousse sur les replats
+  base = mix(base, srgb(vec3(0.55, 0.55, 0.30)), smoothstep(0.72, 0.85, t3.r) * 0.45);
+  base = mix(base, srgb(vec3(0.30, 0.36, 0.14)) * (0.8 + 0.3 * t1.g), smoothstep(0.55, 0.85, n.y) * smoothstep(0.45, 0.7, t2.r) * 0.6);
+  return base;
+}
 vec3 terrainColor(){
   vec3 d1 = texture2D(tDetail, vWPos.xz * 0.21).rgb;
+  float slope0 = 1.0 - normalize(vWN).y;
+  if (slope0 > 0.15) d1 = mix(d1, tri(vWPos, normalize(vWN), 0.21), smoothstep(0.15, 0.35, slope0));   // pas d'étirement sur les pentes
   vec3 d2 = texture2D(tDetail, vWPos.xz * 0.019).rgb;
   vec3 d3 = texture2D(tDetail, vWPos.xz * 0.0041).rgb;
   float h = vWPos.y;
@@ -423,7 +475,7 @@ vec3 terrainColor(){
   grass *= 0.75 + 0.5 * d1.g;
   vec3 dirt = srgb(vec3(0.33,0.29,0.18)) * (0.75 + 0.5 * d1.b);
   vec3 sand = srgb(vec3(0.80,0.72,0.54)) * (0.88 + 0.24 * d1.r);
-  vec3 rock = srgb(vec3(0.46,0.44,0.41)) * (0.55 + 0.7 * d1.r * (0.6 + 0.4 * d2.g));
+  vec3 rock = rockColor(vWPos, normalize(vWN), bio);
   vec3 mud = mix(srgb(vec3(0.28,0.24,0.17)), srgb(vec3(0.45,0.42,0.36)), smoothstep(0.45, 0.7, d1.r)) * (0.8 + 0.3 * d1.g);
   grass = mix(grass, srgb(vec3(0.52, 0.50, 0.22)) * (0.8 + 0.4 * d1.g), bio.g * 0.55);      // prairie dorée
   grass = mix(grass, srgb(vec3(0.24, 0.30, 0.12)) * (0.8 + 0.4 * d1.g), bio.b * 0.6);       // marais
@@ -444,9 +496,14 @@ vec3 terrainColor(){
   c = mix(c, sand, beach);
   c = mix(c, sand * 0.55, 1.0 - smoothstep(-0.3, 0.5, h));
   // Roche seulement sur les vraies falaises (plus tôt en montagne), neige sur les sommets
-  float rockStart = mix(0.56, 0.42, bio.r);
+  float rockStart = mix(0.5, 0.33, bio.r);
   float rockAmt = smoothstep(rockStart, rockStart + 0.14, slope + (d1.g - 0.5) * 0.12) + smoothstep(135.0, 160.0, h + d2.r * 20.0) * 0.6;
-  c = mix(c, rock, clamp(rockAmt, 0.0, 1.0) * (1.0 - smoothstep(0.1, 0.3, stream)));
+  // Éboulis : gravier clair au pied des falaises en montagne
+  float scree = smoothstep(rockStart - 0.18, rockStart - 0.02, slope) * bio.r * (1.0 - smoothstep(0.1, 0.3, stream));
+  vec3 gravel = srgb(vec3(0.55, 0.53, 0.49)) * (0.6 + 0.6 * d1.r * d1.g + 0.2 * d1.b);
+  c = mix(c, gravel, scree * smoothstep(0.35, 0.65, d1.b + d2.r * 0.4) * 0.85);
+  gRock = clamp(rockAmt, 0.0, 1.0) * (1.0 - smoothstep(0.1, 0.3, stream));
+  c = mix(c, rock, gRock);
   float snow = smoothstep(150.0, 175.0, h + (d2.r - 0.5) * 30.0) * (1.0 - smoothstep(0.62, 0.82, slope));
   c = mix(c, srgb(vec3(0.92, 0.94, 0.98)) * (0.92 + 0.08 * d1.g), snow);
   // Au-delà de la distance d'affichage des arbres, le sol prend la couleur de la forêt
@@ -455,7 +512,36 @@ vec3 terrainColor(){
   c = mix(c, forestCol * (0.8 + 0.3 * d2.g), far * smoothstep(0.2, 0.6, canopy) * 0.9);
   return c;
 }`)
-        .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb = terrainColor();");
+        .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>
+  // Relief au pixel (roche, éboulis) : la lumière accroche les aspérités
+  {
+    vec3 nW = normalize(vWN);
+    float hb = dot(tri(vWPos, nW, 0.12), vec3(0.6, 0.25, 0.15)) + tri(vWPos, nW, 0.035).g * 0.5;
+    float bumpK = (1.4 * gRock) * (1.0 - smoothstep(30.0, 140.0, length(vWPos - cameraPosition)));
+    vec3 sx = dFdx(-vViewPosition), sy = dFdy(-vViewPosition);
+    vec3 R1 = cross(sy, normal), R2 = cross(normal, sx);
+    float det = dot(sx, R1);
+    vec2 dH = vec2(dFdx(hb), dFdy(hb)) * bumpK;
+    normal = normalize(abs(det) * normal - sign(det) * (dH.x * R1 + dH.y * R2));
+  }`)
+        .replace("#include <fog_fragment>", `
+#ifdef USE_FOG
+  // Brume plus légère en altitude : les sommets lointains restent visibles, voilés de bleu
+  float fogF = smoothstep(fogNear, fogFar, vFogDepth);
+  fogF *= 1.0 - 0.72 * smoothstep(30.0, 190.0, vWPos.y);
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogF);
+#endif`)
+        .replace("#include <color_fragment>", `#include <color_fragment>
+  diffuseColor.rgb = terrainColor();
+  // Fond marin : sable mouillé plus sombre et reflets lumineux (caustiques) qui dansent
+  if (vWPos.y < -0.2) {
+    float dd = -vWPos.y;
+    vec2 q = vWPos.xz * 0.55;
+    float ca = sin(q.x + uTime * 0.9) + sin(q.y * 1.1 - uTime * 0.7) + sin((q.x + q.y) * 0.7 + uTime * 0.6) + sin((q.x - q.y) * 1.4 - uTime);
+    ca = pow(abs(ca) * 0.25, 3.0);
+    diffuseColor.rgb *= mix(vec3(1.0), vec3(0.75, 0.92, 0.95), smoothstep(0.0, 3.0, dd));
+    diffuseColor.rgb += ca * 1.4 * exp(-dd * 0.12) * diffuseColor.rgb;
+  }`);
     };
     return mat;
   }
@@ -531,52 +617,146 @@ ${REFL_PARS}`)
     return mesh;
   }
 
+  // Hauteur des vagues de mer à un endroit (même formule que le shader), pour faire flotter canoë et nageur.
+  waveHeight(x, z, t) {
+    const ground = this.heightAt(x, z);
+    const amp = WAVE_AMP * smoothstep(0, 7, -ground);
+    if (amp <= 0) return 0;
+    let y = 0;
+    for (const [dx, dz, L, st, sp] of WAVES) {
+      const k = (2 * Math.PI) / L, c = Math.sqrt(9.8 / k) * sp;
+      y += (st / k) * Math.sin(k * (dx * x + dz * z - c * t));
+    }
+    return y * amp;
+  }
+
+  // Mer et lacs : surface déformée par des vagues de Gerstner, réfraction du fond, couleur selon la profondeur,
+  // écume sur les crêtes et vaguelettes qui viennent lécher les berges.
   buildWater(waterNormalTex) {
-    const geo = new THREE.PlaneGeometry(16000, 16000, 1, 1);
-    geo.rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x1b4d5c, roughness: 0.06, metalness: 0.0, transparent: true, depthWrite: true, side: THREE.DoubleSide });
-    const uniforms = { uTime: { value: 0 } };
-    this.waterUniforms = uniforms;
+    // Grille polaire centrée sur la caméra : dense près du joueur, large au loin (jusqu'à l'horizon)
+    const RING = 190, SEG = 128;
+    const pos = [0, 0, 0], idx = [];
+    for (let i = 1; i <= RING; i++) {
+      const r = 1.6 * (Math.pow(1.046, i) - 1);
+      for (let j = 0; j < SEG; j++) { const a = (j / SEG) * Math.PI * 2; pos.push(Math.cos(a) * r, 0, Math.sin(a) * r); }
+    }
+    for (let j = 0; j < SEG; j++) idx.push(0, 1 + ((j + 1) % SEG), 1 + j);
+    for (let i = 1; i < RING; i++) for (let j = 0; j < SEG; j++) {
+      const a = 1 + (i - 1) * SEG + j, b = 1 + (i - 1) * SEG + ((j + 1) % SEG), c = a + SEG, d = b + SEG;
+      idx.push(a, b, c, b, d, c);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ color: 0x0e3a46, roughness: 0.04, metalness: 0.0, side: THREE.DoubleSide });
+    const uniforms = this.waterUniforms;
+    const waveGLSL = WAVES.map(([dx, dz, L, st, sp]) => `gw(p, vec2(${dx.toFixed(4)}, ${dz.toFixed(4)}), ${L.toFixed(2)}, ${st.toFixed(3)}, ${sp.toFixed(3)}, amp, disp, nrm);`).join("\n    ");
     mat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, reflUniforms);
       sh.uniforms.uTime = uniforms.uTime;
       sh.uniforms.tHeight = { value: this.heightTex };
       sh.uniforms.uHM = { value: this.hmTransform };
       sh.uniforms.tWaterN = { value: waterNormalTex };
-      Object.assign(sh.uniforms, reflUniforms);
+      sh.uniforms.tRefr = refrUniforms.tRefr;
+      sh.uniforms.uRefrOn = refrUniforms.uRefrOn;
       sh.vertexShader = sh.vertexShader
-        .replace("#include <common>", "#include <common>\nvarying vec3 vWPos;")
-        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed,1.0)).xyz;");
+        .replace("#include <common>", `#include <common>
+uniform float uTime; uniform sampler2D tHeight; uniform vec2 uHM;
+varying vec3 vWPos; varying vec3 vGN; varying float vCrest; varying float vDepth;
+void gw(vec2 p, vec2 d, float L, float st, float sp, float amp, inout vec3 disp, inout vec3 nrm) {
+  float k = 6.2831853 / L, c = sqrt(9.8 / k) * sp, a = st / k * amp;
+  float f = k * (dot(d, p) - c * uTime);
+  float cf = cos(f), sf = sin(f);
+  disp.xz += d * (a * cf * 0.6);
+  disp.y += a * sf;
+  nrm.xz -= d * (k * a * cf);
+  nrm.y -= 0.6 * k * a * sf;
+}`)
+        .replace("#include <begin_vertex>", `#include <begin_vertex>
+  vec3 wp0 = (modelMatrix * vec4(transformed, 1.0)).xyz;
+  float ground = texture2D(tHeight, wp0.xz * uHM.x + uHM.y).r;
+  vDepth = max(0.0, -ground);
+  float distC = length(wp0.xz - cameraPosition.xz);
+  float amp = ${WAVE_AMP.toFixed(3)} * smoothstep(0.0, 7.0, vDepth) * (1.0 - smoothstep(180.0, 480.0, distC));
+  vec3 disp = vec3(0.0), nrm = vec3(0.0, 1.0, 0.0);
+  vec2 p = wp0.xz;
+  if (amp > 0.0001) {
+    ${waveGLSL}
+  }
+  // Vaguelettes du rivage : l'eau monte et descend doucement sur le sable
+  float swash = (1.0 - smoothstep(0.0, 1.5, vDepth)) * smoothstep(-1.5, 0.0, -vDepth) * 0.06 * sin(uTime * 0.9 - vDepth * 3.0 + wp0.x * 0.05);
+  transformed += disp;
+  transformed.y += swash;
+  vGN = normalize(nrm);
+  vCrest = disp.y / max(0.001, ${WAVE_AMP.toFixed(3)});
+  vWPos = wp0 + disp;`);
       sh.fragmentShader = sh.fragmentShader
         .replace("#include <common>", `#include <common>
 uniform float uTime; uniform sampler2D tHeight; uniform vec2 uHM; uniform sampler2D tWaterN;
-varying vec3 vWPos;
+uniform sampler2D tRefr; uniform float uRefrOn;
+varying vec3 vWPos; varying vec3 vGN; varying float vCrest; varying float vDepth;
+vec3 wRefr; float wTrans; float wFoam;
 ${REFL_PARS}`)
         .replace("#include <color_fragment>", `#include <color_fragment>
   float ground = texture2D(tHeight, vWPos.xz * uHM.x + uHM.y).r;
-  float depth = max(0.0, -ground);
-  vec3 shallow = vec3(0.10, 0.36, 0.34);
-  vec3 deep = vec3(0.012, 0.07, 0.10);
-  diffuseColor.rgb = mix(shallow, deep, smoothstep(0.0, 9.0, depth));
-  float foamN = texture2D(tWaterN, vWPos.xz * 0.21 + vec2(uTime * 0.03, 0.0)).b;
-  float foam = (1.0 - smoothstep(0.0, 0.55, depth)) * smoothstep(0.35, 0.65, foamN + 0.25 * sin(uTime * 1.3 + vWPos.x * 0.4));
-  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.85), foam * 0.7);
-  diffuseColor.a = mix(0.28, 0.93, smoothstep(0.0, 3.5, depth)) + foam * 0.4;`)
+  float depth = max(0.0, vWPos.y - ground);
+  float viewDist = length(cameraPosition - vWPos);
+  // Couleur de l'eau diffusée : turquoise en eau peu profonde, bleu nuit au large
+  vec3 shallowC = vec3(0.07, 0.42, 0.40), deepC = vec3(0.006, 0.05, 0.085);
+  diffuseColor.rgb = mix(shallowC, deepC, smoothstep(0.5, 14.0, depth));
+  // Écume : bande du rivage (vaguelettes qui avancent) + crêtes des vagues au large
+  float fN = texture2D(tWaterN, vWPos.xz * 0.17 + vec2(uTime * 0.02, -uTime * 0.013)).b;
+  float fN2 = texture2D(tWaterN, vWPos.xz * 0.05 - vec2(uTime * 0.01, 0.0)).b;
+  float band = sin(depth * 5.0 - uTime * 1.6 + fN2 * 6.0) * 0.5 + 0.5;
+  float shoreFoam = (1.0 - smoothstep(0.0, 0.9, depth)) * smoothstep(0.45, 0.85, fN * 0.7 + band * 0.55);
+  float crestFoam = smoothstep(0.55, 0.95, vCrest + fN * 0.35) * smoothstep(3.0, 8.0, depth) * 0.6;
+  wFoam = clamp(shoreFoam + crestFoam, 0.0, 1.0);
+  diffuseColor.a = 1.0;`)
         .replace("#include <normal_fragment_maps>", `
-  vec3 n1 = texture2D(tWaterN, vWPos.xz * 0.045 + vec2(uTime * 0.018, uTime * 0.011)).xyz * 2.0 - 1.0;
-  vec3 n2 = texture2D(tWaterN, vWPos.xz * 0.12 - vec2(uTime * 0.013, -uTime * 0.021)).xyz * 2.0 - 1.0;
-  vec2 nxy = (n1.xy + n2.xy) * 0.55;
-  vec3 wn = normalize(vec3(nxy.x, 1.0, -nxy.y));
-  normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);`)
-        .replace("#include <opaque_fragment>", REFL_APPLY);
+  // Normales : vagues + trois échelles de détail (moins de répétition), qui s'effacent au loin
+  float vd = length(cameraPosition - vWPos);
+  float detail = 1.0 - smoothstep(60.0, 420.0, vd);
+  vec2 n1 = texture2D(tWaterN, vWPos.xz * 0.031 + vec2(uTime * 0.012, uTime * 0.007)).xy * 2.0 - 1.0;
+  vec2 n2 = texture2D(tWaterN, mat2(0.8, -0.6, 0.6, 0.8) * vWPos.xz * 0.11 - vec2(uTime * 0.021, -uTime * 0.015)).xy * 2.0 - 1.0;
+  vec2 n3 = texture2D(tWaterN, mat2(0.28, 0.96, -0.96, 0.28) * vWPos.xz * 0.37 + vec2(uTime * 0.05, uTime * 0.03)).xy * 2.0 - 1.0;
+  vec2 nxy = n1 * 0.35 + (n2 * 0.4 + n3 * 0.22) * detail;
+  vec3 wn = normalize(vec3(vGN.x + nxy.x * 0.6, vGN.y, vGN.z - nxy.y * 0.6));
+  if (!gl_FrontFacing) wn = -wn;
+  normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);
+  // Réfraction : on voit le fond, déformé par les vagues, et absorbé selon la profondeur
+  vec2 suv = gl_FragCoord.xy / vec2(textureSize(tRefr, 0)) * uRefrScale;
+  vec2 ruv = clamp(suv + nxy * 0.03 * (1.0 - smoothstep(0.0, 120.0, vd)), 0.001, 0.999);
+  wRefr = texture2D(tRefr, ruv).rgb;
+  float thick = gl_FrontFacing ? depth : min(vd, 30.0);
+  vec3 absorb = vec3(0.42, 0.11, 0.075);
+  vec3 tr = exp(-absorb * thick * 1.3);
+  wTrans = uRefrOn * dot(tr, vec3(0.333)) * (1.0 - wFoam);
+  diffuseColor.rgb *= 1.0 - wTrans;
+  wRefr *= tr;`)
+        .replace("#include <opaque_fragment>", `
+  outgoingLight += wRefr * wTrans * (gl_FrontFacing ? 1.0 : 1.0);
+  outgoingLight = mix(outgoingLight, vec3(0.9, 0.93, 0.95) * (0.35 + 0.65 * dot(normal, normalize((viewMatrix * vec4(0.3, 0.9, 0.2, 0.0)).xyz)) ) * 1.1, wFoam * 0.85);
+${REFL_APPLY}`);
+      sh.fragmentShader = sh.fragmentShader.replace("uniform sampler2D tRefr; uniform float uRefrOn;", "uniform sampler2D tRefr; uniform float uRefrOn; uniform float uRefrScale;");
+      sh.uniforms.uRefrScale = refrUniforms.uRefrScale;
     };
     const mesh = new THREE.Mesh(geo, mat);
     this.seaMesh = mesh;
     mesh.position.y = SEA_LEVEL;
+    mesh.frustumCulled = false;
     mesh.receiveShadow = false;
+    mesh.layers.set(1);   // rendue dans une 2ᵉ passe, après le reste (pour la réfraction)
     mesh.renderOrder = 2;
+    mesh.onBeforeRender = (r, sc, cam) => { mesh.position.x = cam.position.x; mesh.position.z = cam.position.z; mesh.updateMatrixWorld(); };
     return mesh;
   }
 }
+
+// Trains de vagues : direction (x, z), longueur d'onde (m), cambrure, vitesse relative
+const WAVE_AMP = 0.42;
+const WAVES = [[0.96, 0.28, 34, 0.16, 1], [0.45, 0.89, 19, 0.14, 1], [-0.7, 0.71, 11, 0.12, 1.05], [0.87, -0.5, 6.5, 0.1, 1.1], [0.2, 0.98, 3.7, 0.07, 1.2]];
+export const refrUniforms = { tRefr: { value: null }, uRefrOn: { value: 0 }, uRefrScale: { value: 1 } };
 
 // --- Textures procédurales (aucun fichier image à télécharger) ---
 
@@ -589,7 +769,7 @@ function periodicValueNoise(size, cells, rand) {
       const gx = (x / size) * cells, gy = (y / size) * cells;
       const x0 = Math.floor(gx), y0 = Math.floor(gy);
       let fx = gx - x0, fy = gy - y0;
-      fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+      fx = fx * fx * fx * (fx * (fx * 6 - 15) + 10); fy = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
       const x1 = (x0 + 1) % cells, y1 = (y0 + 1) % cells;
       const a = lattice[y0 * cells + x0], b = lattice[y0 * cells + x1];
       const c = lattice[y1 * cells + x0], d = lattice[y1 * cells + x1];
@@ -614,7 +794,7 @@ function tileableFbm(size, baseCells, octaves, seed) {
 }
 
 export function makeDetailTexture(renderer, seed) {
-  const size = 256;
+  const size = 512;
   const r = tileableFbm(size, 8, 5, seed + 1);
   const g = tileableFbm(size, 4, 5, seed + 2);
   const b = tileableFbm(size, 16, 4, seed + 3);

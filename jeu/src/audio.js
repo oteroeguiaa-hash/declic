@@ -14,7 +14,9 @@ export class Sounds {
     const ctx = (this.ctx = new AC());
     this.master = ctx.createGain();
     this.master.gain.value = this.enabled ? this.volume : 0;
-    this.master.connect(ctx.destination);
+    // Filtre « sous l'eau » : étouffe tous les sons quand on plonge
+    this.uw = ctx.createBiquadFilter(); this.uw.type = "lowpass"; this.uw.frequency.value = 20000;
+    this.master.connect(this.uw).connect(ctx.destination);
 
     const len = ctx.sampleRate * 2;
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -62,6 +64,13 @@ export class Sounds {
     this.fireGain.connect(this.master);
     this.birdTimer = 2;
     this.crackleTimer = 0;
+  }
+
+  setUnderwater(on) {
+    if (!this.ctx || !!this.isUnder === on) return;
+    this.isUnder = on;
+    this.uw.frequency.setTargetAtTime(on ? 520 : 20000, this.ctx.currentTime, 0.08);
+    this.burst({ freq: on ? 500 : 1300, q: 0.6, dur: 0.5, gain: 0.3, rate: 0.6, type: "lowpass" }); // plouf / sortie de l'eau
   }
 
   setVolume(v) {

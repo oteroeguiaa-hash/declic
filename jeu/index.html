@@ -139,6 +139,15 @@ body.nocompass #compass, body.nocross #crosshair { display: none; }
 
 /* Sac */
 #bag { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(6,9,7,0.55); backdrop-filter: blur(2px); }
+#storage { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(6,9,7,0.55); }
+#storage .wrap { width: min(760px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 18px; padding: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+#storage h2 { margin: 0 0 12px; font: 600 20px Georgia, serif; }
+#arcade { position: fixed; inset: 0; z-index: 25; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.75); padding: 16px; }
+.arcbox { background: #0a0f0b; border: 3px solid #2a2e30; border-radius: 18px; padding: 14px; text-align: center; box-shadow: 0 0 40px rgba(120,220,140,0.15); }
+#arcadeCanvas { width: min(400px, 80vw, 70vh); height: auto; aspect-ratio: 1; border-radius: 8px; display: block; margin: 0 auto 8px; touch-action: none; }
+#buildMenu { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(6,9,7,0.55); backdrop-filter: blur(2px); }
+#buildMenu .wrap { width: min(620px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
+#buildMenu h2 { margin: 0 0 8px; font: 600 20px Georgia, serif; }
 #bag .wrap { width: min(860px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 18px; padding: 18px; display: grid; grid-template-columns: 1fr 1.2fr; gap: 18px; }
 #bag h2 { margin: 0 0 12px; font: 600 20px Georgia, serif; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
@@ -172,6 +181,7 @@ body.touch.playing #touchArea, body.touch.playing #touchUI { display: block; }
 #btnUse { right: calc(max(28px, env(safe-area-inset-right)) + 96px); bottom: 70px; }
 #btnJump { right: max(28px, env(safe-area-inset-right)); bottom: 24px; width: 58px; height: 58px; }
 #btnBag { right: max(16px, env(safe-area-inset-right)); top: max(14px, env(safe-area-inset-top)); width: 50px; height: 50px; font-size: 22px; }
+#btnBuild { right: calc(max(16px, env(safe-area-inset-right)) + 120px); top: max(14px, env(safe-area-inset-top)); width: 50px; height: 50px; font-size: 22px; }
 #btnTool { right: calc(max(16px, env(safe-area-inset-right)) + 60px); top: max(14px, env(safe-area-inset-top)); width: 50px; height: 50px; font-size: 22px; }
 #btnPause { left: max(16px, env(safe-area-inset-left)); top: max(14px, env(safe-area-inset-top)); width: 44px; height: 44px; font-size: 18px; }
 body.touch #stats { width: 150px; bottom: auto; top: calc(max(14px, env(safe-area-inset-top)) + 56px); }
@@ -180,7 +190,7 @@ body.touch .slot { width: 44px; height: 44px; font-size: 20px; }
 body.touch #toasts { bottom: auto; top: 76px; right: 80px; }
 body.touch #compass { display: none; }
 @media (max-width: 700px) {
-  #bag .wrap { grid-template-columns: 1fr; }
+  #bag .wrap, #storage .wrap { grid-template-columns: 1fr; }
   h1.logo { font-size: 44px; }
 }
 @media (orientation: portrait) and (pointer: coarse) {
@@ -224,7 +234,42 @@ body.touch #compass { display: none; }
   <button class="tbtn" id="btnJump" aria-label="Sauter">⤒</button>
   <button class="tbtn" id="btnBag" aria-label="Sac">🎒</button>
   <button class="tbtn" id="btnTool" aria-label="Changer d'outil">🔁</button>
+  <button class="tbtn" id="btnBuild" aria-label="Construire">🔨</button>
   <button class="tbtn" id="btnPause" aria-label="Pause">⏸</button>
+</div>
+
+<div id="buildMenu" class="hidden">
+  <div class="wrap one">
+    <div>
+      <button class="btn small closebag" id="closeBuild">Fermer</button>
+      <h2>Construire</h2>
+      <p class="empty" style="margin:0 0 10px">Les pièces s'accrochent automatiquement aux autres (fondations en grille de 3 m, murs sur les bords, étages sur les murs). Démonter rend toutes les ressources.</p>
+      <div id="buildList"></div>
+    </div>
+  </div>
+</div>
+
+<div id="storage" class="hidden">
+  <div class="wrap">
+    <div>
+      <h2>Ton sac</h2>
+      <div class="grid" id="storageBag"></div>
+      <label class="empty" style="display:block;margin-top:10px"><input type="checkbox" id="storageAll"> Déplacer toute la pile d'un coup</label>
+    </div>
+    <div>
+      <button class="btn small closebag" id="closeStorage">Fermer</button>
+      <h2 id="storageTitle">Rangement</h2>
+      <div class="grid" id="storageBox"></div>
+    </div>
+  </div>
+</div>
+
+<div id="arcade" class="hidden">
+  <div class="arcbox">
+    <canvas id="arcadeCanvas" width="400" height="400"></canvas>
+    <p class="empty">Flèches ou ZQSD (glisser sur téléphone) · Échap pour quitter</p>
+    <button class="btn small" id="arcadeClose">Éteindre la console</button>
+  </div>
 </div>
 
 <div id="bag" class="hidden">
@@ -323,6 +368,13 @@ body.touch #compass { display: none; }
       <li>🤿 Dans l'eau profonde, <b>regarde vers le bas en avançant pour plonger</b> (saut pour remonter). Surveille ta jauge d'air 🫧. Poissons et tortues vivent sous la surface.</li>
       <li>🏔️ L'île a plusieurs <b>biomes</b> : forêts de feuillus, forêts d'automne, prairies, marais à roseaux et une chaîne de montagnes enneigées.</li>
       <li>🌿 Les <b>bosquets</b> regorgent de buissons à baies, de fougères (fibre), de branches et de troncs couchés (bois).</li>
+    </ul>
+    <h3>Construire sa maison</h3>
+    <ul>
+      <li>🔨 Ouvre le menu <b>Construire</b> (touche <b>B</b> ou bouton 🔨) : fondations, planchers, murs, portes, fenêtres, escaliers, toits, piquets, clôtures, portails.</li>
+      <li>Les pièces s'accrochent toutes seules : fondations en grille de 3 m, murs sur les bords, étage et toit sur les murs. <b>Vert</b> = possible, <b>rouge</b> = impossible (la raison s'affiche).</li>
+      <li>Meuble ta maison : cuisine (frigo qui garde la viande fraîche, four, évier, placards), salon (canapé, télé, console avec un jeu, bibliothèque, lampes, tapis), chambre (lit, armoire, commode, bureau), extérieur (barbecue, coffres, potager, mangeoire, lanternes, garage).</li>
+      <li>🔧 « Démonter ou déplacer » rend toutes les ressources. La viande s'abîme dans le sac : range-la au réfrigérateur.</li>
     </ul>
     <h3>Commandes</h3>
     <div id="howKeys"></div>

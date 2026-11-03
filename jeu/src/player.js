@@ -158,6 +158,21 @@ export class Player {
     this.pitch = clamp(this.pitch - look.y * (this.invertY ? -1 : 1), -1.5, 1.5);
 
     if (this.boat) { this.updateBoat(dt, input, ctx); this.survive(dt, ctx); return; }
+    if (this.seat) {
+      // Assis : regard libre, récupération plus rapide ; bouger ou sauter pour se lever
+      const ax0 = input.axis();
+      if (Math.hypot(ax0.x, ax0.y) > 0.2 || input.jump) { this.pos.set(this.seat.x + Math.sin(this.seat.yaw) * -0.9, this.seat.y - 0.4, this.seat.z + Math.cos(this.seat.yaw) * -0.9); this.seat = null; }
+      else {
+        this.pos.set(this.seat.x, this.seat.y - 0.45, this.seat.z);
+        this.camera.position.set(this.seat.x, this.seat.y + 0.75, this.seat.z);
+        this.camera.rotation.order = "YXZ"; this.camera.rotation.set(this.pitch, this.yaw, 0);
+        this.vel.set(0, 0, 0);
+        this.stamina = Math.min(100, this.stamina + dt * 25);
+        this.health = Math.min(100, this.health + dt * 0.4);
+        this.survive(dt, ctx);
+        return;
+      }
+    }
 
     const ax = input.axis();
     const len = Math.hypot(ax.x, ax.y);
@@ -236,6 +251,8 @@ export class Player {
       const d = Math.hypot(this.pos.x - p.x, this.pos.z - p.z);
       if (d < 1.0 * p.s && this.pos.y >= p.y + p.s * 0.6) floor = Math.max(floor, p.y + p.s * 0.75);
     });
+    // Constructions : planchers, fondations, escaliers
+    if (this.structures.build) floor = Math.max(floor, this.structures.build.groundAt(this.pos.x, this.pos.z, this.pos.y));
 
     if (!this.swimming && this.pos.y <= floor) {
       if (!this.onGround && this.fallStartY !== null) {
@@ -275,11 +292,13 @@ export class Player {
     if (this.swimming) {
       const g2 = this.world.heightAt(this.pos.x, this.pos.z);
       if (this.pos.y < g2 - 0.2) { this.pos.y = g2 - 0.2; this.vel.y = Math.max(0, this.vel.y); }
-      if (this.pos.y > wl - 1.6) cam.position.y = Math.max(cam.position.y, wl + 0.25 + Math.sin(performance.now() * 0.002) * 0.06);
+      const wv = this.world.waveHeight(this.pos.x, this.pos.z, this.world.waterUniforms.uTime.value);
+      if (this.pos.y > wl - 1.6) cam.position.y = Math.max(cam.position.y, wl + wv + 0.22);
       else cam.position.y = this.pos.y + this.eyeY;
     }
     // Air : on retient sa respiration sous l'eau (environ 25 s), puis on se noie
-    this.underwater = cam.position.y < wl - 0.05;
+    this.surfaceY = wl + this.world.waveHeight(cam.position.x, cam.position.z, this.world.waterUniforms.uTime.value);
+    this.underwater = cam.position.y < this.surfaceY - 0.05;
     if (this.underwater) this.air = Math.max(0, this.air - dt * 4);
     else this.air = Math.min(100, this.air + dt * 30);
     if (this.air <= 0) this.health -= dt * 8;
@@ -343,7 +362,7 @@ export class Player {
     b.pos.x = clamp(b.pos.x, -lim, lim); b.pos.z = clamp(b.pos.z, -lim, lim);
     const t = performance.now() * 0.001;
     const wlHere = this.world.waterLevelAt(b.pos.x, b.pos.z);
-    b.pos.y = wlHere + 0.02 + Math.sin(t * 1.3) * 0.02;
+    b.pos.y = wlHere + 0.02 + this.world.waveHeight(b.pos.x, b.pos.z, this.world.waterUniforms.uTime.value);
     b.group.position.copy(b.pos);
     b.group.rotation.set(Math.sin(t * 1.1) * 0.012 + b.speed * 0.004, b.yaw, Math.sin(t * 0.9) * 0.02 - b.yawVel * 0.06, "YXZ");
     this.pos.set(b.pos.x, b.pos.y - 0.6, b.pos.z);

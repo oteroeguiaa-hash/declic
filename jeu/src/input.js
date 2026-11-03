@@ -117,6 +117,7 @@ export class Input {
     bind("btnJump", "Space", "jumpHeld");
     bind("btnBag", "Tab");
     bind("btnTool", "WheelDown");
+    bind("btnBuild", "Build");
   }
 
   axis() {

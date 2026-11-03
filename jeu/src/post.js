@@ -1,6 +1,7 @@
 // Post-traitement : rayons de soleil volumétriques (god rays), halo lumineux (bloom), étalonnage des couleurs.
 // La scène est rendue en HDR dans une texture, puis composée à l'écran avec le tone mapping ACES.
 import * as THREE from "three";
+import { refrUniforms } from "./world.js";
 
 const VERT = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 
@@ -15,6 +16,7 @@ export class Post {
     const lo = { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false };
     this.raysRT = new THREE.WebGLRenderTarget(4, 4, lo);
     this.bloomA = new THREE.WebGLRenderTarget(4, 4, lo);
+    this.refrRT = new THREE.WebGLRenderTarget(4, 4, lo);
     this.bloomB = new THREE.WebGLRenderTarget(4, 4, lo);
 
     this.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -65,6 +67,13 @@ export class Post {
       depthTest: false, depthWrite: false,
     });
 
+    this.copyMat = new THREE.ShaderMaterial({
+      uniforms: { tColor: { value: null } },
+      vertexShader: VERT,
+      fragmentShader: `uniform sampler2D tColor; varying vec2 vUv; void main(){ gl_FragColor = vec4(texture2D(tColor, vUv).rgb, 1.0); }`,
+      depthTest: false, depthWrite: false,
+    });
+
     this.blurMat = new THREE.ShaderMaterial({
       uniforms: { tColor: { value: null }, uDir: { value: new THREE.Vector2() } },
       vertexShader: VERT,
@@ -86,16 +95,24 @@ export class Post {
         tDepth: { value: null }, uInvVP: { value: new THREE.Matrix4() }, uCam: { value: new THREE.Vector3() },
         uMist: { value: 0 }, uMistCol: { value: new THREE.Color() },
         uUnder: { value: 0 }, uUnderCol: { value: new THREE.Color() },
+        uTime: { value: 0 }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSurf: { value: 0 }, uWet: { value: 0 },
       },
       vertexShader: VERT,
       fragmentShader: `
         uniform sampler2D tColor; uniform sampler2D tRays; uniform sampler2D tBloom;
         uniform vec3 uRayCol; uniform float uBloom; uniform float uSat; uniform float uWarm;
         uniform sampler2D tDepth; uniform mat4 uInvVP; uniform vec3 uCam; uniform float uMist; uniform vec3 uMistCol;
-        uniform float uUnder; uniform vec3 uUnderCol;
+        uniform float uUnder; uniform vec3 uUnderCol; uniform float uTime; uniform vec3 uSunDir; uniform float uSurf; uniform float uWet;
+        float caust(vec2 p){
+          float a = sin(p.x * 0.9 + uTime * 0.9) + sin(p.y * 0.8 - uTime * 0.7) + sin((p.x + p.y) * 0.55 + uTime * 0.5) + sin((p.x - p.y) * 1.3 - uTime * 1.1);
+          return pow(abs(a) * 0.25, 2.5);
+        }
         varying vec2 vUv;
         void main(){
-          vec3 c = texture2D(tColor, vUv).rgb;
+          // Lentille mouillée en sortant de l'eau : l'image coule légèrement
+          vec2 uv0 = vUv;
+          if (uWet > 0.001) uv0 += vec2(sin(vUv.y * 30.0 + uTime * 3.0), cos(vUv.x * 24.0 + uTime * 2.0)) * 0.004 * uWet;
+          vec3 c = texture2D(tColor, uv0).rgb;
           // Sous l'eau : lumière bleu-vert qui s'éteint avec la distance, légère ondulation
           if (uUnder > 0.5) {
             vec2 wob = vec2(sin(vUv.y * 40.0 + uCam.x * 0.7 + uCam.z * 0.5), 0.0);
@@ -104,7 +121,21 @@ export class Post {
             wp.xyz /= wp.w;
             float dist = d >= 0.99999 ? 200.0 : length(wp.xyz - uCam);
             c = texture2D(tColor, vUv + wob * 0.0015).rgb * vec3(0.55, 0.85, 0.9);
-            c = mix(c, uUnderCol, 1.0 - exp(-dist * 0.075));
+            // Rayons lumineux qui traversent l'eau : on avance le long du regard et on cumule la lumière
+            vec3 rd = normalize(wp.xyz - uCam);
+            float L = min(dist, 28.0);
+            vec2 sxz = uSunDir.xz / max(0.25, uSunDir.y);
+            float shafts = 0.0;
+            for (int i = 0; i < 10; i++) {
+              vec3 s = uCam + rd * (L * (float(i) + 0.5) / 10.0);
+              float below = max(0.0, uSurf - s.y);
+              shafts += caust((s.xz + sxz * below) * 0.35) * exp(-below * 0.12);
+            }
+            shafts *= L / 10.0 * 0.06;
+            c = mix(c, uUnderCol, 1.0 - exp(-dist * 0.07));
+            c += uUnderCol * vec3(1.6, 2.6, 2.4) * shafts * max(0.0, uSunDir.y + 0.1);
+            // Vers la surface : fenêtre lumineuse (le ciel vu à travers l'eau)
+            c += uUnderCol * 2.0 * smoothstep(0.2, 0.9, rd.y) * exp(-max(0.0, uSurf - uCam.y) * 0.08);
           }
           // Brume de vallée : une couche basse qui remplit les creux, plus dense au loin
           if (uMist > 0.001) {
@@ -150,6 +181,7 @@ export class Post {
     const rs = this.q.rayScale;
     this.raysRT.setSize(Math.max(1, Math.round(w * rs)), Math.max(1, Math.round(h * rs)));
     this.bloomA.setSize(Math.max(1, w >> 2), Math.max(1, h >> 2));
+    this.refrRT.setSize(Math.max(1, w >> 1), Math.max(1, h >> 1));
     this.bloomB.setSize(Math.max(1, w >> 2), Math.max(1, h >> 2));
     this.w = w; this.h = h;
   }
@@ -163,8 +195,22 @@ export class Post {
   // sun : { dir: Vector3 (vers le soleil), color: Color, strength: 0..n, warm: 0..1 }
   render(scene, camera, sun) {
     const r = this.renderer;
+    // Passe 1 : tout sauf l'eau (calque 0). Copie de l'image pour la réfraction. Passe 2 : l'eau (calque 1).
+    camera.layers.set(0);
     r.setRenderTarget(this.sceneRT);
     r.render(scene, camera);
+    this.copyMat.uniforms.tColor.value = this.sceneRT.texture;
+    this.pass(this.copyMat, this.refrRT);
+    refrUniforms.tRefr.value = this.refrRT.texture;
+    refrUniforms.uRefrOn.value = 1;
+    refrUniforms.uRefrScale.value = this.refrRT.width / Math.max(1, this.sceneRT.width);
+    camera.layers.set(1);
+    const ac = r.autoClear, su = r.shadowMap.autoUpdate, bg = scene.background;
+    r.autoClear = false; r.shadowMap.autoUpdate = false;
+    r.setRenderTarget(this.sceneRT);
+    r.render(scene, camera);
+    r.autoClear = ac; r.shadowMap.autoUpdate = su;
+    camera.layers.set(0);
 
     // Position du soleil à l'écran
     const sp = this._v.copy(camera.position).addScaledVector(sun.dir, 1000).project(camera);
@@ -203,6 +249,10 @@ export class Post {
     u.uCam.value.copy(camera.position);
     u.uMist.value = this.mist === false || sun.under ? 0 : sun.mist || 0;
     u.uUnder.value = sun.under ? 1 : 0;
+    u.uTime.value = performance.now() * 0.001;
+    u.uSunDir.value.copy(sun.dir);
+    u.uSurf.value = sun.surf ?? 0;
+    u.uWet.value = sun.wet || 0;
     if (sun.under) u.uUnderCol.value.setRGB(0.03, 0.16, 0.18).multiplyScalar(0.25 + (sun.day ?? 1) * 0.9);
     if (sun.mistColor) u.uMistCol.value.copy(sun.mistColor);
     u.tColor.value = this.sceneRT.texture;

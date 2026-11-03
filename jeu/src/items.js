@@ -8,6 +8,7 @@ export const ITEMS = {
   fibre:       { name: "Fibre", icon: "🌾", desc: "Fibres végétales tirées des buissons." },
   baies:       { name: "Baies", icon: "🫐", desc: "Calment un peu la faim et la soif.", food: 7, water: 4 },
   noisettes:   { name: "Noisettes", icon: "🌰", desc: "Laissées par les écureuils. Nourrissantes.", food: 10 },
+  legumes:     { name: "Légumes", icon: "🥕", desc: "Récoltés au potager. Nourrissants et désaltérants.", food: 18, water: 8 },
   viande_crue: { name: "Viande crue", icon: "🥩", desc: "À cuire sur un feu. Crue, elle rend malade.", food: 12, health: -8 },
   viande_cuite:{ name: "Viande cuite", icon: "🍖", desc: "Très nourrissante.", food: 38, health: 6 },
   peau:        { name: "Peau", icon: "🟫", desc: "Sert à fabriquer une gourde et un abri." },

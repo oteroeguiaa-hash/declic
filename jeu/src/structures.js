@@ -190,6 +190,7 @@ export class Structures {
   }
 
   collide(pos, radius) {
+    if (this.build) this.build.collide(pos, radius);
     for (const s of this.shelters) {
       // boîte simple autour de l'abri (on peut entrer par l'avant/arrière ouvert)
       const dx = pos.x - s.pos.x, dz = pos.z - s.pos.z;
