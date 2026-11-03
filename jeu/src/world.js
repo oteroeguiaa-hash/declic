@@ -551,7 +551,7 @@ vec3 terrainShade() {
     Lay rx = smp(L_ROCK, vWPos.zy * sc), ry = smp(L_ROCK, vWPos.xz * sc), rz = smp(L_ROCK, vWPos.xy * sc);
     Lay r = Lay(rx.c * w3.x + ry.c * w3.y + rz.c * w3.z, vec2(0.0), rx.r * w3.x + ry.r * w3.y + rz.r * w3.z, rx.h * w3.x + ry.h * w3.y + rz.h * w3.z);
     // grande échelle : strates, teinte plus chaude (grès) par zones
-    r.c *= mix(vec3(1.0), vec3(1.12, 1.0, 0.85), smoothstep(0.4, 0.7, dm.g)) * (0.8 + 0.35 * dn.b) * (0.88 + 0.18 * sin(h * 1.3 + dm.b * 6.0));
+    r.c *= mix(vec3(1.0), vec3(1.12, 1.0, 0.85), smoothstep(0.4, 0.7, dm.g)) * (1.0 + 0.35 * dn.b) * (0.88 + 0.18 * sin(h * 1.3 + dm.b * 6.0));
     rockN = vec3(0.0, rx.n.y, rx.n.x) * w3.x + vec3(ry.n.x, 0.0, ry.n.y) * w3.y + vec3(rz.n.x, rz.n.y, 0.0) * w3.z;
     float k = hBlend(wR, c.h, r.h);
     c.c = mix(c.c, r.c, k); c.r = mix(c.r, r.r, k); c.h = mix(c.h, r.h, k);
@@ -569,7 +569,7 @@ vec3 terrainShade() {
   gAO = nt.b * (1.0 - 0.38 * canopy) * mix(1.0, 0.7 + 0.3 * c.h, nd);
   // Au-delà de la portée des ombres, la canopée assombrit quand même le sol (forêts lointaines denses)
   float far = smoothstep(uShadowRange * 0.75, uShadowRange, dist);
-  gFarShade = 1.0 - canopy * 0.72 * far;
+  gFarShade = 1.0 - canopy * 0.45 * far;
   return c.c;
 }`)
         .replace("#include <roughnessmap_fragment>", "float roughnessFactor = gRough;")

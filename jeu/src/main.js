@@ -1084,13 +1084,14 @@ class Game {
     if (!settings.dynres) return;
     // D'abord on allège les effets coûteux (image toujours nette), puis seulement un peu la résolution
     this.perfLevel = this.perfLevel || 0;
-    if (avg > 1 / 50 && this.perfLevel < 5) {
+    if (avg > 1 / 50 && this.perfLevel < 6) {
       this.perfLevel++;
-      if (this.perfLevel === 1) this.post.rays = false;
-      if (this.perfLevel === 2) this.refl.enabled = false;
-      if (this.perfLevel === 3) this.post.bloom = false;
-      if (this.perfLevel === 4) { this.renderer.shadowMap.enabled = false; this.scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; }); }
-      if (this.perfLevel === 5) this.grass.mesh.visible = false;
+      if (this.perfLevel === 1) this.post.ssao = false;
+      if (this.perfLevel === 2) this.post.rays = false;
+      if (this.perfLevel === 3) this.refl.enabled = false;
+      if (this.perfLevel === 4) this.post.bloom = false;
+      if (this.perfLevel === 5) { this.renderer.shadowMap.enabled = false; this.scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; }); }
+      if (this.perfLevel === 6) this.under.meshes.slice(2).forEach((m) => (m.visible = false));
       return;
     }
     const minPr = Math.max(0.85, max * 0.75);

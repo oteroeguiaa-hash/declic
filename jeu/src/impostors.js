@@ -203,6 +203,8 @@ vec3 bbN;`)
   tc.a *= 1.0 + max(0.0, log2(max(dUv.x, dUv.y))) * 0.45;
   if (tc.a < 0.5) discard;
   diffuseColor.rgb = tc.rgb / max(tc.a, 0.5);
+  float lm = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
+  diffuseColor.rgb = mix(vec3(lm), diffuseColor.rgb, 1.25) * 1.35;   // les cimes vues de loin captent plus de lumière
   float autK = 1.0 - step(2.99, vTint.r + vTint.g + vTint.b);
   float lum = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
   diffuseColor.rgb = mix(diffuseColor.rgb, lum * vTint * 2.6, autK * 0.85);

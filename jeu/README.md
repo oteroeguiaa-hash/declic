@@ -8,7 +8,7 @@ Jeu de survie en 3D dans le navigateur : une île générée au hasard, un cycle
 
 - **Île procédurale de 4 × 4 km**, entièrement présente dès le lancement, avec une carte (touche M) et une mini-carte : chaîne de montagnes enneigées d'un côté de l'île, collines, vallées, rivières, lacs, marais, falaises côtières, criques et plages. Chaque « Nouvelle île » est différente.
 - **Ciel physique** (diffusion atmosphérique), soleil et lune, étoiles, nuages, perspective aérienne (brume selon l'altitude, plus chaude vers le soleil), reflets sur l'eau, écume.
-- **Forêts denses** : des centaines de milliers d'arbres, 11 essences (chêne, vieux chêne, hêtre, bouleau, pin sylvestre, épicéa, sapin, peuplier, saule, arbre mort, jeune arbre), jeunes, adultes et anciens ; bosquets très serrés et clairières ; troncs couchés, racines, souches.
+- **Forêts denses** : près de 200 000 arbres de 11 essences (chêne, vieux chêne, hêtre, bouleau, pin sylvestre, épicéa, sapin, peuplier, saule, arbre mort, jeune arbre), jeunes, adultes et anciens ; bosquets très serrés et clairières ; troncs couchés, racines, souches.
 - **Sous-bois en couches** : herbe en vraies touffes (fleurs, herbes sèches, terre nue), couvre-sol, fougères, jeunes pousses et ronces, litière (brindilles, cailloux, pommes de pin), mousse.
 - **Survie** : santé, faim, soif, endurance, chaleur. Boire à la rivière, manger des baies, chasser, cuire la viande.
 - **Artisanat** : hache, pioche, lance, torche, gourde, feu de camp, abri (dormir, point de réapparition).

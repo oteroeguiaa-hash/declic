@@ -11,8 +11,9 @@ const tile = (c, r) => { const u0 = 0.5 + c * 0.25, v1 = 1 - r * 0.25; return [u
 export const UV = {
   bark: col(0), oakBark: col(0), beechBark: col(1), birch: col(2), pineBark: col(3),
   leaves: tile(1, 0), oakLeaves: tile(0, 0), beechLeaves: tile(1, 0), birchLeaves: tile(0, 1), willow: tile(1, 1),
-  needles: tile(0, 2), pineNeedles: tile(1, 2), fern: tile(0, 3), small: tile(1, 3),
-  white: [0.9795, 0.0205],
+  needles: tile(0, 2), pineNeedles: tile(1, 2), fern: tile(0, 3),
+  small: (() => { const t = tile(1, 3); return [t[0], t[0] + 0.25 * 0.84, t[3] - 0.25 * 0.84, t[3]]; })(),   // sans le coin du carré blanc
+  white: [(1024 + 512 + 475) / 2048, 1 - (1536 + 475) / 2048],
 };
 // cases (canvas, y vers le bas) des tuiles de feuillage
 const TILE_PX = { oakLeaves: [0, 0], beechLeaves: [1, 0], birchLeaves: [0, 1], willow: [1, 1], needles: [0, 2], pineNeedles: [1, 2], fern: [0, 3], small: [1, 3] };
@@ -226,7 +227,7 @@ export function makeAtlas(renderer, scale = 1) {
         for (const s of [-1, 1]) {
           const a = a0 + s * (0.85 + r() * 0.35);
           const gr = 70 + r() * 50;
-          gA.strokeStyle = rgb(25 + r() * 15, gr, 35 + r() * 20); gA.lineWidth = 2.6 + r();
+          gA.strokeStyle = rgb(45 + r() * 20, gr + 10, 30 + r() * 15); gA.lineWidth = 2.6 + r();
           gA.beginPath(); gA.moveTo(x, y); gA.lineTo(x + Math.cos(a) * L, y + Math.sin(a) * L); gA.stroke();
           gH.strokeStyle = gray(0.55 + r() * 0.4); gH.lineWidth = 2.6;
           gH.beginPath(); gH.moveTo(x, y); gH.lineTo(x + Math.cos(a) * L, y + Math.sin(a) * L); gH.stroke();
@@ -244,7 +245,7 @@ export function makeAtlas(renderer, scale = 1) {
     const tuft = (x, y, R, n) => {
       for (let i = 0; i < n; i++) {
         const a = -Math.PI / 2 + (r() - 0.5) * 2.6, L = R * (0.6 + r() * 0.4);
-        const c = [40 + r() * 20, 90 + r() * 40, 50 + r() * 20];
+        const c = [60 + r() * 25, 105 + r() * 40, 40 + r() * 15];
         gA.strokeStyle = rgb(...c); gA.lineWidth = 2.2;
         gA.beginPath(); gA.moveTo(x, y); gA.quadraticCurveTo(x + Math.cos(a) * L * 0.5, y + Math.sin(a) * L * 0.6 - 4, x + Math.cos(a) * L, y + Math.sin(a) * L); gA.stroke();
         gH.strokeStyle = gray(0.5 + r() * 0.45); gH.lineWidth = 2.2;
@@ -274,12 +275,11 @@ export function makeAtlas(renderer, scale = 1) {
   // Petites feuilles (arbustes, couvre-sol) + carré blanc pour les petits objets pleins (baies…)
   inTile("small", () => {
     for (let i = 0; i < 160; i++) {
-      const a = r() * 6.283, d = Math.sqrt(r()) * 200, x = 256 + Math.cos(a) * d, y = 260 + Math.sin(a) * d * 0.95;
-      if (x > 420 && y > 420) continue;
+      const a = r() * 6.283, d = Math.sqrt(r()) * 165, x = 215 + Math.cos(a) * d, y = 215 + Math.sin(a) * d;
       leaf(x, y, r() * 6.283, 22 + r() * 12, 10 + r() * 4, SH.oval, [[70, 110, 36], [86, 124, 42], [60, 96, 30]][(r() * 3) | 0], 0.75 + r() * 0.4);
     }
-    gA.fillStyle = "#ffffff"; gA.fillRect(436, 436, 64, 64);
-    gH.fillStyle = gray(0.5); gH.fillRect(436, 436, 64, 64);
+    gA.fillStyle = "#ffffff"; gA.fillRect(446, 446, 58, 58);
+    gH.fillStyle = gray(0.5); gH.fillRect(446, 446, 58, 58);
   });
 
   // Normal map dérivée du relief dessiné
@@ -422,17 +422,17 @@ const perp = (d, rand) => { const t = Math.abs(d.y) < 0.95 ? V(0, 1, 0) : V(1, 0
 // bark : colonne d'écorce, barkTint, leaf : tuile de feuillage, leafSize : taille d'une carte (m),
 // stiff : raideur au vent (plus grand = moins de balancement)
 export const SPECIES = {
-  oak:     { bark: "oakBark", barkTint: 0xd8ccbc, leaf: "oakLeaves", leafTint: 0xb0c080, leafSize: 2.3, stiff: 1.2 },
-  beech:   { bark: "beechBark", barkTint: 0xe4e4dc, leaf: "beechLeaves", leafTint: 0xc0d690, leafSize: 2.2, stiff: 1.0 },
-  birch:   { bark: "birch", barkTint: 0xffffff, leaf: "birchLeaves", leafTint: 0xd0e098, leafSize: 1.5, stiff: 0.6 },
-  scots:   { bark: "pineBark", barkTint: 0xffffff, leaf: "pineNeedles", leafTint: 0xb0c890, leafSize: 2.4, stiff: 1.4 },
-  pine:    { bark: "pineBark", barkTint: 0x9a8c80, leaf: "needles", leafTint: 0x88a878, leafSize: 1.9, stiff: 1.6 },   // épicéa
-  fir:     { bark: "beechBark", barkTint: 0x9a968c, leaf: "needles", leafTint: 0x9ab888, leafSize: 1.9, stiff: 1.7 },  // sapin
-  poplar:  { bark: "oakBark", barkTint: 0xb8b4a8, leaf: "birchLeaves", leafTint: 0xc8d890, leafSize: 1.7, stiff: 0.8 },
-  willow:  { bark: "oakBark", barkTint: 0xc0b49c, leaf: "willow", leafTint: 0xc8d498, leafSize: 2.6, stiff: 0.5 },
-  ancient: { bark: "oakBark", barkTint: 0xc8bcac, leaf: "oakLeaves", leafTint: 0xa0b474, leafSize: 2.6, stiff: 1.5 },
+  oak:     { bark: "oakBark", barkTint: 0xd8ccbc, leaf: "oakLeaves", leafTint: 0xd8e4a8, leafSize: 2.3, stiff: 1.2 },
+  beech:   { bark: "beechBark", barkTint: 0xe4e4dc, leaf: "beechLeaves", leafTint: 0xe4f0b0, leafSize: 2.2, stiff: 1.0 },
+  birch:   { bark: "birch", barkTint: 0xffffff, leaf: "birchLeaves", leafTint: 0xecf4b8, leafSize: 1.5, stiff: 0.6 },
+  scots:   { bark: "pineBark", barkTint: 0xffffff, leaf: "pineNeedles", leafTint: 0xd0e0a4, leafSize: 2.4, stiff: 1.4 },
+  pine:    { bark: "pineBark", barkTint: 0x9a8c80, leaf: "needles", leafTint: 0xb4cc98, leafSize: 1.9, stiff: 1.6 },   // épicéa
+  fir:     { bark: "beechBark", barkTint: 0x9a968c, leaf: "needles", leafTint: 0xc0d8a4, leafSize: 1.9, stiff: 1.7 },  // sapin
+  poplar:  { bark: "oakBark", barkTint: 0xb8b4a8, leaf: "birchLeaves", leafTint: 0xe8f0b4, leafSize: 1.7, stiff: 0.8 },
+  willow:  { bark: "oakBark", barkTint: 0xc0b49c, leaf: "willow", leafTint: 0xe4ecb4, leafSize: 2.6, stiff: 0.5 },
+  ancient: { bark: "oakBark", barkTint: 0xc8bcac, leaf: "oakLeaves", leafTint: 0xd0dca0, leafSize: 2.6, stiff: 1.5 },
   dead:    { bark: "oakBark", barkTint: 0xa8a49c, leaf: null, stiff: 2.0 },
-  young:   { bark: "beechBark", barkTint: 0xc8c0b0, leaf: "beechLeaves", leafTint: 0xc8dc98, leafSize: 1.4, stiff: 0.7 },
+  young:   { bark: "beechBark", barkTint: 0xc8c0b0, leaf: "beechLeaves", leafTint: 0xe8f4b8, leafSize: 1.4, stiff: 0.7 },
 };
 
 // Squelette : liste de branches (points, rayons, niveau) et de points d'attache des feuilles.
@@ -927,10 +927,6 @@ export function makeLitter(seed = 91) {
     const p0 = V(x, 0.02, z), p1 = p0.clone().addScaledVector(d, L);
     b.tube([p0, p0.clone().lerp(p1, 0.5).add(V(0, 0.03, 0)), p1], [0.018, 0.013, 0.006], 3, UV.oakBark, tint(0x8a7058), 0.3);
     if (rand() < 0.5) { const q = p0.clone().lerp(p1, 0.4); b.tube([q, q.clone().add(V(Math.sin(a) * 0.2, 0.05, -Math.cos(a) * 0.2))], [0.01, 0.004], 3, UV.oakBark, tint(0x8a7058), 0.3); }
-  }
-  for (let i = 0; i < 4; i++) {
-    const g = 0.45 + rand() * 0.3;
-    b.blob(V((rand() - 0.5) * 1.8, 0.0, (rand() - 0.5) * 1.8), 0.04 + rand() * 0.07, new THREE.Color(g, g * 0.97, g * 0.92).multiplyScalar(0.5));
   }
   for (let i = 0; i < 2; i++) b.blob(V((rand() - 0.5) * 1.5, 0.03, (rand() - 0.5) * 1.5), 0.035, tint(0x5a3a20));
   return b.build();

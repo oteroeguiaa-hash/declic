@@ -164,7 +164,7 @@ const LAYERS = [
   (S, gA, gH, r) => {
     fillNoise(S, gA, gH, [70, 52, 34], [104, 82, 56], 51, 6, 0.4, 0.15);
     for (let i = 0; i < 700; i++) {
-      const x = r() * S, y = r() * S, R = 1.5 + r() * r() * 9, v = 90 + r() * 70;
+      const x = r() * S, y = r() * S, R = 1.5 + r() * r() * 9, v = 70 + r() * 45;
       wrap(S, x, y, R, (X, Y) => {
         gA.fillStyle = rgb(v, v * 0.95, v * 0.88); gA.beginPath(); gA.ellipse(X, Y, R, R * (0.6 + r() * 0.4), r() * 3, 0, 7); gA.fill();
         const gr = gH.createRadialGradient(X, Y, 0, X, Y, R); gr.addColorStop(0, gray(1)); gr.addColorStop(1, gray(0.45));

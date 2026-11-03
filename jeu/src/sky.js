@@ -7,7 +7,7 @@ import { vegUniforms } from "./trees.js";
 const C = (r, g, b) => new THREE.Color(r, g, b);
 const FOG_NIGHT = C(0.018, 0.026, 0.05);
 const FOG_DUSK = C(0.62, 0.42, 0.32);
-const FOG_DAY = C(0.60, 0.74, 0.92);   // perspective aérienne bleutée (pas de voile gris)
+const FOG_DAY = C(0.55, 0.70, 0.93);   // perspective aérienne bleutée (pas de voile gris)
 const SUN_LOW = C(1.0, 0.55, 0.3);
 const SUN_HIGH = C(1.0, 0.96, 0.9);
 const MOON = C(0.55, 0.65, 0.95);
@@ -37,7 +37,7 @@ export class Environment {
       // Journée : bleu plus profond vers le zénith, horizon clair mais pas laiteux
       retColor = mix(retColor, retColor * vec3(0.62, 0.86, 1.32), uDay * smoothstep(-0.02, 0.45, direction.y));
       // Horizon : se fond dans la brume de la perspective aérienne (pas de bande entre ciel et relief lointain)
-      retColor = mix(retColor, uHaze, (1.0 - smoothstep(-0.02, 0.16, direction.y)) * 0.75 * uDay);
+      retColor = mix(retColor, uHaze, (1.0 - smoothstep(-0.02, 0.1, direction.y)) * 0.55 * uDay);
       gl_FragColor = vec4( mix(nightSky, retColor, uDay), 1.0 );`);
     this.sky.material.needsUpdate = true;
     scene.add(this.sky);
@@ -199,7 +199,7 @@ export class Environment {
     vegUniforms.uSunCol.value.copy(this.sun.color).multiplyScalar(this.sun.intensity * 0.3);
 
     // Lumière du ciel bleutée dans les ombres, rebond chaud du sol
-    this.hemi.intensity = 0.12 + 0.5 * dayK;
+    this.hemi.intensity = 0.14 + 0.62 * dayK;
     this.hemi.color.setRGB(0.25 + 0.38 * dayK, 0.32 + 0.5 * dayK, 0.55 + 0.45 * dayK);
     this.hemi.groundColor.setRGB(0.06 + 0.24 * dayK, 0.06 + 0.2 * dayK, 0.08 + 0.12 * dayK);
 
@@ -208,7 +208,7 @@ export class Environment {
     u.uHaze.value.copy(fc).multiplyScalar(1.05);
     // lumière diffusée vers le soleil (halo chaud dans la brume)
     this.fog.sun.copy(fc).lerp(this.sunInfo.color, 0.55 * sunK).multiplyScalar(1 + 0.6 * sunK);
-    this.fog.dens = (1.6e-4 + 1.2e-4 * duskK + 0.8e-4 * (1 - dayK)) * (this.fogScale ?? 1);
+    this.fog.dens = (1.15e-4 + 1.2e-4 * duskK + 0.8e-4 * (1 - dayK)) * (this.fogScale ?? 1);
     this.renderer.toneMappingExposure = 0.62 + (1 - dayK) * 0.14;
 
     this.starMat.opacity = 1 - smoothstep(-0.2, 0.02, sunY);
@@ -244,7 +244,7 @@ export class Environment {
       const old = this.envRT;
       this.envRT = this.pmrem.fromScene(this.envScene, 0, 0.1, 1000);
       this.scene.environment = this.envRT.texture;
-      this.scene.environmentIntensity = 0.55;
+      this.scene.environmentIntensity = 0.7;
       if (old) old.dispose();
     }
   }
