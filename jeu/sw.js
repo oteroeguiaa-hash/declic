@@ -1,10 +1,10 @@
 /* Lisière : service worker. Tout le jeu est mis en cache pour jouer hors connexion. */
-const VERSION = "lisiere-v1";
+const VERSION = "lisiere-v2";
 const FILES = [
   "./", "./index.html", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png",
   "./vendor/three.module.min.js", "./vendor/addons/Sky.js", "./vendor/addons/BufferGeometryUtils.js",
   "./src/main.js", "./src/world.js", "./src/noise.js", "./src/sky.js", "./src/props.js", "./src/creatures.js",
-  "./src/structures.js", "./src/player.js", "./src/input.js", "./src/audio.js", "./src/ui.js", "./src/items.js",
+  "./src/structures.js", "./src/player.js", "./src/input.js", "./src/audio.js", "./src/ui.js", "./src/items.js", "./src/trees.js", "./src/post.js",
 ];
 
 self.addEventListener("install", (e) => {

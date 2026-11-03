@@ -168,7 +168,7 @@ vec3 terrainColor(){
   vec3 rock = srgb(vec3(0.46,0.44,0.41)) * (0.55 + 0.7 * d1.r * (0.6 + 0.4 * d2.g));
   vec3 snow = srgb(vec3(0.93,0.95,0.98)) * (0.92 + 0.08 * d1.g);
   vec3 c = grass;
-  c = mix(c, dirt, smoothstep(0.58, 0.72, d2.b * 0.8 + d1.r * 0.25 + d3.r * 0.2));
+  c = mix(c, dirt, smoothstep(0.68, 0.8, d2.b * 0.8 + d1.r * 0.25 + d3.r * 0.2));
   float beach = 1.0 - smoothstep(1.4, 3.0 + d2.g * 1.6, h);
   c = mix(c, sand, beach);
   c = mix(c, sand * 0.55, 1.0 - smoothstep(-0.3, 0.5, h));
@@ -189,7 +189,7 @@ vec3 terrainColor(){
   buildWater(waterNormalTex) {
     const geo = new THREE.PlaneGeometry(9000, 9000, 1, 1);
     geo.rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x1b4d5c, roughness: 0.06, metalness: 0.0, transparent: true, depthWrite: false });
+    const mat = new THREE.MeshStandardMaterial({ color: 0x1b4d5c, roughness: 0.06, metalness: 0.0, transparent: true, depthWrite: true });
     const uniforms = { uTime: { value: 0 } };
     this.waterUniforms = uniforms;
     mat.onBeforeCompile = (sh) => {

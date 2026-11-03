@@ -2,6 +2,7 @@
 import * as THREE from "three";
 import { Sky } from "../vendor/addons/Sky.js";
 import { smoothstep, clamp, mulberry32 } from "./noise.js";
+import { vegUniforms } from "./trees.js";
 
 const C = (r, g, b) => new THREE.Color(r, g, b);
 const FOG_NIGHT = C(0.018, 0.026, 0.05);
@@ -170,6 +171,14 @@ export class Environment {
       this.sun.color.copy(MOON);
       this.sun.intensity = 0.45 * (1 - smoothstep(-0.12, -0.02, sunY));
     }
+
+    // Infos pour les rayons de soleil et la translucidité des feuilles
+    this.sunInfo = this.sunInfo || { dir: this.sunDir, color: new THREE.Color(), strength: 0, warm: 0 };
+    this.sunInfo.color.copy(SUN_LOW).lerp(SUN_HIGH, smoothstep(0.05, 0.5, sunY));
+    this.sunInfo.strength = sunK * (0.35 + duskK * 1.0);
+    this.sunInfo.warm = duskK;
+    vegUniforms.uSunDir.value.copy(this.lightDir);
+    vegUniforms.uSunCol.value.copy(this.sun.color).multiplyScalar(this.sun.intensity * 0.32);
 
     this.hemi.intensity = 0.12 + 0.55 * dayK;
     this.hemi.color.setRGB(0.25 + 0.5 * dayK, 0.32 + 0.52 * dayK, 0.55 + 0.45 * dayK);

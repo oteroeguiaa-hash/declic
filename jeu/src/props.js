@@ -3,6 +3,7 @@
 import * as THREE from "three";
 import { mergeGeometries, mergeVertices } from "../vendor/addons/BufferGeometryUtils.js";
 import { mulberry32, fbm, smoothstep, createNoise2D } from "./noise.js";
+import { makeAtlas, makeBroadleaf, makeConifer, makeLeafBush, makeVegetationMaterial, vegUniforms } from "./trees.js";
 
 // ---------- Fabrication des modèles ----------
 
@@ -53,73 +54,6 @@ function finish(parts, smooth = true) {
 
 const lin = (hex) => new THREE.Color(hex);
 
-function trunk(h, r0, r1, seg, colorA, colorB, marks = false) {
-  const g = prep(new THREE.CylinderGeometry(r1, r0, h, seg, 3, true));
-  g.translate(0, h / 2, 0);
-  const a = lin(colorA), b = lin(colorB);
-  return paint(g, (x, y, z, c) => {
-    c.copy(a).lerp(b, hash3(x * 3, y * 7, z * 3) * 0.6);
-    if (marks && hash3(Math.floor(y * 4), Math.atan2(z, x) > 0 ? 1 : 0, 3) > 0.7) c.multiplyScalar(0.25);
-    c.multiplyScalar(0.7 + 0.3 * Math.min(1, y / 1.5));
-  });
-}
-
-function foliageBlob(r, detail, cx, cy, cz, colA, colB, yMin, yMax) {
-  const g = prep(new THREE.IcosahedronGeometry(r, detail));
-  displace(g, r * 0.45, 2.3);
-  g.translate(cx, cy, cz);
-  const a = lin(colA), b = lin(colB);
-  return paint(g, (x, y, z, c) => {
-    const t = Math.min(1, Math.max(0, (y - yMin) / (yMax - yMin)));
-    c.copy(a).lerp(b, hash3(x * 2, y * 2, z * 2) * 0.7);
-    c.multiplyScalar(0.42 + 0.68 * t);
-  });
-}
-
-function makePine(lod) {
-  const parts = [];
-  parts.push(trunk(lod ? 3.2 : 4.2, 0.28, 0.12, lod ? 5 : 7, 0x4a3426, 0x2e2018));
-  const layers = lod ? 2 : 5;
-  const top = 9.5;
-  for (let i = 0; i < layers; i++) {
-    const t = i / layers;
-    const r = 2.6 * (1 - t * 0.78);
-    const h = lod ? 5.5 : 3.0 - t * 0.9;
-    const y = 2.2 + t * (top - 3.0);
-    const cone = prep(new THREE.ConeGeometry(r, h, lod ? 6 : 9, 2, true));
-    if (!lod) displace(cone, 0.45, 1.7);
-    cone.translate(0, y + h / 2, 0);
-    paint(cone, (x, yy, z, c) => {
-      const rr = Math.hypot(x, z) / r;
-      c.set(0x1f3a1f).lerp(lin(0x35532a), hash3(x * 2, yy * 2, z * 2) * 0.5);
-      c.multiplyScalar(0.45 + 0.4 * ((yy - 2) / (top + 1)) + 0.25 * rr);
-    });
-    parts.push(cone);
-    if (lod) break;
-  }
-  return finish(parts, true);
-}
-
-function makeOak(lod) {
-  const parts = [trunk(3.0, 0.38, 0.24, lod ? 5 : 8, 0x5a4532, 0x3a2c20)];
-  if (!lod) {
-    const br = prep(new THREE.CylinderGeometry(0.1, 0.17, 2.2, 5, 1, true));
-    br.translate(0, 1.1, 0); br.rotateZ(0.8); br.translate(0.2, 2.6, 0);
-    parts.push(paint(br, (x, y, z, c) => c.set(0x4a3828)));
-    const br2 = br.clone(); br2.rotateY(2.4); parts.push(br2);
-  }
-  const blobs = lod ? [[0, 5.0, 0, 3.2]] : [[0, 5.4, 0, 2.4], [1.6, 4.6, 0.6, 1.8], [-1.4, 4.8, -0.8, 1.9], [0.4, 4.3, -1.6, 1.7], [-0.5, 6.3, 0.9, 1.6], [0.9, 5.9, -0.7, 1.5]];
-  for (const [x, y, z, r] of blobs) parts.push(foliageBlob(r, lod ? 0 : 1, x, y, z, 0x2f4d1c, 0x4f6b26, 2.8, 7.5));
-  return finish(parts, true);
-}
-
-function makeBirch(lod) {
-  const parts = [trunk(5.0, 0.18, 0.1, lod ? 5 : 7, 0xd9d4c8, 0xb7b1a5, !lod)];
-  const blobs = lod ? [[0, 5.6, 0, 2.1]] : [[0, 6.0, 0, 1.6], [0.9, 5.2, 0.4, 1.3], [-0.8, 5.4, -0.5, 1.3], [0.2, 4.6, -0.9, 1.1], [-0.2, 7.0, 0.3, 1.0]];
-  for (const [x, y, z, r] of blobs) parts.push(foliageBlob(r, lod ? 0 : 1, x, y, z, 0x4b6b25, 0x7a8f34, 3.8, 7.6));
-  return finish(parts, true);
-}
-
 function makeRock(lod, seed) {
   const g = prep(new THREE.IcosahedronGeometry(1, lod ? 0 : 1));
   const p = g.attributes.position;
@@ -136,22 +70,6 @@ function makeRock(lod, seed) {
     c.multiplyScalar(0.6 + 0.4 * Math.min(1, (y + 0.2) / 0.8));
   });
   return finish([g], false);
-}
-
-function makeBush(withBerries) {
-  const parts = [];
-  const blobs = [[0, 0.55, 0, 0.75], [0.55, 0.45, 0.2, 0.55], [-0.5, 0.45, -0.25, 0.55], [0.1, 0.4, -0.55, 0.5]];
-  for (const [x, y, z, r] of blobs) parts.push(foliageBlob(r, 1, x, y, z, 0x264117, 0x3d5a22, 0, 1.3));
-  if (withBerries) {
-    const rand = mulberry32(5);
-    for (let i = 0; i < 16; i++) {
-      const b = prep(new THREE.IcosahedronGeometry(0.075, 0));
-      const a = rand() * Math.PI * 2, e = rand() * 0.9 + 0.1;
-      b.translate(Math.cos(a) * 0.75 * Math.cos(e), 0.35 + Math.sin(e) * 0.7, Math.sin(a) * 0.75 * Math.cos(e));
-      parts.push(paint(b, (x, y, z, c) => c.set(0xb0122a)));
-    }
-  }
-  return finish(parts, true);
 }
 
 function makeStick() {
@@ -187,7 +105,7 @@ export const PROP_TYPES = {
 const CELL = 16;
 
 export class Props {
-  constructor(scene, world, quality, seed) {
+  constructor(scene, world, quality, seed, renderer) {
     this.scene = scene;
     this.world = world;
     this.quality = quality;
@@ -197,7 +115,7 @@ export class Props {
     for (const k in PROP_TYPES) this.byType[k] = [];
     this.uniforms = { uTime: { value: 0 } };
     this.generate(seed);
-    this.buildMeshes();
+    this.buildMeshes(renderer);
     this.lastBuild = new THREE.Vector3(1e9, 0, 1e9);
     this.dirty = true;
     this.falling = [];
@@ -288,31 +206,22 @@ export class Props {
     }
   }
 
-  buildMeshes() {
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0 });
-    mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uTime = this.uniforms.uTime;
-      sh.vertexShader = sh.vertexShader
-        .replace("#include <common>", "#include <common>\nuniform float uTime;")
-        .replace("#include <begin_vertex>", `#include <begin_vertex>
-#ifdef USE_INSTANCING
-  float hgt = max(0.0, position.y - 1.8);
-  vec3 ip = vec3(instanceMatrix[3]);
-  float w = sin(uTime * 1.3 + ip.x * 0.13 + ip.z * 0.07) + 0.5 * sin(uTime * 2.7 + ip.z * 0.3);
-  transformed.x += w * 0.035 * hgt;
-  transformed.z += cos(uTime * 1.1 + ip.z * 0.11) * 0.025 * hgt;
-#endif`);
-    };
+  buildMeshes(renderer) {
+    const atlas = makeAtlas(renderer);
+    const mat = makeVegetationMaterial(atlas);
+    const depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: atlas, alphaTest: 0.42, side: THREE.DoubleSide });
+    this.depthMat = depthMat;
+    const plain = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 });
     const rockMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, flatShading: true });
     this.materials = { tree: mat, rock: rockMat };
 
     const geos = {
-      pine: [makePine(false), makePine(true)],
-      oak: [makeOak(false), makeOak(true)],
-      birch: [makeBirch(false), makeBirch(true)],
+      pine: [makeConifer(false, 11), makeConifer(true, 11)],
+      oak: [makeBroadleaf(false, 21), makeBroadleaf(true, 21)],
+      birch: [makeBroadleaf(false, 31, true), makeBroadleaf(true, 31, true)],
       rock: [makeRock(false, 1), makeRock(true, 1)],
-      bush: [makeBush(true)],
-      bushEmpty: [makeBush(false)],
+      bush: [makeLeafBush(true)],
+      bushEmpty: [makeLeafBush(false)],
       stick: [makeStick()],
       flint: [makeFlint()],
     };
@@ -321,9 +230,11 @@ export class Props {
     for (const key in geos) {
       const baseType = key === "bushEmpty" ? "bush" : key;
       const cap = this.byType[baseType].length + 4;
-      const m = PROP_TYPES[baseType].kind === "rock" ? rockMat : mat;
+      const kind = PROP_TYPES[baseType].kind;
+      const m = kind === "rock" ? rockMat : kind === "pickup" ? plain : mat;
       const arr = geos[key].map((g, lod) => {
         const im = new THREE.InstancedMesh(g, m, cap);
+        if (m === mat) im.customDepthMaterial = depthMat;
         im.count = 0;
         im.frustumCulled = false;
         im.castShadow = lod === 0 && PROP_TYPES[baseType].kind !== "pickup";
@@ -384,7 +295,7 @@ export class Props {
   }
 
   update(dt, cam, gameHours) {
-    this.uniforms.uTime.value += dt;
+    vegUniforms.uTime.value += dt;
     if (this.dirty || (cam.x - this.lastBuild.x) ** 2 + (cam.z - this.lastBuild.z) ** 2 > 36) this.rebuild(cam);
 
     // Petites secousses quand on frappe un arbre/rocher
@@ -483,6 +394,7 @@ export class Props {
       const m4 = new THREE.Matrix4().fromArray(this.matrices, id * 16);
       m4.decompose(mesh.position, mesh.quaternion, mesh.scale);
       mesh.castShadow = true;
+      mesh.customDepthMaterial = this.depthMat;
       this.scene.add(mesh);
       const away = new THREE.Vector3(fall.x, 0, fall.z).normalize();
       const axis = new THREE.Vector3(away.z, 0, -away.x).normalize();
@@ -549,7 +461,7 @@ export class Grass {
     const count = quality.grassCount;
     const R = quality.grassRadius;
     const blade = new THREE.BufferGeometry();
-    const w = 0.032, h = 1;
+    const w = 0.038, h = 1;
     blade.setAttribute("position", new THREE.BufferAttribute(new Float32Array([
       -w, 0, 0, w, 0, 0, -w * 0.75, h * 0.4, 0, w * 0.75, h * 0.4, 0, -w * 0.4, h * 0.75, 0, w * 0.4, h * 0.75, 0, 0, h, 0,
     ]), 3));
@@ -577,13 +489,13 @@ export class Grass {
       tHeight: { value: world.heightTex },
       uHM: { value: world.hmTransform },
     };
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, side: THREE.DoubleSide });
+    const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
     mat.onBeforeCompile = (sh) => {
-      Object.assign(sh.uniforms, this.uniforms);
+      Object.assign(sh.uniforms, this.uniforms, { uSunDir: vegUniforms.uSunDir, uSunCol: vegUniforms.uSunCol });
       sh.vertexShader = sh.vertexShader
         .replace("#include <common>", `#include <common>
 uniform float uTime; uniform vec2 uCam; uniform float uR; uniform sampler2D tHeight; uniform vec2 uHM;
-attribute vec4 aOff; varying float vT; varying float vVar;`)
+attribute vec4 aOff; varying float vT; varying float vVar; varying vec3 vGW;`)
         .replace("#include <begin_vertex>", `
   vec2 wxz = uCam + mod(aOff.xy - uCam + uR, 2.0 * uR) - uR;
   vec2 hg = texture2D(tHeight, wxz * uHM.x + uHM.y).rg;
@@ -602,15 +514,22 @@ attribute vec4 aOff; varying float vT; varying float vVar;`)
   p.x += bend * 0.8; p.z += bend * 0.4;
   vec3 transformed = vec3(wxz.x, hg.r - 0.02, wxz.y) + p;
   vT = position.y;
-  vVar = fract(sin(dot(floor(wxz * 0.35), vec2(39.3, 11.7))) * 9137.1);`);
+  vVar = fract(sin(dot(floor(wxz * 0.35), vec2(39.3, 11.7))) * 9137.1);
+  vGW = transformed;`);
       sh.fragmentShader = sh.fragmentShader
-        .replace("#include <common>", "#include <common>\nvarying float vT; varying float vVar;")
+        .replace("#include <common>", "#include <common>\nvarying float vT; varying float vVar; varying vec3 vGW; uniform vec3 uSunDir; uniform vec3 uSunCol;")
+        .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+  vec3 toCamG = normalize(cameraPosition - vGW);
+  float backG = pow(max(dot(-toCamG, uSunDir), 0.0), 3.0);
+  totalEmissiveRadiance += diffuseColor.rgb * uSunCol * backG * vT * vT * 1.4;`)
         .replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n  normal = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);")
         .replace("#include <color_fragment>", `#include <color_fragment>
-  vec3 base = pow(vec3(0.13, 0.22, 0.06), vec3(2.2));
-  vec3 tipA = pow(vec3(0.42, 0.52, 0.18), vec3(2.2));
-  vec3 tipB = pow(vec3(0.55, 0.53, 0.24), vec3(2.2));
-  diffuseColor.rgb = mix(base, mix(tipA, tipB, vVar), vT);`);
+  vec3 base = pow(vec3(0.10, 0.17, 0.05), vec3(2.2));
+  vec3 tipA = pow(vec3(0.40, 0.55, 0.17), vec3(2.2));
+  vec3 tipB = pow(vec3(0.58, 0.56, 0.26), vec3(2.2));
+  vec3 tipC = pow(vec3(0.30, 0.46, 0.14), vec3(2.2));
+  vec3 tip = vVar < 0.33 ? tipA : vVar < 0.66 ? tipC : mix(tipA, tipB, 0.6);
+  diffuseColor.rgb = mix(base, tip, smoothstep(0.0, 0.9, vT));`);
     };
     this.mesh = new THREE.Mesh(geo, mat);
     this.mesh.frustumCulled = false;
