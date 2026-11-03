@@ -136,7 +136,8 @@ export class World {
           h1 = Math.max(h1, lerp(h1, W + 0.15, lev * (1 - core * 0.999)));
           h = lerp(h, h1, zone);
           stream = core * zone;
-          if (zone > 0.4 && dist < half + 3.6) {
+          // eau partout où le lit est creusé, mais jamais « suspendue » au-dessus d'un sol plus bas que le lit
+          if (zone > 0.02 && dist < half + 3.6 && W - h < 0.45 + 1.6 * core) {
             water = W;
             // là où il y a de l'eau, la berge est toujours assez haute pour la contenir
             if (core < 0.5) h = Math.max(h, W + 0.15 * (1 - core * 2));
@@ -163,16 +164,19 @@ export class World {
           const core = (1 - smoothstep(half - 2, half + 3, dist)) * rz;
           const t = Math.min(1, dist / (half + 3));
           hr = lerp(hr, Wr - 0.4 - 2.6 * (1 - t * t), core);                 // lit profond au milieu
-          if (valley > 0.02) { stream *= 1 - valley; water = -1e3; } // pas de ruisseau dans la vallée d'une rivière
+          if (valley > 0.02) { stream *= 1 - valley; if (valley > 0.25) water = -1e3; } // pas de ruisseau dans la vallée d'une rivière
           h = hr;
           stream = Math.max(stream, core);
-          if (rz > 0.9 && dist < half + 10) {
+          // eau seulement là où le sol n'est pas bien plus bas que le lit attendu (sinon elle flotterait)
+          if (rz > 0.02 && dist < half + 10 && Wr - hr < 0.6 + 3.2 * core) {
             water = Wr;
             if (core < 0.5) h = Math.max(h, Wr + 0.2 * (1 - core * 2));
           }
         }
       }
     }
+    // Garde-fou : jamais d'eau suspendue au-dessus d'un sol plus bas que le lit (effet « mur d'eau »)
+    if (water > -100 && water - h > 0.6 + 3.2 * stream) water = -1e3;
     out.h = h; out.stream = stream; out.water = water;
     return out;
   }
