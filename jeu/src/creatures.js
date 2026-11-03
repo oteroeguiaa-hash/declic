@@ -1,179 +1,8 @@
 // Faune d'une forêt européenne : proies, prédateurs et animaux qui défendent leur territoire.
 // Les modèles sont construits avec des formes arrondies (ellipsoïdes, capsules) fusionnées par partie du corps.
 import * as THREE from "three";
-import { mergeGeometries } from "../vendor/addons/BufferGeometryUtils.js";
 import { mulberry32 } from "./noise.js";
-
-const MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 });
-const EYE = new THREE.MeshStandardMaterial({ color: 0x0a0806, roughness: 0.3 });
-
-// ---------- Géométries de base ----------
-const SPHERE = new THREE.SphereGeometry(1, 14, 10);
-const SPHERE_LO = new THREE.SphereGeometry(1, 8, 6);
-
-function colored(geo, hex, shade = true) {
-  const g = geo.index ? geo.toNonIndexed() : geo.clone();
-  g.deleteAttribute("uv");
-  const c = new THREE.Color(hex);
-  const p = g.attributes.position;
-  g.computeBoundingBox();
-  const minY = g.boundingBox.min.y, maxY = g.boundingBox.max.y;
-  const col = new Float32Array(p.count * 3);
-  for (let i = 0; i < p.count; i++) {
-    // légère occlusion : plus sombre vers le bas
-    const k = shade ? 0.78 + 0.22 * ((p.getY(i) - minY) / Math.max(1e-4, maxY - minY)) : 1;
-    col[i * 3] = c.r * k; col[i * 3 + 1] = c.g * k; col[i * 3 + 2] = c.b * k;
-  }
-  g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  return g;
-}
-
-// Ellipsoïde (rx, ry, rz) au point (x, y, z), avec rotation optionnelle autour de X puis Y.
-function ell(rx, ry, rz, hex, x = 0, y = 0, z = 0, rotX = 0, rotY = 0, lo = false) {
-  const g = (lo ? SPHERE_LO : SPHERE).clone();
-  g.scale(rx, ry, rz);
-  if (rotX) g.rotateX(rotX);
-  if (rotY) g.rotateY(rotY);
-  g.translate(x, y, z);
-  return colored(g, hex);
-}
-
-// Capsule entre deux points.
-function limb(a, b, r0, r1, hex) {
-  const len = Math.max(1e-3, a.distanceTo(b));
-  const g = new THREE.CylinderGeometry(r1, r0, len, 8, 1);
-  const cap0 = new THREE.SphereGeometry(r0, 8, 6), cap1 = new THREE.SphereGeometry(r1, 8, 6);
-  cap0.translate(0, -len / 2, 0); cap1.translate(0, len / 2, 0);
-  const parts = [g, cap0, cap1].map((x) => colored(x, hex, false));
-  const m = mergeGeometries(parts);
-  const dir = b.clone().sub(a).normalize();
-  m.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
-  m.translate((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
-  return m;
-}
-
-const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
-
-function mesh(parts) {
-  const m = new THREE.Mesh(mergeGeometries(parts.filter(Boolean)), MAT);
-  m.castShadow = true;
-  return m;
-}
-
-// ---------- Constructeur générique de quadrupède ----------
-function buildAnimal(s) {
-  const rand = mulberry32(s.seed || 1);
-  const g = new THREE.Group();
-  const body = new THREE.Group();
-  const height = s.legLen + s.bodyR * 0.85;
-  body.position.y = height;
-  g.add(body);
-  const L = s.bodyLen, R = s.bodyR, W = s.bodyW;
-
-  // Tronc
-  const torso = [
-    ell(W / 2, R, L * 0.36, s.col, 0, 0, 0),
-    ell(W / 2 * 1.05, R * 1.05, L * 0.24, s.col, 0, R * 0.05, L * 0.24),
-    ell(W / 2 * 0.95, R * 0.95, L * 0.22, s.col, 0, 0, -L * 0.26),
-    ell(W / 2 * 0.75, R * 0.45, L * 0.32, s.belly, 0, -R * 0.55, 0),
-  ];
-  if (s.hump) torso.push(ell(W * 0.42, R * 0.55, L * 0.2, s.col, 0, R * 0.65, L * 0.22));
-  if (s.mane) torso.push(ell(W * 0.12, R * 0.35, L * 0.38, s.dark, 0, R * 0.85, L * 0.05));
-  if (s.spots) for (let i = 0; i < 18; i++) {
-    const a = rand() * Math.PI * 2, zz = (rand() - 0.5) * L * 0.65;
-    torso.push(ell(R * 0.09, R * 0.09, R * 0.12, s.dark, Math.cos(a) * W * 0.49, Math.sin(a) * R * 0.95, zz, 0, 0, true));
-  }
-  body.add(mesh(torso));
-
-  // Pattes
-  const legs = [];
-  const legTop = -R * 0.45;
-  const Lr = height + legTop; // longueur depuis le pivot jusqu'au sol
-  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
-    const pivot = new THREE.Group();
-    pivot.position.set(sx * W * 0.3, legTop, sz * L * 0.32);
-    const front = sz > 0;
-    const knee = V3(0, -Lr * 0.5, front ? 0.02 : -Lr * 0.08);
-    const parts = [
-      ell(s.legR * 1.6, Lr * 0.28, s.legR * 1.9, s.col, 0, -Lr * 0.18, 0),
-      limb(V3(0, -Lr * 0.2, 0), knee, s.legR * 1.2, s.legR, s.legCol || s.col),
-      limb(knee, V3(0, -Lr * 0.95, front ? 0.02 : 0.03), s.legR, s.legR * 0.8, s.legCol || s.col),
-      ell(s.legR * 1.05, s.legR * 0.7, s.legR * 1.3, s.dark, 0, -Lr + s.legR * 0.6, 0.02),
-    ];
-    pivot.add(mesh(parts));
-    body.add(pivot);
-    legs.push(pivot);
-  }
-
-  // Cou + tête
-  const neck = new THREE.Group();
-  neck.position.set(0, R * 0.35, L * 0.42);
-  const na = s.neckAngle;
-  const nEnd = V3(0, Math.sin(na) * s.neckLen, Math.cos(na) * s.neckLen);
-  const hp = [limb(V3(0, 0, 0), nEnd, s.neckR * 1.15, s.neckR, s.col)];
-  const hx = nEnd.x, hy = nEnd.y, hz = nEnd.z;
-  const hl = s.headLen, hr = s.headR;
-  const tilt = s.headTilt ?? 0.35;
-  const fwd = V3(0, -Math.sin(tilt), Math.cos(tilt));
-  const at = (d, up = 0, side = 0) => V3(hx + side, hy + fwd.y * d + up, hz + fwd.z * d);
-  hp.push(ell(hr * 0.9, hr, hl * 0.42, s.col, ...at(hl * 0.2).toArray(), tilt));
-  hp.push(ell(s.snoutR, s.snoutR * 0.85, s.snoutLen / 2, s.snoutCol || s.col, ...at(hl * 0.45 + s.snoutLen * 0.35, -hr * 0.15).toArray(), tilt));
-  hp.push(ell(s.snoutR * 0.4, s.snoutR * 0.3, s.snoutR * 0.25, s.dark, ...at(hl * 0.45 + s.snoutLen * 0.82, -hr * 0.1).toArray(), 0, 0, true));
-  if (s.ears) for (const sx of [-1, 1]) {
-    const e = s.ears;
-    const base = at(-hl * 0.05, hr * 0.75, sx * hr * 0.55);
-    const tip = base.clone().add(V3(sx * e.size * 0.35, e.size * (e.up ?? 1), -e.size * 0.15));
-    hp.push(limb(base, tip, e.size * 0.32, e.pointy ? e.size * 0.04 : e.size * 0.25, s.col));
-    if (s.tufts) hp.push(limb(tip, tip.clone().add(V3(0, e.size * 0.4, 0)), e.size * 0.05, e.size * 0.02, s.dark));
-  }
-  if (s.antlers === "deer") for (const sx of [-1, 1]) {
-    const b = at(hl * 0.02, hr * 0.85, sx * hr * 0.35);
-    const m1 = b.clone().add(V3(sx * 0.18, 0.28, -0.08)), t1 = m1.clone().add(V3(sx * 0.1, 0.25, -0.12));
-    hp.push(limb(b, m1, 0.025, 0.02, s.antlerCol), limb(m1, t1, 0.02, 0.008, s.antlerCol));
-    hp.push(limb(m1, m1.clone().add(V3(sx * 0.02, 0.16, 0.12)), 0.016, 0.006, s.antlerCol));
-    hp.push(limb(b.clone().lerp(m1, 0.4), b.clone().lerp(m1, 0.4).add(V3(sx * 0.03, 0.12, 0.13)), 0.015, 0.005, s.antlerCol));
-  }
-  if (s.antlers === "moose") for (const sx of [-1, 1]) {
-    const b = at(hl * 0.05, hr * 0.8, sx * hr * 0.4);
-    const end = b.clone().add(V3(sx * 0.3, 0.12, -0.02));
-    hp.push(limb(b, end, 0.04, 0.035, s.antlerCol));
-    hp.push(ell(0.3, 0.05, 0.2, s.antlerCol, end.x + sx * 0.18, end.y + 0.08, end.z - 0.02));
-    for (let k = 0; k < 4; k++) hp.push(limb(V3(end.x + sx * (0.05 + k * 0.1), end.y + 0.1, end.z + 0.12), V3(end.x + sx * (0.07 + k * 0.11), end.y + 0.25, end.z + 0.16), 0.02, 0.006, s.antlerCol));
-  }
-  if (s.tusks) for (const sx of [-1, 1]) {
-    const b = at(hl * 0.45 + s.snoutLen * 0.5, -hr * 0.3, sx * s.snoutR * 0.8);
-    hp.push(limb(b, b.clone().add(V3(sx * 0.02, 0.07, 0.02)), 0.012, 0.004, 0xe8e0c8));
-  }
-  if (s.dewlap) hp.push(ell(0.05, 0.12, 0.05, s.col, ...at(hl * 0.1, -hr * 1.1).toArray()));
-  neck.add(mesh(hp));
-  for (const sx of [-1, 1]) {
-    const e = new THREE.Mesh(SPHERE_LO, EYE);
-    e.scale.setScalar(Math.max(0.012, hr * 0.12));
-    e.position.copy(at(hl * 0.18, hr * 0.35, sx * hr * 0.78));
-    neck.add(e);
-  }
-  body.add(neck);
-
-  // Queue
-  let tail = null;
-  if (s.tail) {
-    const t = s.tail;
-    tail = new THREE.Group();
-    tail.position.set(0, R * 0.35, -L * 0.48);
-    const dir = V3(0, Math.sin(t.angle), -Math.cos(t.angle));
-    const tp = [];
-    if (t.bushy) {
-      tp.push(ell(t.r, t.r, t.len * 0.5, s.col, ...dir.clone().multiplyScalar(t.len * 0.5).toArray(), -t.angle));
-      if (t.curl) tp.push(ell(t.r * 0.9, t.len * 0.35, t.r * 0.9, s.col, 0, t.len * 0.6, -t.len * 0.55));
-      if (t.tip) tp.push(ell(t.r * 0.7, t.r * 0.7, t.len * 0.14, t.tip, ...dir.clone().multiplyScalar(t.len * 0.95).toArray(), -t.angle));
-    } else {
-      tp.push(limb(V3(0, 0, 0), dir.clone().multiplyScalar(t.len), t.r, t.r * 0.5, t.color || s.col));
-    }
-    tail.add(mesh(tp));
-    body.add(tail);
-  }
-  return { group: g, body, legs, neck, tail, height };
-}
+import { buildAnimal } from "./anatomy.js";
 
 // ---------- Espèces ----------
 // behavior : prey (fuit), defensive (fuit, charge si blessé), territorial (charge si on s'approche),
@@ -181,39 +10,43 @@ function buildAnimal(s) {
 export const SPECIES = {
   deer: {
     name: "Cerf", behavior: "prey", hp: 60, walk: 1.3, run: 9.5, radius: 0.5, alert: [17, 30, 9], drops: { viande_crue: 3, peau: 2 },
-    model: { col: 0x7a5232, belly: 0xc9b08a, dark: 0x2a1d14, legLen: 0.78, legR: 0.045, bodyLen: 1.25, bodyR: 0.26, bodyW: 0.38, neckLen: 0.5, neckR: 0.09, neckAngle: 0.95, headLen: 0.36, headR: 0.1, snoutLen: 0.16, snoutR: 0.06, ears: { size: 0.13, pointy: true }, antlers: "deer", antlerCol: 0x8a7a60, tail: { len: 0.1, r: 0.04, angle: 0.3, color: 0xe8e0d0 } },
+    model: { col: 0x8a5a34, back: 0x6a4428, belly: 0xd8c4a0, dark: 0x2a1d14, pattern: "rump", hoof: true, tuck: 0.6, legLen: 0.82, legR: 0.038, bodyLen: 1.3, bodyR: 0.27, bodyW: 0.36, neckLen: 0.52, neckR: 0.085, neckAngle: 0.95, headLen: 0.32, headR: 0.095, headTilt: 0.5, snoutLen: 0.17, snoutR: 0.05, snoutCol: 0x5a4030, cheeks: true, ears: { size: 0.16, pointy: true, up: 0.7 }, antlers: "deer", tail: { len: 0.13, r: 0.04, angle: -0.5 } },
   },
   moose: {
     name: "Élan", behavior: "defensive", hp: 170, walk: 1.1, run: 7.2, radius: 0.8, alert: [10, 18, 6], aggro: [6, 3], dmg: 22, cooldown: 1.6, drops: { viande_crue: 7, peau: 3 },
-    model: { col: 0x3a2a1e, belly: 0x4a3a2c, dark: 0x1a120c, legCol: 0x8a7a68, legLen: 1.1, legR: 0.07, bodyLen: 1.9, bodyR: 0.42, bodyW: 0.62, hump: true, neckLen: 0.42, neckR: 0.17, neckAngle: 0.35, headLen: 0.6, headR: 0.16, headTilt: 0.7, snoutLen: 0.3, snoutR: 0.13, ears: { size: 0.16, pointy: true }, antlers: "moose", antlerCol: 0xb0a080, dewlap: true, tail: { len: 0.1, r: 0.05, angle: -0.8 } },
+    model: { col: 0x3e2c1e, back: 0x2c1e14, belly: 0x4a3828, dark: 0x1a120c, legCol: 0x9a8a74, hoof: true, hump: true, tuck: 0.2, legLen: 1.15, legR: 0.06, bodyLen: 2.0, bodyR: 0.44, bodyW: 0.62, neckLen: 0.42, neckR: 0.17, neckAngle: 0.3, headLen: 0.55, headR: 0.15, headTilt: 0.8, snoutLen: 0.36, snoutR: 0.12, ears: { size: 0.2, pointy: true, up: 0.6 }, antlers: "moose", dewlap: true, tail: { len: 0.1, r: 0.05, angle: -1.2 } },
   },
   boar: {
     name: "Sanglier", behavior: "territorial", hp: 90, walk: 1.2, run: 7.8, radius: 0.45, aggro: [9, 5], dmg: 14, cooldown: 1.2, hitAndRun: true, alert: [12, 20, 6], drops: { viande_crue: 4, peau: 1 },
-    model: { col: 0x3b2f25, belly: 0x2e241c, dark: 0x15100c, legLen: 0.3, legR: 0.045, bodyLen: 1.1, bodyR: 0.3, bodyW: 0.4, mane: true, neckLen: 0.12, neckR: 0.18, neckAngle: 0.1, headLen: 0.5, headR: 0.17, headTilt: 0.45, snoutLen: 0.22, snoutR: 0.08, snoutCol: 0x4a3a30, ears: { size: 0.09, pointy: true }, tusks: true, tail: { len: 0.22, r: 0.02, angle: -1.1 } },
+    model: { col: 0x3e342a, back: 0x24201a, belly: 0x342a22, dark: 0x16120e, hoof: true, mane: true, hump: true, tuck: 0.05, pig: true, legLen: 0.34, legR: 0.04, bodyLen: 1.2, bodyR: 0.33, bodyW: 0.42, neckLen: 0.14, neckR: 0.2, neckAngle: 0.05, headLen: 0.42, headR: 0.18, headTilt: 0.55, snoutLen: 0.28, snoutR: 0.07, snoutCol: 0x4a3c34, ears: { size: 0.11, pointy: true, up: 0.8 }, tusks: true, tail: { len: 0.24, r: 0.018, angle: -1.3 } },
   },
   fox: {
     name: "Renard", behavior: "prey", hp: 22, walk: 1.6, run: 8.5, radius: 0.25, alert: [14, 22, 7], drops: { viande_crue: 1, peau: 1 },
-    model: { col: 0xc0581e, belly: 0xf0e6d6, dark: 0x1a120e, legCol: 0x3a2418, legLen: 0.28, legR: 0.025, bodyLen: 0.62, bodyR: 0.13, bodyW: 0.2, neckLen: 0.14, neckR: 0.07, neckAngle: 0.6, headLen: 0.2, headR: 0.08, snoutLen: 0.13, snoutR: 0.035, ears: { size: 0.09, pointy: true }, tail: { len: 0.5, r: 0.08, angle: -0.35, bushy: true, tip: 0xf0ece0 } },
+    model: { col: 0xc8622a, back: 0xb05420, belly: 0xf2ece0, dark: 0x1a120e, socks: 0x241812, chest: true, cheeks: true, earBack: true, tuck: 0.5, legLen: 0.3, legR: 0.022, bodyLen: 0.66, bodyR: 0.13, bodyW: 0.19, neckLen: 0.16, neckR: 0.065, neckAngle: 0.65, headLen: 0.17, headR: 0.075, headTilt: 0.2, snoutLen: 0.14, snoutR: 0.028, ears: { size: 0.1, pointy: true }, tail: { len: 0.48, r: 0.085, angle: -0.25, droop: true, bushy: true }, tailTip: 0xf4f0e8 },
+  },
+  wildcat: {
+    name: "Chat sauvage", behavior: "prey", hp: 26, walk: 1.3, run: 8.0, radius: 0.22, alert: [12, 20, 5], drops: { viande_crue: 1, fourrure: 1 },
+    model: { col: 0x8a7e6a, back: 0x6a5e4e, belly: 0xc8bca4, dark: 0x2a241c, pattern: "tabby", cheeks: true, tuck: 0.4, legLen: 0.24, legR: 0.024, bodyLen: 0.6, bodyR: 0.12, bodyW: 0.2, neckLen: 0.09, neckR: 0.07, neckAngle: 0.6, headLen: 0.13, headR: 0.075, headTilt: 0.1, snoutLen: 0.045, snoutR: 0.035, snoutCol: 0xb8a890, ears: { size: 0.055, pointy: true }, tail: { len: 0.32, r: 0.042, angle: -0.35, droop: true, bushy: true }, tailRings: true, tailTip: 0x18140f },
   },
   rabbit: {
     name: "Lapin", behavior: "prey", hp: 8, walk: 1.2, run: 7.5, radius: 0.12, alert: [9, 14, 4], hop: true, drops: { viande_crue: 1, peau: 1 },
-    model: { col: 0x8a7458, belly: 0xd8ccb8, dark: 0x2a2018, legLen: 0.07, legR: 0.025, bodyLen: 0.32, bodyR: 0.12, bodyW: 0.19, neckLen: 0.05, neckR: 0.07, neckAngle: 0.9, headLen: 0.13, headR: 0.07, snoutLen: 0.05, snoutR: 0.04, ears: { size: 0.13, pointy: false, up: 1.4 }, tail: { len: 0.04, r: 0.045, angle: 0.5, color: 0xf4f0ea } },
+    model: { col: 0x8a7458, back: 0x6e5c46, belly: 0xe4d8c4, dark: 0x2a2018, tuck: 0, legLen: 0.06, legR: 0.024, bodyLen: 0.32, bodyR: 0.12, bodyW: 0.2, neckLen: 0.05, neckR: 0.07, neckAngle: 0.9, headLen: 0.12, headR: 0.068, headTilt: 0.2, snoutLen: 0.04, snoutR: 0.035, cheeks: true, ears: { size: 0.14, pointy: false, up: 1.6 }, tail: { len: 0.05, r: 0.04, angle: 0.6 }, tailTip: 0xf6f2ec },
   },
   squirrel: {
     name: "Écureuil", behavior: "prey", hp: 8, walk: 1.5, run: 6.5, radius: 0.1, alert: [7, 12, 3], hop: true, drops: { viande_crue: 1, noisettes: 2 },
-    model: { col: 0x9a4a1e, belly: 0xeedcc0, dark: 0x2a1408, legLen: 0.05, legR: 0.015, bodyLen: 0.2, bodyR: 0.06, bodyW: 0.1, neckLen: 0.04, neckR: 0.04, neckAngle: 0.9, headLen: 0.08, headR: 0.042, snoutLen: 0.03, snoutR: 0.022, ears: { size: 0.035, pointy: true }, tufts: true, tail: { len: 0.24, r: 0.06, angle: 1.0, bushy: true, curl: true } },
+    model: { col: 0xa8501e, back: 0x8a3e16, belly: 0xf0e2c8, dark: 0x2a1408, chest: true, tuck: 0.2, legLen: 0.05, legR: 0.014, bodyLen: 0.2, bodyR: 0.055, bodyW: 0.09, neckLen: 0.04, neckR: 0.035, neckAngle: 0.9, headLen: 0.07, headR: 0.04, snoutLen: 0.025, snoutR: 0.02, ears: { size: 0.035, pointy: true }, tufts: true, tail: { len: 0.24, r: 0.06, angle: 1.2, bushy: true, curl: true } },
   },
   wolf: {
     name: "Loup", behavior: "hunter", hp: 70, walk: 1.8, run: 7.4, radius: 0.45, chase: 55, dmg: 13, cooldown: 1.25, fleeHp: 22, drops: { viande_crue: 2, peau: 1 },
-    model: { col: 0x6a645c, belly: 0xb0a898, dark: 0x1b1a19, legLen: 0.5, legR: 0.035, bodyLen: 1.0, bodyR: 0.19, bodyW: 0.3, neckLen: 0.25, neckR: 0.12, neckAngle: 0.5, headLen: 0.28, headR: 0.11, snoutLen: 0.17, snoutR: 0.05, snoutCol: 0x8a8478, ears: { size: 0.1, pointy: true }, tail: { len: 0.45, r: 0.07, angle: -0.6, bushy: true } },
+    model: { col: 0x8a8278, back: 0x4e4a44, belly: 0xd4ccbc, dark: 0x2a2826, pattern: "saddle", chest: true, cheeks: true, tuck: 0.55, legLen: 0.54, legR: 0.032, bodyLen: 1.05, bodyR: 0.2, bodyW: 0.28, neckLen: 0.28, neckR: 0.13, neckAngle: 0.45, headLen: 0.25, headR: 0.105, headTilt: 0.15, snoutLen: 0.17, snoutR: 0.045, snoutCol: 0xa8a090, ears: { size: 0.11, pointy: true }, tail: { len: 0.46, r: 0.07, angle: -0.9, droop: true, bushy: true }, tailTip: 0x1e1c1a },
   },
   lynx: {
     name: "Lynx", behavior: "hunter", stalker: true, hp: 60, walk: 1.5, run: 8.8, radius: 0.35, chase: 32, dmg: 15, cooldown: 1.4, fleeHp: 25, drops: { viande_crue: 2, fourrure: 1 },
-    model: { col: 0xb08a5a, belly: 0xe8dcc4, dark: 0x2a1e14, spots: true, legLen: 0.46, legR: 0.04, bodyLen: 0.82, bodyR: 0.18, bodyW: 0.28, neckLen: 0.14, neckR: 0.11, neckAngle: 0.5, headLen: 0.2, headR: 0.11, headTilt: 0.15, snoutLen: 0.07, snoutR: 0.05, ears: { size: 0.08, pointy: true }, tufts: true, tail: { len: 0.13, r: 0.04, angle: -0.2, color: 0x2a1e14 } },
+    model: { col: 0xbc9466, back: 0xa47e52, belly: 0xf0e6d4, dark: 0x2a1e14, pattern: "spots", cheeks: true, tuck: 0.4, legLen: 0.5, legR: 0.04, bodyLen: 0.86, bodyR: 0.18, bodyW: 0.27, neckLen: 0.14, neckR: 0.11, neckAngle: 0.5, headLen: 0.18, headR: 0.105, headTilt: 0.1, snoutLen: 0.06, snoutR: 0.05, snoutCol: 0xe8dcc8, ears: { size: 0.085, pointy: true }, tufts: true, tail: { len: 0.14, r: 0.04, angle: -0.4 }, tailTip: 0x16120c },
   },
   bear: {
     name: "Ours", behavior: "territorial", hp: 220, walk: 1.2, run: 6.8, radius: 0.8, aggro: [13, 7], dmg: 28, cooldown: 1.8, alert: [15, 25, 8], drops: { viande_crue: 6, fourrure: 2 },
-    model: { col: 0x4a3222, belly: 0x3e2a1c, dark: 0x1a120c, legLen: 0.55, legR: 0.11, bodyLen: 1.6, bodyR: 0.46, bodyW: 0.78, hump: true, neckLen: 0.28, neckR: 0.26, neckAngle: 0.15, headLen: 0.42, headR: 0.24, headTilt: 0.2, snoutLen: 0.2, snoutR: 0.1, snoutCol: 0x7a5a3e, ears: { size: 0.08, pointy: false }, tail: { len: 0.08, r: 0.05, angle: 0.2 } },
+    model: { col: 0x5a3c26, back: 0x46301e, belly: 0x3e2a1a, dark: 0x1e140c, socks: 0x2a1c12, hump: true, tuck: 0.05, legLen: 0.55, legR: 0.1, bodyLen: 1.7, bodyR: 0.48, bodyW: 0.8, neckLen: 0.3, neckR: 0.27, neckAngle: 0.1, headLen: 0.4, headR: 0.24, headTilt: 0.25, snoutLen: 0.2, snoutR: 0.1, snoutCol: 0x8a6a4a, ears: { size: 0.1, pointy: false, up: 1.0 }, tail: { len: 0.1, r: 0.06, angle: -0.3 } },
   },
 };
 
@@ -235,7 +68,7 @@ export class Creatures {
   spawn(type, near, opts = {}) {
     const [dMin, dMax] = opts.dist || {
       deer: [50, 130], moose: [60, 140], boar: [45, 110], fox: [30, 90], rabbit: [18, 50], squirrel: [14, 40],
-      wolf: [55, 95], lynx: [50, 100], bear: [80, 140],
+      wolf: [55, 95], lynx: [50, 100], bear: [80, 140], wildcat: [30, 80],
     }[type];
     for (let tries = 0; tries < 25; tries++) {
       const a = this.rand() * Math.PI * 2;
@@ -252,6 +85,7 @@ export class Creatures {
   create(type, x, z, opts = {}) {
     const sp = SPECIES[type];
     const parts = buildAnimal({ ...sp.model, seed: (this.rand() * 1e6) | 0 });
+    if (type === "deer" && this.rand() < 0.45) parts.head.children.slice(-4).forEach((m) => (m.visible = false)); // biches sans bois
     const s = opts.scale || 0.9 + this.rand() * 0.2;
     parts.group.scale.setScalar(s);
     parts.group.position.set(x, this.world.heightAt(x, z), z);
@@ -269,7 +103,7 @@ export class Creatures {
 
   remove(c) {
     this.scene.remove(c.group);
-    c.meshes.forEach((m) => { if (m.geometry !== SPHERE_LO) m.geometry.dispose(); });
+    c.meshes.forEach((m) => m.geometry.dispose());
     const i = this.list.indexOf(c);
     if (i >= 0) this.list.splice(i, 1);
   }
@@ -285,7 +119,8 @@ export class Creatures {
       if (this.count("deer") < Q.maxDeer && r() < 0.45) this.spawn("deer", player.pos);
       if (this.count("squirrel") < Q.maxSquirrels && r() < 0.5) this.spawn("squirrel", player.pos);
       if (this.count("rabbit") < 3 && r() < 0.35) this.spawn("rabbit", player.pos);
-      if (this.count("fox") < 2 && r() < 0.15) this.spawn("fox", player.pos);
+      if (this.count("fox") < 3 && r() < 0.25) this.spawn("fox", player.pos);
+      if (this.count("wildcat") < 2 && r() < 0.15) this.spawn("wildcat", player.pos);
       if (this.count("moose") < 2 && r() < 0.08) this.spawn("moose", player.pos);
       if (this.count("boar") < Math.max(1, Math.round(2 * (diff.wolves || 0.5))) && r() < 0.12) this.spawn("boar", player.pos);
       if (diff.predators) {
@@ -430,13 +265,19 @@ export class Creatures {
       const amp = Math.min(0.8, c.speed * (sp.hop ? 0.25 : 0.12));
       c.legs.forEach((l, i) => {
         const off = sp.hop || gallop ? (i < 2 ? 0 : Math.PI * 0.8) + (i % 2) * 0.25 : (i === 0 || i === 3 ? 0 : Math.PI);
-        l.rotation.x = Math.sin(c.phase + off) * amp;
+        const ph = c.phase + off;
+        l.rotation.x = Math.sin(ph) * amp;
+        // genou / jarret : se plie quand la patte revient vers l'avant
+        const flex = Math.max(0, Math.cos(ph)) * amp * 1.6;
+        if (c.knees) c.knees[i].rotation.x = i < 2 ? flex : -flex * 0.6;
       });
+      // respiration
+      c.body.scale.y = 1 + Math.sin(performance.now() * 0.0025 + c.phase) * 0.012;
       const bob = Math.abs(Math.sin(c.phase)) * (sp.hop ? size * 0.5 : gallop ? size * 0.07 : size * 0.02) * Math.min(1, c.speed);
       c.body.position.y = c.height + bob - (c.state === "stalk" ? c.height * 0.15 : 0);
       const headDown = c.state === "graze" ? 0.9 : c.state === "flee" ? -0.3 : c.state === "stalk" ? 0.35 : c.state === "attack" ? Math.sin(performance.now() * 0.02) * 0.2 + 0.15 : 0;
       c.neck.rotation.x = THREE.MathUtils.lerp(c.neck.rotation.x, headDown, dt * 3);
-      if (c.tail) c.tail.rotation.y = Math.sin(performance.now() * 0.004 + c.phase) * (c.state === "chase" ? 0.1 : 0.25);
+      if (c.tail) { c.tail.rotation.y = Math.sin(performance.now() * 0.004 + c.phase) * (c.state === "chase" ? 0.1 : 0.25); c.tail.rotation.x = c.state === "flee" && c.type === "deer" ? -0.8 : 0; }
     }
   }
 

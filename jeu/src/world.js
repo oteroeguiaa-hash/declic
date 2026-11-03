@@ -4,9 +4,10 @@ import * as THREE from "three";
 import { createNoise2D, fbm, ridged, smoothstep, lerp, clamp, mulberry32 } from "./noise.js";
 import { reflUniforms, REFL_PARS, REFL_APPLY } from "./reflection.js";
 
-export const WORLD_SIZE = 3500;      // mètres de côté (île 2,5 × plus grande)
+export const WORLD_SIZE = 2200;      // mètres de côté (plus compacte : plus de détail partout, même au loin)
+const K = 3500 / WORLD_SIZE;         // les grands reliefs gardent leurs proportions sur l'île plus petite
 export const SEA_LEVEL = 0;
-const CELLS = 1100;                  // même grille pour toutes les qualités : l'île est identique partout
+const CELLS = 1100;                  // 2 m par case                  // même grille pour toutes les qualités : l'île est identique partout
 const CHUNK = 50;                    // cases par morceau de terrain
 const LOD_STEPS = [1, 2, 5, 10, 25];
 
@@ -35,32 +36,33 @@ export class World {
   // Relief « européen » : collines arrondies, vallons, petites montagnes douces, lacs et ruisseaux.
   // Relief sans les ruisseaux. Remplit this._b (h, lake, wx, wz).
   base(x, z) {
-    const wx = x + fbm(this.nD, x / 500 + 7.3, z / 500 - 2.1, 2) * 90;
-    const wz = z + fbm(this.nD, x / 500 - 4.7, z / 500 + 5.9, 2) * 90;
+    const X = x * K, Z = z * K;
+    const wx = X + fbm(this.nD, X / 500 + 7.3, Z / 500 - 2.1, 2) * 90;
+    const wz = Z + fbm(this.nD, X / 500 - 4.7, Z / 500 + 5.9, 2) * 90;
     const d = Math.hypot(x, z) / this.half;
-    const coast = fbm(this.nC, x / 420, z / 420, 2) * 0.16;
+    const coast = fbm(this.nC, X / 420, Z / 420, 2) * 0.16;
     const continental = 1 - smoothstep(0.62, 0.93, d + coast);
 
     const roll = fbm(this.nA, wx / 520, wz / 520, 4) * 0.5 + 0.5;
     const hills = Math.pow(fbm(this.nA, wx / 230 + 11, wz / 230 - 3, 3) * 0.5 + 0.5, 1.6);
     let h = 3.5 + roll * 14 + hills * 16;
 
-    const massif = smoothstep(0.25, 0.7, fbm(this.nB, x / 650 + 3.1, z / 650 - 1.7, 2) * 0.9 + 0.35);
+    const massif = smoothstep(0.25, 0.7, fbm(this.nB, X / 650 + 3.1, Z / 650 - 1.7, 2) * 0.9 + 0.35);
     const mount = fbm(this.nB, wx / 300, wz / 300, 4) * 0.5 + 0.5;
     h += Math.pow(mount, 2.2) * 40 * massif;
     h += fbm(this.nE, x / 38, z / 38, 2) * 0.8;
 
     // ---- Biomes ----
     // Montagnes alpines : une ou deux chaînes, crêtes réalistes (bruit « ridged »), jusqu'à ~250 m
-    const mreg = fbm(this.nM, x / 1700 + 4.2, z / 1700 - 7.7, 2) * 0.5 + 0.5;
+    const mreg = fbm(this.nM, X / 1700 + 4.2, Z / 1700 - 7.7, 2) * 0.5 + 0.5;
     const M = smoothstep(0.56, 0.68, mreg) * smoothstep(0.84, 0.55, d);
     if (M > 0) {
       // Domaine fortement déformé : silhouettes irrégulières, pas de cônes
-      const qx = wx + fbm(this.nM, x / 420 + 3, z / 420 - 8, 3) * 140;
-      const qz = wz + fbm(this.nM, x / 420 - 6, z / 420 + 2, 3) * 140;
+      const qx = wx + fbm(this.nM, X / 420 + 3, Z / 420 - 8, 3) * 140;
+      const qz = wz + fbm(this.nM, X / 420 - 6, Z / 420 + 2, 3) * 140;
       const main = ridged(this.nM, qx / 1050, qz / 1050, 7);                    // grandes crêtes
-      const broad = fbm(this.nM, x / 900 + 9, z / 900 - 3, 2) * 0.5 + 0.5;
-      let hm = 22 + broad * 70 + Math.pow(main, 1.25) * 185;
+      const broad = fbm(this.nM, X / 900 + 9, Z / 900 - 3, 2) * 0.5 + 0.5;
+      let hm = 20 + broad * 55 + Math.pow(main, 1.25) * 150;
       // Arêtes secondaires et sommets découpés, surtout en altitude
       const hi = smoothstep(60, 180, hm);
       hm += ridged(this.nM, qx / 320 + 5.3, qz / 320 - 1.1, 4) * 26 * (0.25 + hi);
@@ -77,13 +79,13 @@ export class World {
       h = lerp(h, Math.max(h, hm), k);
     }
     // Prairies (vallées ouvertes), forêts d'automne, marais
-    const P = smoothstep(0.6, 0.68, fbm(this.nBio, x / 1100, z / 1100, 2) * 0.5 + 0.5) * (1 - M);
-    const A = smoothstep(0.6, 0.68, fbm(this.nBio, x / 1000 + 31, z / 1000 - 17, 2) * 0.5 + 0.5) * (1 - M) * (1 - P);
-    let Wm = smoothstep(0.6, 0.68, fbm(this.nBio, x / 700 - 51, z / 700 + 23, 2) * 0.5 + 0.5) * (1 - M) * (1 - massif) * smoothstep(0.55, 0.75, continental);
+    const P = smoothstep(0.6, 0.68, fbm(this.nBio, X / 1100, Z / 1100, 2) * 0.5 + 0.5) * (1 - M);
+    const A = smoothstep(0.6, 0.68, fbm(this.nBio, X / 1000 + 31, Z / 1000 - 17, 2) * 0.5 + 0.5) * (1 - M) * (1 - P);
+    let Wm = smoothstep(0.6, 0.68, fbm(this.nBio, X / 700 - 51, Z / 700 + 23, 2) * 0.5 + 0.5) * (1 - M) * (1 - massif) * smoothstep(0.55, 0.75, continental);
     Wm *= 1 - smoothstep(0.45, 0.7, roll);
 
     // Lacs : seulement dans les creux de basse altitude, rives en pente douce (pas de cratère)
-    const lakeN = fbm(this.nC, x / 330 + 21, z / 330 - 13, 2);
+    const lakeN = fbm(this.nC, X / 330 + 21, Z / 330 - 13, 2);
     // Le masque dépend du relief à grande échelle (plaines, hors massifs), pas de l'altitude locale :
     // sinon la cuvette se creuse d'autant plus vite que le terrain monte, et ça fait des falaises.
     const lowland = (1 - massif) * (1 - smoothstep(0.45, 0.7, roll)) * (1 - M) * (1 - Wm);
@@ -102,12 +104,13 @@ export class World {
 
   // Relief complet : relief de base + ruisseaux.
   sample(x, z, out = this._out) {
+    const X = x * K, Z = z * K;
     const B = this.base(x, z);
     let h = B.h;
     const lake = B.lake, wx = B.wx, wz = B.wz, massif = B.massif, cont = B.cont, dN = B.d;
     out.mount = B.mount; out.prairie = B.prairie; out.autumn = B.autumn; out.marsh = B.marsh;
     let stream = 0, water = -1e3;
-    const region = smoothstep(-0.05, 0.25, fbm(this.nR, x / 900, z / 900, 2));
+    const region = smoothstep(-0.05, 0.25, fbm(this.nR, X / 900, Z / 900, 2));
     if (region > 0 && h > 2.5 && h < 46) {
       const f = (X, Z) => fbm(this.nS, X / 380, Z / 380, 3);
       const v = f(wx, wz);
@@ -115,7 +118,7 @@ export class World {
         // Distance (en mètres) à la ligne du ruisseau : valeur / pente du bruit → largeur régulière
         const gx = f(wx + 1, wz) - v, gz = f(wx, wz + 1) - v;
         const g = Math.hypot(gx, gz) + 1e-6;
-        const dist = Math.abs(v) / g;
+        const dist = Math.abs(v) / g / K;
         const half = 1.2 + 1.3 * region;              // demi-largeur du lit : 1,2 à 2,5 m
         if (dist < half + 6.5) {
           const zone = smoothstep(2.5, 5, h) * (1 - smoothstep(38, 46, h)) * (1 - lake) * region;
@@ -146,7 +149,7 @@ export class World {
       const v = fr(wx, wz);
       if (Math.abs(v) < 0.6) {
         const gx = (fr(wx + 2, wz) - v) / 2, gz = (fr(wx, wz + 2) - v) / 2;
-        const dist = Math.abs(v) / (Math.hypot(gx, gz) + 1e-7);
+        const dist = Math.abs(v) / (Math.hypot(gx, gz) + 1e-7) / K;
         const half = 6 + 6 * (fbm(this.nV, x / 300 + 50, z / 300, 1) * 0.5 + 0.5); // 6 à 12 m (12 à 24 m de large)
         if (dist < half + 210) {
           // Niveau de l'eau : descend doucement de l'intérieur des terres vers la mer
@@ -406,7 +409,7 @@ export class World {
       c.mesh.visible = (d < showDist + 50 || (c.tall && d < 3200)) && !c.underwater;
       if (!c.mesh.visible) continue;
       const k = d / lodScale;
-      let lod = k < 70 ? 0 : k < 200 ? 1 : k < 420 ? 2 : k < 750 ? 3 : 4;
+      let lod = k < 90 ? 0 : k < 260 ? 1 : k < 600 ? 2 : k < 1100 ? 3 : 4;
       if (c.tall) lod = Math.min(lod, k < 900 ? 2 : 3);   // montagnes : jamais de pyramides grossières
       if (lod !== c.lod) { c.lod = lod; c.geo.setIndex(this.lodIndex[lod]); }
     }

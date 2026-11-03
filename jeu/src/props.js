@@ -155,7 +155,7 @@ export const PROP_TYPES = {
   cover: { kind: "decor", hp: 1, radius: 0, near: 45, maxDist: 50, center: 0.1, name: "Couvre-sol" },
   coral: { kind: "decor", hp: 1, radius: 0, near: 45, maxDist: 55, center: 0.3, name: "Corail" },
 };
-const CANDIDATES = 750000; // même nombre quelle que soit la qualité : l'île est identique partout
+const CANDIDATES = 300000; // même nombre quelle que soit la qualité : l'île est identique partout
 
 const CELL = 16;
 // Teintes d'automne du feuillage (multipliées à la luminance des feuilles)
@@ -464,7 +464,7 @@ float rtri(vec3 p, vec3 n){ vec3 w = pow(abs(n), vec3(4.0)); w /= w.x + w.y + w.
     const far2 = this.quality.viewDistance ** 2;
     const counts = {};
     for (const k in this.meshes) counts[k] = [0, 0, 0];
-    const mid2 = (260 * this.quality.lodScale) ** 2;
+    const mid2 = (300 * this.quality.lodScale) ** 2;   // modèle simplifié loin, silhouette seulement très loin
     this.slot.fill(-1);
     for (let i = 0; i < this.list.length; i++) {
       const p = this.list[i];

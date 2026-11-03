@@ -271,8 +271,8 @@ export function makeBroadleaf(lod, seed, birch = false) {
     }
   }
   // Feuillage
-  const n = lod ? (birch ? 7 : 9) : (birch ? 22 : 30);
-  const size = lod ? (birch ? 2.4 : 3.4) : (birch ? 1.5 : 2.2);
+  const n = lod ? (birch ? 14 : 18) : (birch ? 22 : 30);
+  const size = lod ? (birch ? 1.9 : 2.6) : (birch ? 1.5 : 2.2);
   for (let i = 0; i < n; i++) {
     const dir = V(rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1);
     if (dir.length() > 1) { i--; continue; }
@@ -381,8 +381,8 @@ export function makeTallBroadleaf(lod, seed, kind = "beech") {
     }
   }
   const leafTint = oak ? tint(0x9ab462) : tint(0xb4d070);
-  const n = lod === 0 ? 58 : 16;
-  const size = lod === 0 ? 3.5 : 6.2;
+  const n = lod === 0 ? 58 : 32;
+  const size = lod === 0 ? 3.5 : 4.6;
   for (let i = 0; i < n; i++) {
     const dir = V(rand() * 2 - 1, rand() * 1.6 - 0.6, rand() * 2 - 1);
     if (dir.length() > 1) { i--; continue; }
@@ -428,28 +428,46 @@ export function makeScotsPine(lod, seed) {
 // Silhouette très lointaine (3ᵉ niveau de détail) : une forme simple, couleur feuillage.
 export function makeTreeImpostor(kind) {
   const b = new Builder();
+  const rand = mulberry32(kind.length * 17 + 3);
   const add = (geo, color, top) => {
-    const g = geo.index ? geo.toNonIndexed() : geo;
-    const p = g.attributes.position, n = g.attributes.normal;
+    let g = geo.index ? geo.toNonIndexed() : geo;
+    // Houppier bosselé (pas une boule lisse) : déplacement par bruit selon la position
+    const p = g.attributes.position;
+    if (top > 6 && geo.type === "IcosahedronGeometry") {
+      const c0 = new THREE.Vector3(); g.computeBoundingBox(); g.boundingBox.getCenter(c0);
+      for (let i = 0; i < p.count; i++) {
+        const v = V(p.getX(i), p.getY(i), p.getZ(i)), d = v.clone().sub(c0);
+        const k = 1 + (Math.sin(v.x * 1.7 + v.y * 0.9) * Math.sin(v.z * 1.3 - v.y * 1.1)) * 0.22;
+        v.copy(c0).addScaledVector(d, k);
+        p.setXYZ(i, v.x, v.y, v.z);
+      }
+    }
+    g.computeVertexNormals();
+    const n = g.attributes.normal;
     for (let i = 0; i < p.count; i++) {
       const v = V(p.getX(i), p.getY(i), p.getZ(i));
-      b.v(v, V(n.getX(i), n.getY(i), n.getZ(i)), UV.white[0], UV.white[1], color.clone().multiplyScalar(0.55 + 0.45 * Math.min(1, v.y / top)));
+      const shade = (0.5 + 0.5 * Math.min(1, v.y / top)) * (0.82 + 0.3 * Math.abs(Math.sin(v.x * 2.3 + v.z * 1.7)));
+      b.v(v, V(n.getX(i), n.getY(i), n.getZ(i)), UV.white[0], UV.white[1], color.clone().multiplyScalar(shade));
     }
   };
   const trunk = (r0, h, col) => { const tr = new THREE.CylinderGeometry(r0 * 0.5, r0, h, 4, 1, true); tr.translate(0, h / 2, 0); add(tr, tint(col), h); };
   if (kind === "pine") {
-    const cone = new THREE.ConeGeometry(2.7, 8.6, 7, 1, true); cone.translate(0, 1.6 + 4.3, 0);
-    add(cone, tint(0x2f4a28), 8);
+    // Silhouette étagée (plusieurs couronnes de branches) plutôt qu'un cône lisse
+    for (let k = 0; k < 4; k++) {
+      const r0 = 2.8 * (1 - k * 0.2), h0 = 3.4 - k * 0.3, y0 = 1.8 + k * 2.0;
+      const cone = new THREE.ConeGeometry(r0, h0, 8, 1, true); cone.translate(0, y0 + h0 / 2, 0);
+      add(cone, tint(0x2c4626).multiplyScalar(0.9 + k * 0.06), 10);
+    }
     trunk(0.3, 2, 0x4a3828);
   } else if (kind === "birch") {
-    const crown = new THREE.IcosahedronGeometry(1, 0);
+    const crown = new THREE.IcosahedronGeometry(1, 2);
     crown.scale(1.8, 2.6, 1.8); crown.translate(0, 6.4, 0);
-    add(crown, tint(0x5a7a30), 8);
+    add(crown, tint(0x4a6628), 8);
     trunk(0.18, 5, 0xd8d4c8);
   } else if (kind === "young") {
-    const crown = new THREE.IcosahedronGeometry(1, 0);
+    const crown = new THREE.IcosahedronGeometry(1, 2);
     crown.scale(3.3, 2.5, 3.3); crown.translate(0, 5.9, 0);
-    add(crown, tint(0x3e5a24), 8);
+    add(crown, tint(0x34501e), 8);
     trunk(0.38, 3.6, 0x4a3828);
   } else if (kind === "scots") {
     const crown = new THREE.IcosahedronGeometry(1, 0);
@@ -458,9 +476,9 @@ export function makeTreeImpostor(kind) {
     trunk(0.4, 19, 0x8a5a3a);
   } else {
     const oak = kind === "oak";
-    const crown = new THREE.IcosahedronGeometry(1, 1);
+    const crown = new THREE.IcosahedronGeometry(1, 2);
     crown.scale(oak ? 8.5 : 7, oak ? 6.5 : 7.5, oak ? 8.5 : 7); crown.translate(0, oak ? 19.5 : 22.5, 0);
-    add(crown, tint(oak ? 0x3e5a24 : 0x48682a), 28);
+    add(crown, tint(oak ? 0x34481e : 0x3c5622), 28);
     trunk(oak ? 0.6 : 0.5, oak ? 14 : 17, oak ? 0x5a4632 : 0x8a8880);
   }
   return b.build();
