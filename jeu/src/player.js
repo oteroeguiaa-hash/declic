@@ -134,7 +134,7 @@ export class Player {
 
   surface() {
     const h = this.pos.y;
-    if (this.swimming || h < 0.3) return "water";
+    if (this.swimming || h < 0.3 || this.inStream) return "water";
     if (h < 2.6) return "sand";
     if (this.world.slopeAt(this.pos.x, this.pos.z) > 0.3 || h > 60) return "rock";
     return "grass";
@@ -154,7 +154,9 @@ export class Player {
     const ground = this.world.heightAt(this.pos.x, this.pos.z);
     const waterDepth = -ground;
     this.swimming = waterDepth > 1.35 && this.pos.y < 0.2 - 1.2;
-    const wading = !this.swimming && this.pos.y < 0.15;
+    const wl = this.world.waterLevelAt(this.pos.x, this.pos.z);
+    const wading = !this.swimming && this.pos.y < wl - 0.1;
+    this.inStream = wading && wl > 0.5;
 
     const wantsSprint = input.sprint && ax.y > 0.3 && !this.crouching;
     this.sprinting = wantsSprint && this.stamina > 2 && !this.swimming;
