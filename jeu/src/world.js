@@ -22,6 +22,7 @@ export class World {
     this.nE = createNoise2D(seed + 51);
     this.nS = createNoise2D(seed + 67);
     this.nR = createNoise2D(seed + 79);
+    this.nV = createNoise2D(seed + 97);
     this._out = { h: 0, stream: 0, water: -1e3 };
     this.buildHeights();
   }
@@ -55,7 +56,7 @@ export class World {
     h = lerp(-14, h, continental);
     if (h > 0 && h < 3) h = h * h / 3 * 0.6 + h * 0.4;
     const b = this._b || (this._b = {});
-    b.h = h; b.lake = lake; b.wx = wx; b.wz = wz;
+    b.h = h; b.lake = lake; b.wx = wx; b.wz = wz; b.massif = massif; b.cont = continental; b.d = d;
     return b;
   }
 
@@ -63,7 +64,7 @@ export class World {
   sample(x, z, out = this._out) {
     const B = this.base(x, z);
     let h = B.h;
-    const lake = B.lake, wx = B.wx, wz = B.wz;
+    const lake = B.lake, wx = B.wx, wz = B.wz, massif = B.massif, cont = B.cont, dN = B.d;
     let stream = 0, water = -1e3;
     const region = smoothstep(-0.05, 0.25, fbm(this.nR, x / 900, z / 900, 2));
     if (region > 0 && h > 2.5 && h < 46) {
@@ -92,6 +93,35 @@ export class World {
             water = W;
             // là où il y a de l'eau, la berge est toujours assez haute pour la contenir
             if (core < 0.5) h = Math.max(h, W + 0.15 * (1 - core * 2));
+          }
+        }
+      }
+    }
+
+    // Grandes rivières navigables : 2 ou 3 sur l'île, dans des vallées boisées, jusqu'à la mer.
+    const rz = (1 - smoothstep(0.35, 0.7, massif)) * smoothstep(0.35, 0.7, cont);
+    if (rz > 0) {
+      const fr = (X, Z) => fbm(this.nV, X / 1100, Z / 1100, 2);
+      const v = fr(wx, wz);
+      if (Math.abs(v) < 0.09) {
+        const gx = (fr(wx + 2, wz) - v) / 2, gz = (fr(wx, wz + 2) - v) / 2;
+        const dist = Math.abs(v) / (Math.hypot(gx, gz) + 1e-7);
+        const half = 9 + 5 * (fbm(this.nV, x / 300 + 50, z / 300, 1) * 0.5 + 0.5); // 9 à 14 m
+        if (dist < half + 210) {
+          // Niveau de l'eau : descend doucement de l'intérieur des terres vers la mer
+          const Wr = (0.4 + 7 * smoothstep(0.85, 0.25, dN)) * smoothstep(0.35, 0.8, cont);
+          const valley = (1 - smoothstep(half + 12, half + 210, dist)) * rz;
+          const floor = Wr + 0.7 + Math.max(0, dist - half - 4) * 0.035; // plaine alluviale en pente douce
+          let hr = lerp(h, floor, valley);
+          const core = (1 - smoothstep(half - 2, half + 3, dist)) * rz;
+          const t = Math.min(1, dist / (half + 3));
+          hr = lerp(hr, Wr - 0.4 - 2.6 * (1 - t * t), core);                 // lit profond au milieu
+          if (valley > 0.02) { stream *= 1 - valley; water = -1e3; } // pas de ruisseau dans la vallée d'une rivière
+          h = hr;
+          stream = Math.max(stream, core);
+          if (rz > 0.9 && dist < half + 10) {
+            water = Wr;
+            if (core < 0.5) h = Math.max(h, Wr + 0.2 * (1 - core * 2));
           }
         }
       }
@@ -394,7 +424,7 @@ vec3 terrainColor(){
     geo.setIndex(idx);
     geo.computeVertexNormals();
     geo.computeBoundingSphere();
-    const mat = new THREE.MeshStandardMaterial({ color: 0x2a5a52, roughness: 0.05, metalness: 0, transparent: true, depthWrite: true });
+    const mat = new THREE.MeshStandardMaterial({ color: 0x2a5a52, roughness: 0.14, metalness: 0, transparent: true, depthWrite: true });
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = this.waterUniforms.uTime;
       sh.uniforms.tHeight = { value: this.heightTex };
@@ -413,6 +443,7 @@ varying vec3 vWPos;`)
   float ground = texture2D(tHeight, huv).r;
   float depth = max(0.0, vWPos.y - ground);
   diffuseColor.rgb = mix(vec3(0.16, 0.30, 0.24), vec3(0.03, 0.10, 0.09), smoothstep(0.0, 1.0, depth));
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.02, 0.06, 0.06), smoothstep(1.2, 2.6, depth));
   diffuseColor.a = smoothstep(0.0, 0.12, depth) * mix(0.35, 0.85, smoothstep(0.0, 0.9, depth));
   if (diffuseColor.a < 0.02) discard;`)
         .replace("#include <normal_fragment_maps>", `
@@ -420,6 +451,8 @@ varying vec3 vWPos;`)
   float gx = texture2D(tHeight, huv + vec2(uTexel * 3.0, 0.0)).r - texture2D(tHeight, huv - vec2(uTexel * 3.0, 0.0)).r;
   float gz = texture2D(tHeight, huv + vec2(0.0, uTexel * 3.0)).r - texture2D(tHeight, huv - vec2(0.0, uTexel * 3.0)).r;
   vec2 flow = -normalize(vec2(gx, gz) + 1e-4) * (0.6 + min(1.5, length(vec2(gx, gz)) * 0.4));
+  float river = smoothstep(1.0, 1.8, depth);
+  flow = mix(flow, normalize(vWPos.xz + 1e-3) * 0.25, river);   // rivière : courant lent vers la mer
   vec3 n1 = texture2D(tWaterN, vWPos.xz * 0.35 + flow * uTime * 0.35).xyz * 2.0 - 1.0;
   vec3 n2 = texture2D(tWaterN, vWPos.xz * 0.8 + flow * uTime * 0.5 + 0.37).xyz * 2.0 - 1.0;
   vec2 nxy = (n1.xy + n2.xy) * 0.45;

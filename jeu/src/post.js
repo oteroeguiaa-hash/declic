@@ -83,14 +83,30 @@ export class Post {
       uniforms: {
         tColor: { value: null }, tRays: { value: null }, tBloom: { value: null },
         uRayCol: { value: new THREE.Color() }, uBloom: { value: 0.5 }, uSat: { value: 1.08 }, uWarm: { value: 0 },
+        tDepth: { value: null }, uInvVP: { value: new THREE.Matrix4() }, uCam: { value: new THREE.Vector3() },
+        uMist: { value: 0 }, uMistCol: { value: new THREE.Color() },
       },
       vertexShader: VERT,
       fragmentShader: `
         uniform sampler2D tColor; uniform sampler2D tRays; uniform sampler2D tBloom;
         uniform vec3 uRayCol; uniform float uBloom; uniform float uSat; uniform float uWarm;
+        uniform sampler2D tDepth; uniform mat4 uInvVP; uniform vec3 uCam; uniform float uMist; uniform vec3 uMistCol;
         varying vec2 vUv;
         void main(){
           vec3 c = texture2D(tColor, vUv).rgb;
+          // Brume de vallée : une couche basse qui remplit les creux, plus dense au loin
+          if (uMist > 0.001) {
+            float d = texture2D(tDepth, vUv).r;
+            vec4 wp = uInvVP * vec4(vUv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+            wp.xyz /= wp.w;
+            vec3 ray = wp.xyz - uCam;
+            float dist = d >= 0.99999 ? 2500.0 : length(ray);
+            float y = d >= 0.99999 ? uCam.y + normalize(ray).y * 2500.0 : wp.y;
+            float layer = 1.0 - smoothstep(6.0, 26.0, y);
+            float camIn = 1.0 - smoothstep(8.0, 30.0, uCam.y);
+            float amount = uMist * layer * (1.0 - exp(-dist * mix(0.004, 0.012, camIn)));
+            c = mix(c, uMistCol, clamp(amount, 0.0, 0.88));
+          }
           c += texture2D(tRays, vUv).r * uRayCol;
           c += texture2D(tBloom, vUv).rgb * uBloom;
           c *= mix(vec3(1.0), vec3(1.06, 1.0, 0.9), uWarm);
@@ -170,6 +186,11 @@ export class Post {
     }
 
     const u = this.compMat.uniforms;
+    u.tDepth.value = this.sceneRT.depthTexture;
+    u.uInvVP.value.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse);
+    u.uCam.value.copy(camera.position);
+    u.uMist.value = this.mist === false ? 0 : sun.mist || 0;
+    if (sun.mistColor) u.uMistCol.value.copy(sun.mistColor);
     u.tColor.value = this.sceneRT.texture;
     u.tRays.value = this.raysRT.texture;
     u.tBloom.value = this.bloomA.texture;

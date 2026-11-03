@@ -37,6 +37,7 @@ export class Structures {
     this.world = world;
     this.fires = [];
     this.shelters = [];
+    this.boats = [];
     this.flameMat = new THREE.SpriteMaterial({ map: flameTexture(), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: true });
     this.smokeTex = smokeTexture();
     this.stoneMat = new THREE.MeshStandardMaterial({ color: 0x77736c, roughness: 0.95, flatShading: true });
@@ -139,6 +140,34 @@ export class Structures {
     return s;
   }
 
+  addCanoe(x, z, yaw) {
+    const g = new THREE.Group();
+    const wood = new THREE.MeshStandardMaterial({ color: 0x8a5530, roughness: 0.75, side: THREE.DoubleSide });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x4a2c18, roughness: 0.8 });
+    const hull = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), wood);
+    hull.scale.set(0.46, 0.34, 2.3);
+    hull.position.y = 0.16;
+    hull.castShadow = true; hull.receiveShadow = true;
+    g.add(hull);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.035, 6, 40), dark);
+    rim.rotation.x = Math.PI / 2;
+    rim.scale.set(0.46, 2.3, 1);
+    rim.position.y = 0.16;
+    g.add(rim);
+    for (const zz of [-0.7, 0.75]) {
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.04, 0.22), dark);
+      seat.position.set(0, 0.08, zz);
+      g.add(seat);
+    }
+    const y = this.world.waterLevelAt(x, z) + 0.02;
+    g.position.set(x, y, z);
+    g.rotation.y = yaw;
+    this.scene.add(g);
+    const b = { kind: "boat", group: g, pos: g.position, yaw, speed: 0, yawVel: 0 };
+    this.boats.push(b);
+    return b;
+  }
+
   addFuel(f, wood) {
     f.fuel += wood * FIRE_FUEL_PER_WOOD;
     f.lit = true;
@@ -147,14 +176,14 @@ export class Structures {
   // Cible structure dans l'axe du regard.
   pick(origin, dir, maxDist) {
     let best = null, bestT = maxDist;
-    const all = [...this.fires, ...this.shelters];
+    const all = [...this.fires, ...this.shelters, ...this.boats];
     const c = new THREE.Vector3();
     for (const s of all) {
-      c.copy(s.pos); c.y += s.kind === "fire" ? 0.3 : 0.9;
+      c.copy(s.pos); c.y += s.kind === "fire" ? 0.3 : s.kind === "boat" ? 0.1 : 0.9;
       const t = c.clone().sub(origin).dot(dir);
       if (t < 0 || t > bestT + 1.5) continue;
       const d = origin.clone().addScaledVector(dir, t).distanceTo(c);
-      const r = s.kind === "fire" ? 0.8 : 1.5;
+      const r = s.kind === "fire" ? 0.8 : s.kind === "boat" ? 1.4 : 1.5;
       if (d < r && t - r * 0.5 < bestT) { bestT = Math.max(0, t - r * 0.5); best = s; }
     }
     return best ? { structure: best, dist: bestT } : null;
@@ -217,11 +246,13 @@ export class Structures {
     return {
       fires: this.fires.map((f) => [Math.round(f.pos.x * 100) / 100, Math.round(f.pos.z * 100) / 100, Math.round(f.fuel * 100) / 100]),
       shelters: this.shelters.map((s) => [Math.round(s.pos.x * 100) / 100, Math.round(s.pos.z * 100) / 100, Math.round(s.yaw * 100) / 100]),
+      boats: this.boats.map((s) => [Math.round(s.pos.x * 100) / 100, Math.round(s.pos.z * 100) / 100, Math.round(s.yaw * 100) / 100]),
     };
   }
 
   restore(d) {
     for (const [x, z, fuel] of d?.fires || []) this.addFire(x, z, fuel);
     for (const [x, z, yaw] of d?.shelters || []) this.addShelter(x, z, yaw);
+    for (const [x, z, yaw] of d?.boats || []) this.addCanoe(x, z, yaw);
   }
 }
