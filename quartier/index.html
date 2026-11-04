@@ -73,9 +73,20 @@
   #save-here { width: 100%; margin-top: 10px; padding: 10px; }
   @media (max-width: 420px) { #places-list { grid-template-columns: 1fr; } }
   #lockhint { position: absolute; left: 50%; bottom: 62px; transform: translateX(-50%); font-size: 12px; opacity: .85; }
-  #minimap { position: fixed; right: max(10px, env(safe-area-inset-right)); top: 60px; width: 170px; height: 170px; border-radius: 50%; overflow: hidden; border: 3px solid #ffffffcc; box-shadow: 0 4px 16px #0008; z-index: 20; cursor: pointer; background: #ddd; display: none; }
+  /* boussole sombre */
+  #minimap { position: fixed; right: max(12px, env(safe-area-inset-right)); top: 60px; width: 92px; height: 92px; border-radius: 50%; overflow: hidden; z-index: 20; cursor: pointer; background: #1b2430; display: none; opacity: .9;
+    box-shadow: 0 0 0 1.5px #ffffff55, 0 6px 18px #0007; -webkit-mask-image: -webkit-radial-gradient(white, black); }
   body.playing #minimap { display: block; }
-  body.touch #minimap { width: 120px; height: 120px; top: 54px; }
+  #minimap-inner { position: absolute; left: -21%; top: -21%; width: 142%; height: 142%; background: #1b2430; }
+  #minimap-inner .leaflet-tile-pane { filter: invert(1) hue-rotate(185deg) brightness(.78) contrast(.92) saturate(.55); }
+  #minimap .mm-arrow { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); filter: drop-shadow(0 1px 2px #0009); pointer-events: none; }
+  #minimap::after { content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none; box-shadow: inset 0 0 0 1.5px #ffffff70, inset 0 0 16px #000a; }
+  #mm-north { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; transform: translate(0, -38px); z-index: 2; font: 800 10px/14px system-ui, sans-serif; text-align: center; color: #ff5a4e; text-shadow: 0 0 3px #000, 0 0 2px #000; pointer-events: none; }
+  body.touch #fps { display: none; } /* place pour garder les boutons sur une seule ligne */
+  #fog { position: absolute; left: 0; top: 0; pointer-events: none; }
+  #explore-stats { position: absolute; left: max(10px, env(safe-area-inset-left)); bottom: 70px; z-index: 1000; font-size: 13px; font-weight: 500; }
+  #explore-stats b { color: #7dd3fc; }
+  .trail-glow { filter: blur(3px); }
   #mapview { position: fixed; inset: 0; z-index: 45; background: #0d1117; }
   #mapview[hidden] { display: none !important; }
   #bigmap { position: absolute; inset: 0; }
@@ -174,14 +185,22 @@
   <div class="chip" id="error" hidden></div>
   <div id="attrib">Google</div>
 </div>
-<div id="minimap" title="Ouvrir la carte (M)"></div>
+<div id="minimap" title="Ouvrir la carte (M)">
+  <div id="minimap-inner"></div>
+  <svg class="mm-arrow" viewBox="0 0 24 24" width="22" height="22"><path d="M12 3 L18.5 20 L12 16.2 L5.5 20 Z" fill="#4f9dff" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg>
+  <div id="mm-north">N</div>
+</div>
 <div id="mapview" hidden>
   <div id="bigmap"></div>
+  <canvas id="fog"></canvas>
+  <div id="explore-stats" class="chip"></div>
   <div class="mapbar">
     <button id="map-close">✕ Fermer</button>
     <button id="map-me">📍 Moi</button>
     <button id="map-type">🛰️ Satellite</button>
     <button id="map-traffic">🚦 Trafic</button>
+    <button id="map-fog" title="Brouillard d'exploration">🌫️ Exploration</button>
+    <button id="map-reset" title="Effacer l'exploration">🗑️</button>
     <span id="map-msg" class="small"></span>
   </div>
   <div class="maphint chip">Touche la carte pour t'y téléporter · pince ou molette pour zoomer</div>

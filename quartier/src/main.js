@@ -247,6 +247,8 @@ function start( key, place, quality ) {
 		onTeleport: ( lat, lon ) => teleportTo( lat, lon ),
 		onOpen: () => { document.exitPointerLock?.(); keys.clear(); stick.x = stick.y = 0; },
 	} );
+	gps.onMilestone = ( msg ) => toast( msg );
+	if ( TEST_TILESET ) window.__gps = gps; // pour les essais automatiques
 
 	addEventListener( 'resize', onResize );
 	setupInput();
@@ -314,6 +316,7 @@ function teleport( place ) {
 	// direction du nord dans la scène (pour la boussole)
 	const north = TEST_TILESET ? new THREE.Vector3( 0, 0, -1 ) : latLonToLocal( place.lat + 0.001, place.lon, 0, new THREE.Vector3() ).sub( latLonToLocal( place.lat, place.lon, 0, _v ) );
 	northYaw = Math.atan2( - north.x, - north.z );
+	jumped = true; // pour la trace d'exploration : on ne relie pas l'ancien point au nouveau
 	player.vel.set( 0, 0, 0 );
 	player.grounded = false; // pas de gravité tant qu'on n'a pas trouvé le sol
 	spawn.time = 0; spawn.quiet = 0;
@@ -773,6 +776,7 @@ function worldNormal( hit ) {
 // --------------------------------------------------------------------------------------------
 // Boucle
 // --------------------------------------------------------------------------------------------
+let jumped = true;
 let northYaw = 0, lastX = 0, lastZ = 0, bobPhase = 0, bobAmp = 0;
 const clock = new THREE.Clock();
 let hudTimer = 0;
@@ -848,8 +852,12 @@ function frame() {
 		$( 'attrib' ).textContent = attr ? 'Google · ' + attr : 'Google';
 		$( 'weather' ).textContent = weather.label();
 		$( 'fps' ).textContent = Math.round( perf.fps ) + ' FPS';
+		// la boussole se place toujours juste sous les boutons du haut (même s'ils passent sur 2 lignes)
+		const btnBottom = document.querySelector( '.btns' ).getBoundingClientRect().bottom;
+		$( 'minimap' ).style.top = Math.round( btnBottom + 10 ) + 'px';
 		if ( ! TEST_TILESET ) {
 			gps.update( lat, lon, northYaw - player.yaw );
+			if ( player.grounded || player.fly ) { gps.track( lat, lon, jumped ); jumped = false; }
 			gps.setMiniZoom( Math.max( 5, Math.min( 17, Math.round( 17 - Math.log10( speedMult ) * 1.8 - ( player.fly ? 1 : 0 ) ) ) ) );
 		}
 	}
