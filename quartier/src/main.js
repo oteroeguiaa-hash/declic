@@ -279,15 +279,18 @@ function start( key, place, quality ) {
 
 	// la ville la nuit : fenêtres, lampadaires, traînées de phares
 	nightCity = new NightCity( scene, {
-		here: () => TEST_TILESET ? { lat: player.pos.z, lon: player.pos.x } : localToLatLon( player.pos ),
-		toLocal: TEST_TILESET ? ( lat, lon, t ) => t.set( lon, 0, lat ) : ( lat, lon, t ) => latLonToLocal( lat, lon, 0, t ),
+		// (scène d'essai : 1 « degré » = 111 320 m, pour que les distances restent justes)
+		here: () => TEST_TILESET ? { lat: player.pos.z / 111320, lon: player.pos.x / 111320 } : localToLatLon( player.pos ),
+		toLocal: TEST_TILESET ? ( lat, lon, t ) => t.set( lon * 111320, 0, lat * 111320 ) : ( lat, lon, t ) => latLonToLocal( lat, lon, 0, t ),
 		groundAt: ( x, z ) => { const h = upwardHits( x, z, player.pos.y + 150, 800 ); return h.length ? h[ h.length - 1 ].point.y : null; },
+		roofAt: ( x, z ) => { const h = upwardHits( x, z, player.pos.y + 300, 900 ); return h.length ? h[ 0 ].point.y : null; },
 		fake: TEST_TILESET ? () => [
-			{ type: 'way', id: 1, tags: { highway: 'primary' }, geometry: [ { lat: 30, lon: -150 }, { lat: 30, lon: 150 } ] },
-			...Array.from( { length: 10 }, ( _, i ) => ( { type: 'node', lat: 24, lon: -100 + i * 22 } ) ),
+			{ type: 'way', id: 12345, tags: { building: 'yes' }, geometry: [ [ -12, -10 ], [ -12, 10 ], [ -30, 10 ], [ -30, -10 ], [ -12, -10 ] ].map( ( [ z, x ] ) => ( { lat: z / 111320, lon: x / 111320 } ) ) },
+			{ type: 'way', id: 1, tags: { highway: 'primary' }, geometry: [ { lat: 30 / 111320, lon: -150 / 111320 }, { lat: 30 / 111320, lon: 150 / 111320 } ] },
+			...Array.from( { length: 10 }, ( _, i ) => ( { type: 'node', lat: 24 / 111320, lon: ( -100 + i * 22 ) / 111320 } ) ),
 		] : null,
 	} );
-	if ( TEST_TILESET ) { window.__gps = gps; window.__player = player; window.__sv = () => streetView; window.__THREE = THREE; } // pour les essais automatiques
+	if ( TEST_TILESET ) { window.__gps = gps; window.__player = player; window.__sv = () => streetView; window.__THREE = THREE; window.__night = () => nightCity; } // pour les essais automatiques
 
 	addEventListener( 'resize', onResize );
 	setupInput();
