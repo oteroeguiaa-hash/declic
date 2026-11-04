@@ -13,6 +13,7 @@ import { Traffic } from './traffic.js';
 import { makeCar, makeTram, TYPES } from './cars.js';
 import { Interior, euro } from './interior.js';
 import { Shops } from './shops.js';
+import { lookupPlace } from './places.js';
 
 // Rayons (sol, murs) accélérés : chaque morceau de ville reçoit un index spatial au chargement.
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -157,7 +158,7 @@ function goLandscape() {
 // Scène
 // --------------------------------------------------------------------------------------------
 let renderer, scene, camera, tiles, raycaster, weather, reorient, gps, nightCity, streetView, walls, steps, traffic, interior, shops;
-let nearShop = null, currentHint = null;
+let nearShop = null, currentHint = null, apiKey = '', qualityName = 'haute';
 // Réglages par qualité : détail au loin (errorTarget, plus petit = plus net), rayon autour du joueur
 // chargé au détail maximal de Google, résolution max de l'écran.
 // far = distance de vue à pied (au-delà : brouillard) ; au loin on ne charge donc plus rien d'inutile.
@@ -178,6 +179,7 @@ const spawn = { time: 0, quiet: 0 };
 
 function start( key, place, quality ) {
 	Q = QUALITY[ quality ] || QUALITY.haute;
+	apiKey = key; qualityName = quality;
 	// L'anticrénelage (MSAA) coûte cher sur les écrans haute densité, où il sert peu.
 	const msaa = Q.msaa === true || ( Q.msaa === 'lowdpi' && devicePixelRatio < 1.5 );
 	renderer = new THREE.WebGLRenderer( { antialias: msaa, powerPreference: 'high-performance', stencil: false } );
@@ -471,6 +473,7 @@ function setupInput() {
 	};
 	tap( 'speed', cycleSpeed );
 	tap( 'act-btn', doAction );
+	$( 'photo-view' ).onclick = () => { $( 'photo-view' ).hidden = true; };
 	tap( 'fly', toggleFly );
 	// bouton heure : Maintenant → 5h → Lever → 10h → 12h → 16h → Coucher → 18h → 22h → Minuit → …
 	tap( 'night', () => {
@@ -951,12 +954,18 @@ function doAction() {
 		currentHint = null;
 		return;
 	}
-	if ( nearShop ) enterShop( nearShop );
+	if ( nearShop ) {
+		const inf = nearShop.info;
+		if ( inf?.closedForGood ) return toast( nearShop.name + ' a fermé définitivement.' );
+		if ( inf?.open === false ) return toast( `${ nearShop.name } est fermé maintenant${ inf.hours ? ' · ' + inf.hours : '' }` );
+		enterShop( nearShop );
+	}
 }
 
 function enterShop( s ) {
 	document.exitPointerLock?.();
-	interior.enter( s, weather.night > 0.5 );
+	interior.enter( s, weather.night > 0.5, s.info?.theme || null, qualityName );
+	showPhotos( s.info );
 	outsidePos = player.pos.clone();
 	player.yaw = 0; // face au fond du magasin (l'entrée est derrière nous)
 	player.pitch = - 0.05;
@@ -968,6 +977,24 @@ function enterShop( s ) {
 }
 
 let outsidePos = null, placeBefore = '';
+
+// vraies photos du magasin (Google), en petit dans un coin ; une tape pour agrandir
+function showPhotos( info ) {
+	const box = $( 'photos' );
+	box.textContent = '';
+	if ( ! info?.photos?.length ) { box.hidden = true; return; }
+	const title = document.createElement( 'div' );
+	title.className = 'ph-title';
+	title.textContent = '📸 Le vrai magasin' + ( info.hours ? ' · ' + info.hours : '' );
+	box.append( title );
+	for ( const u of info.photos.slice( 0, 4 ) ) {
+		const img = document.createElement( 'img' );
+		img.src = u; img.alt = ''; img.loading = 'lazy';
+		img.onclick = () => { $( 'photo-big' ).src = u; $( 'photo-view' ).hidden = false; };
+		box.append( img );
+	}
+	box.hidden = false;
+}
 function leaveShop() {
 	interior.exit();
 	if ( outsidePos ) player.pos.copy( outsidePos );
@@ -977,6 +1004,7 @@ function leaveShop() {
 	$( 'minimap' ).style.visibility = '';
 	$( 'act-btn' ).hidden = true;
 	$( 'place' ).textContent = placeBefore;
+	$( 'photos' ).hidden = true;
 	toast( 'À bientôt !' );
 }
 
@@ -1066,7 +1094,17 @@ function frame() {
 		const onFoot = ! player.fly && player.grounded && speedMult <= 10;
 		if ( onFoot ) shops.maybeLoad();
 		nearShop = onFoot ? shops.nearest( player.pos.x, player.pos.z ) : null;
-		showAction( nearShop ? `🚪 Entrer · ${ nearShop.name } (${ nearShop.label })` : null );
+		// le vrai magasin (Google) : horaires, photos, couleurs — cherché une fois, en arrière-plan
+		if ( nearShop && nearShop.named && ! nearShop.asked && ! TEST_TILESET ) {
+			nearShop.asked = true;
+			const s = nearShop;
+			lookupPlace( apiKey, s, weather.simDate() ).then( ( info ) => { s.info = info; } );
+		}
+		const inf = nearShop?.info;
+		showAction( ! nearShop ? null
+			: inf?.closedForGood ? `⛔ ${ nearShop.name } · fermé définitivement`
+			: inf?.open === false ? `🔒 ${ nearShop.name } · fermé maintenant`
+			: `🚪 Entrer · ${ nearShop.name } (${ nearShop.label })${ inf?.rating ? ' · ★ ' + inf.rating.toFixed( 1 ).replace( '.', ',' ) : '' }` );
 		// la boussole se place à gauche, juste sous le nom du lieu (loin des boutons)
 		const placeBottom = $( 'place' ).parentElement.getBoundingClientRect().bottom;
 		$( 'minimap' ).style.top = Math.round( placeBottom + 8 ) + 'px';
