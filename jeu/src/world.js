@@ -551,6 +551,8 @@ vec3 terrainShade() {
     Lay rx = smp(L_ROCK, vWPos.zy * sc), ry = smp(L_ROCK, vWPos.xz * sc), rz = smp(L_ROCK, vWPos.xy * sc);
     Lay r = Lay(rx.c * w3.x + ry.c * w3.y + rz.c * w3.z, vec2(0.0), rx.r * w3.x + ry.r * w3.y + rz.r * w3.z, rx.h * w3.x + ry.h * w3.y + rz.h * w3.z);
     // grande échelle : strates, teinte plus chaude (grès) par zones
+    // montagnes : calcaire clair (Dolomites), roche plus sombre ailleurs
+    r.c = mix(r.c, r.c * vec3(1.55, 1.48, 1.36), smoothstep(0.3, 0.7, bio.r));
     r.c *= mix(vec3(1.0), vec3(1.12, 1.0, 0.85), smoothstep(0.4, 0.7, dm.g)) * (1.0 + 0.35 * dn.b) * (0.88 + 0.18 * sin(h * 1.3 + dm.b * 6.0));
     rockN = vec3(0.0, rx.n.y, rx.n.x) * w3.x + vec3(ry.n.x, 0.0, ry.n.y) * w3.y + vec3(rz.n.x, rz.n.y, 0.0) * w3.z;
     float k = hBlend(wR, c.h, r.h);
@@ -751,7 +753,9 @@ ${REFL_PARS}`)
   float depth = max(0.0, vWPos.y - ground);
   float viewDist = length(cameraPosition - vWPos);
   // Couleur de l'eau diffusée : turquoise en eau peu profonde, bleu nuit au large
-  vec3 shallowC = vec3(0.07, 0.42, 0.40), deepC = vec3(0.006, 0.05, 0.085);
+  // Lacs de l'intérieur : eau claire et turquoise (lacs alpins) ; mer plus profonde et bleue
+  float inland = 1.0 - smoothstep(1250.0, 1650.0, length(vWPos.xz));
+  vec3 shallowC = mix(vec3(0.07, 0.42, 0.40), vec3(0.06, 0.62, 0.58), inland), deepC = mix(vec3(0.006, 0.05, 0.085), vec3(0.01, 0.22, 0.26), inland);
   diffuseColor.rgb = mix(shallowC, deepC, smoothstep(0.5, 14.0, depth));
   // Écume : bande du rivage (vaguelettes qui avancent) + crêtes des vagues au large
   float fN = texture2D(tWaterN, vWPos.xz * 0.17 + vec2(uTime * 0.02, -uTime * 0.013)).b;
@@ -777,7 +781,7 @@ ${REFL_PARS}`)
   vec2 ruv = clamp(suv + nxy * 0.03 * (1.0 - smoothstep(0.0, 120.0, vd)), 0.001, 0.999);
   wRefr = texture2D(tRefr, ruv).rgb;
   float thick = gl_FrontFacing ? depth : min(vd, 30.0);
-  vec3 absorb = vec3(0.42, 0.11, 0.075);
+  vec3 absorb = mix(vec3(0.42, 0.11, 0.075), vec3(0.3, 0.06, 0.05), 1.0 - smoothstep(1250.0, 1650.0, length(vWPos.xz)));
   vec3 tr = exp(-absorb * thick * 1.3);
   wTrans = uRefrOn * dot(tr, vec3(0.333)) * (1.0 - wFoam);
   diffuseColor.rgb *= 1.0 - wTrans;

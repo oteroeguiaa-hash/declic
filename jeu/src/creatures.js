@@ -30,11 +30,11 @@ export const SPECIES = {
   },
   rabbit: {
     name: "Lapin", behavior: "prey", hp: 8, walk: 1.2, run: 7.5, radius: 0.12, alert: [9, 14, 4], hop: true, drops: { viande_crue: 1, peau: 1 },
-    model: { col: 0x8a7458, back: 0x6e5c46, belly: 0xe4d8c4, dark: 0x2a2018, tuck: 0, legLen: 0.06, legR: 0.024, bodyLen: 0.32, bodyR: 0.12, bodyW: 0.2, neckLen: 0.05, neckR: 0.07, neckAngle: 0.9, headLen: 0.12, headR: 0.068, headTilt: 0.2, snoutLen: 0.04, snoutR: 0.035, cheeks: true, ears: { size: 0.14, pointy: false, up: 1.6 }, tail: { len: 0.05, r: 0.04, angle: 0.6 }, tailTip: 0xf6f2ec },
+    model: { col: 0x8a7458, back: 0x6e5c46, belly: 0xe4d8c4, dark: 0x2a2018, tuck: 0, legLen: 0.06, legR: 0.024, bodyLen: 0.32, bodyR: 0.12, bodyW: 0.2, neckLen: 0.05, neckR: 0.07, neckAngle: 0.9, headLen: 0.12, headR: 0.068, headTilt: 0.2, snoutLen: 0.04, snoutR: 0.035, cheeks: true, ears: { size: 0.14, pointy: false, up: 1.6 }, earIn: 0xd8a8a0, tail: { len: 0.05, r: 0.04, angle: 0.6 }, tailTip: 0xf6f2ec },
   },
   squirrel: {
     name: "Écureuil", behavior: "prey", hp: 8, walk: 1.5, run: 6.5, radius: 0.1, alert: [7, 12, 3], hop: true, drops: { viande_crue: 1, noisettes: 2 },
-    model: { col: 0xa8501e, back: 0x8a3e16, belly: 0xf0e2c8, dark: 0x2a1408, chest: true, tuck: 0.2, legLen: 0.05, legR: 0.014, bodyLen: 0.2, bodyR: 0.055, bodyW: 0.09, neckLen: 0.04, neckR: 0.035, neckAngle: 0.9, headLen: 0.07, headR: 0.04, snoutLen: 0.025, snoutR: 0.02, ears: { size: 0.035, pointy: true }, tufts: true, tail: { len: 0.24, r: 0.06, angle: 1.2, bushy: true, curl: true } },
+    model: { col: 0xa8501e, back: 0x8a3e16, belly: 0xf0e2c8, dark: 0x2a1408, chest: true, tuck: 0.2, legLen: 0.05, legR: 0.014, bodyLen: 0.2, bodyR: 0.055, bodyW: 0.09, neckLen: 0.04, neckR: 0.035, neckAngle: 0.9, headLen: 0.07, headR: 0.04, snoutLen: 0.025, snoutR: 0.02, ears: { size: 0.035, pointy: true }, tufts: true, tail: { len: 0.22, r: 0.045, angle: 1.35, bushy: true, curl: true } },
   },
   wolf: {
     name: "Loup", behavior: "hunter", hp: 70, walk: 1.8, run: 7.4, radius: 0.45, chase: 55, dmg: 13, cooldown: 1.25, fleeHp: 22, drops: { viande_crue: 2, peau: 1 },
@@ -48,9 +48,61 @@ export const SPECIES = {
     name: "Ours", behavior: "territorial", hp: 220, walk: 1.2, run: 6.8, radius: 0.8, aggro: [13, 7], dmg: 28, cooldown: 1.8, alert: [15, 25, 8], drops: { viande_crue: 6, fourrure: 2 },
     model: { col: 0x5a3c26, back: 0x46301e, belly: 0x3e2a1a, dark: 0x1e140c, socks: 0x2a1c12, hump: true, tuck: 0.05, legLen: 0.55, legR: 0.1, bodyLen: 1.7, bodyR: 0.48, bodyW: 0.8, neckLen: 0.3, neckR: 0.27, neckAngle: 0.1, headLen: 0.4, headR: 0.24, headTilt: 0.25, snoutLen: 0.2, snoutR: 0.1, snoutCol: 0x8a6a4a, ears: { size: 0.1, pointy: false, up: 1.0 }, tail: { len: 0.1, r: 0.06, angle: -0.3 } },
   },
+  doe: {
+    name: "Biche", behavior: "prey", hp: 50, walk: 1.3, run: 9.5, radius: 0.45, alert: [18, 30, 9], drops: { viande_crue: 3, peau: 2 },
+    model: { col: 0x9a6a40, back: 0x7a5232, belly: 0xe0ccaa, dark: 0x2a1d14, pattern: "rump", hoof: true, tuck: 0.6, legLen: 0.76, legR: 0.034, bodyLen: 1.15, bodyR: 0.24, bodyW: 0.32, neckLen: 0.5, neckR: 0.075, neckAngle: 1.0, headLen: 0.3, headR: 0.085, headTilt: 0.5, snoutLen: 0.16, snoutR: 0.045, snoutCol: 0x5a4030, cheeks: true, ears: { size: 0.17, pointy: true, up: 0.7 }, tail: { len: 0.12, r: 0.035, angle: -0.5 } },
+  },
+  roe: {
+    name: "Chevreuil", behavior: "prey", hp: 30, walk: 1.2, run: 10, radius: 0.32, alert: [16, 26, 8], drops: { viande_crue: 2, peau: 1 },
+    model: { col: 0xa86a38, back: 0x8a5428, belly: 0xd8c0a0, dark: 0x1e1610, pattern: "rump", hoof: true, tuck: 0.55, legLen: 0.56, legR: 0.026, bodyLen: 0.85, bodyR: 0.17, bodyW: 0.23, neckLen: 0.34, neckR: 0.055, neckAngle: 0.95, headLen: 0.2, headR: 0.06, headTilt: 0.45, snoutLen: 0.1, snoutR: 0.032, snoutCol: 0x1e1610, cheeks: true, ears: { size: 0.12, pointy: true, up: 0.8 }, antlers: "roe", tail: { len: 0.03, r: 0.03, angle: -0.3 } },
+  },
+  bison: {
+    name: "Bison d'Europe", behavior: "defensive", hp: 260, walk: 1.0, run: 7.5, radius: 0.95, alert: [12, 20, 7], aggro: [7, 4], dmg: 26, cooldown: 1.8, drops: { viande_crue: 9, fourrure: 3 },
+    model: { col: 0x5a4028, back: 0x48321e, belly: 0x3e2c1c, dark: 0x1a120c, shaggy: 0x2e2014, hoof: true, hump: true, tuck: 0.15, legLen: 0.72, legR: 0.075, bodyLen: 2.3, bodyR: 0.58, bodyW: 0.82, neckLen: 0.3, neckR: 0.3, neckAngle: 0.0, headLen: 0.46, headR: 0.25, headTilt: 1.15, snoutLen: 0.16, snoutR: 0.13, snoutCol: 0x241a12, horns: "bison", dewlap: true, ears: { size: 0.09, pointy: false, up: 0.2 }, tail: { len: 0.5, r: 0.035, angle: -1.35 }, tailTip: 0x1a120c },
+  },
+  hare: {
+    name: "Lièvre", behavior: "prey", hp: 12, walk: 1.4, run: 11, radius: 0.15, alert: [12, 20, 5], hop: true, drops: { viande_crue: 1, peau: 1 },
+    model: { col: 0xa08058, back: 0x806446, belly: 0xece4d4, dark: 0x16120e, earBack: true, tuck: 0.2, legLen: 0.12, legR: 0.026, bodyLen: 0.46, bodyR: 0.13, bodyW: 0.2, neckLen: 0.06, neckR: 0.07, neckAngle: 0.8, headLen: 0.13, headR: 0.07, headTilt: 0.15, snoutLen: 0.045, snoutR: 0.035, cheeks: true, ears: { size: 0.2, pointy: false, up: 1.3 }, earIn: 0xd0a090, tail: { len: 0.06, r: 0.045, angle: 0.6 }, tailTip: 0xf6f2ec },
+  },
+  dormouse: {
+    name: "Loir", behavior: "prey", hp: 5, walk: 1.0, run: 5.5, radius: 0.08, alert: [6, 10, 3], hop: true, drops: { viande_crue: 1 },
+    model: { col: 0x8a8884, back: 0x74726e, belly: 0xece8e0, dark: 0x1a1816, mask: true, tuck: 0.2, legLen: 0.04, legR: 0.012, bodyLen: 0.16, bodyR: 0.05, bodyW: 0.08, neckLen: 0.03, neckR: 0.035, neckAngle: 0.8, headLen: 0.06, headR: 0.038, snoutLen: 0.02, snoutR: 0.018, ears: { size: 0.025, pointy: false }, tail: { len: 0.14, r: 0.03, angle: -0.2, bushy: true } },
+  },
+  hedgehog: {
+    name: "Hérisson", behavior: "prey", hp: 6, walk: 0.5, run: 1.4, radius: 0.1, alert: [3, 5, 2], drops: { viande_crue: 1 },
+    model: { col: 0x6a5440, back: 0x4a3828, belly: 0xb8a088, dark: 0x1a1410, pattern: "spines", tuck: 0, legLen: 0.03, legR: 0.012, bodyLen: 0.24, bodyR: 0.1, bodyW: 0.18, neckLen: 0.02, neckR: 0.06, neckAngle: 0.1, headLen: 0.07, headR: 0.045, headTilt: 0.3, snoutLen: 0.05, snoutR: 0.018, snoutCol: 0x9a8268, ears: { size: 0.02, pointy: false }, tail: null },
+  },
+  weasel: {
+    name: "Belette", behavior: "prey", hp: 5, walk: 1.6, run: 7, radius: 0.06, alert: [8, 12, 4], drops: { viande_crue: 1 },
+    model: { col: 0x9a6230, back: 0x845228, belly: 0xf2ece0, dark: 0x1a120c, chest: true, tuck: 0.1, legLen: 0.035, legR: 0.01, bodyLen: 0.24, bodyR: 0.03, bodyW: 0.05, neckLen: 0.06, neckR: 0.022, neckAngle: 0.6, headLen: 0.05, headR: 0.025, headTilt: 0.1, snoutLen: 0.02, snoutR: 0.012, ears: { size: 0.015, pointy: false }, tail: { len: 0.06, r: 0.012, angle: -0.2 } },
+  },
+  marmot: {
+    name: "Marmotte", behavior: "prey", hp: 14, walk: 0.9, run: 4.5, radius: 0.18, alert: [14, 22, 7], drops: { viande_crue: 1, fourrure: 1 },
+    model: { col: 0x8a6e4c, back: 0x6e5438, belly: 0xb8986c, dark: 0x1e1810, snoutCol: 0xd8ccb4, tuck: 0, legLen: 0.06, legR: 0.025, bodyLen: 0.48, bodyR: 0.15, bodyW: 0.27, neckLen: 0.05, neckR: 0.09, neckAngle: 0.5, headLen: 0.11, headR: 0.075, headTilt: 0.1, snoutLen: 0.04, snoutR: 0.035, ears: { size: 0.03, pointy: false, up: 0.6 }, tail: { len: 0.15, r: 0.035, angle: -0.3, bushy: true } },
+  },
+  beaver: {
+    name: "Castor", behavior: "prey", hp: 22, walk: 0.7, run: 3.5, radius: 0.25, alert: [9, 15, 5], drops: { viande_crue: 2, fourrure: 1 },
+    model: { col: 0x5e3c22, back: 0x4a2e1a, belly: 0x6e4c32, dark: 0x1a120c, tuck: 0, legLen: 0.07, legR: 0.03, bodyLen: 0.72, bodyR: 0.2, bodyW: 0.34, neckLen: 0.05, neckR: 0.12, neckAngle: 0.3, headLen: 0.14, headR: 0.09, headTilt: 0.1, snoutLen: 0.06, snoutR: 0.05, ears: { size: 0.025, pointy: false }, tail: { len: 0.3, r: 0.075, angle: -0.1, flat: true }, tailTip: 0x2a2420, tailCol: 0x2e2620 },
+  },
+  wolverine: {
+    name: "Glouton", behavior: "territorial", hp: 75, walk: 1.2, run: 6.5, radius: 0.32, aggro: [9, 5], dmg: 15, cooldown: 1.3, alert: [12, 20, 6], drops: { viande_crue: 2, fourrure: 2 },
+    model: { col: 0x34261a, back: 0x281c12, belly: 0x2a1e14, dark: 0x14100a, pattern: "band", bandCol: 0xa8844c, tuck: 0.1, legLen: 0.26, legR: 0.04, bodyLen: 0.78, bodyR: 0.19, bodyW: 0.3, neckLen: 0.1, neckR: 0.12, neckAngle: 0.3, headLen: 0.16, headR: 0.1, headTilt: 0.2, snoutLen: 0.08, snoutR: 0.05, snoutCol: 0x1a1410, ears: { size: 0.04, pointy: false }, tail: { len: 0.22, r: 0.06, angle: -0.6, bushy: true, droop: true } },
+  },
+  otter: {
+    name: "Loutre", behavior: "prey", hp: 18, walk: 1.0, run: 6, radius: 0.15, alert: [10, 16, 5], drops: { viande_crue: 1, fourrure: 1 },
+    model: { col: 0x5a4030, back: 0x4a3426, belly: 0x8a7258, dark: 0x1a120c, throat: 0xc8b89c, tuck: 0, legLen: 0.06, legR: 0.025, bodyLen: 0.72, bodyR: 0.1, bodyW: 0.17, neckLen: 0.1, neckR: 0.075, neckAngle: 0.35, headLen: 0.11, headR: 0.065, headTilt: 0.1, snoutLen: 0.04, snoutR: 0.04, ears: { size: 0.018, pointy: false }, tail: { len: 0.42, r: 0.055, angle: -0.2 } },
+  },
+  marten: {
+    name: "Martre", behavior: "prey", hp: 12, walk: 1.4, run: 7.5, radius: 0.1, alert: [10, 16, 5], drops: { viande_crue: 1, fourrure: 1 },
+    model: { col: 0x5a3820, back: 0x482c18, belly: 0x4a3020, dark: 0x1a120a, throat: 0xe8b850, tuck: 0.2, legLen: 0.12, legR: 0.018, bodyLen: 0.48, bodyR: 0.07, bodyW: 0.11, neckLen: 0.1, neckR: 0.05, neckAngle: 0.5, headLen: 0.08, headR: 0.045, headTilt: 0.1, snoutLen: 0.04, snoutR: 0.022, ears: { size: 0.04, pointy: false, up: 0.9 }, tail: { len: 0.3, r: 0.045, angle: -0.3, bushy: true } },
+  },
+  badger: {
+    name: "Blaireau", behavior: "defensive", hp: 40, walk: 0.9, run: 4.5, radius: 0.25, alert: [8, 14, 4], aggro: [4, 2], dmg: 8, cooldown: 1.2, drops: { viande_crue: 2, fourrure: 1 },
+    model: { col: 0x8e8a84, back: 0x7a7670, belly: 0x2a2622, dark: 0x16120e, socks: 0x16120e, pattern: "badger", tuck: 0, legLen: 0.08, legR: 0.035, bodyLen: 0.66, bodyR: 0.16, bodyW: 0.32, neckLen: 0.06, neckR: 0.1, neckAngle: 0.2, headLen: 0.15, headR: 0.075, headTilt: 0.3, snoutLen: 0.09, snoutR: 0.03, snoutCol: 0x2a2420, ears: { size: 0.025, pointy: false }, tail: { len: 0.1, r: 0.04, angle: -0.4 } },
+  },
 };
 
-const PREDATORS = new Set(["wolf", "lynx", "bear"]);
+const PREDATORS = new Set(["wolf", "lynx", "bear", "wolverine"]);
 
 export class Creatures {
   constructor(scene, world, props, quality, sounds) {
@@ -69,13 +121,15 @@ export class Creatures {
     const [dMin, dMax] = opts.dist || {
       deer: [50, 130], moose: [60, 140], boar: [45, 110], fox: [30, 90], rabbit: [18, 50], squirrel: [14, 40],
       wolf: [55, 95], lynx: [50, 100], bear: [80, 140], wildcat: [30, 80],
-    }[type];
+    }[type] || (SPECIES[type].radius > 0.4 ? [50, 130] : [14, 45]);
+    const mountainOK = type === "marmot" || type === "wolverine";
     for (let tries = 0; tries < 25; tries++) {
       const a = this.rand() * Math.PI * 2;
       const d = dMin + this.rand() * (dMax - dMin);
       const x = near.x + Math.cos(a) * d, z = near.z + Math.sin(a) * d;
       const h = this.world.heightAt(x, z);
-      if (h < 2.5 || h > 300 || this.world.slopeAt(x, z) > 0.3 || this.world.streamAt(x, z) > 0.1) continue;
+      if (h < 2.5 || h > (mountainOK ? 480 : 300) || this.world.slopeAt(x, z) > (mountainOK ? 0.5 : 0.3) || this.world.streamAt(x, z) > 0.1) continue;
+      if (opts.hab && !opts.hab(x, z, h)) continue;
       if (type === "moose" && this.world.moisture(x, z) < 0.45) continue;
       return this.create(type, x, z, opts);
     }
@@ -123,6 +177,24 @@ export class Creatures {
       if (this.count("wildcat") < 2 && r() < 0.15) this.spawn("wildcat", player.pos);
       if (this.count("moose") < 2 && r() < 0.08) this.spawn("moose", player.pos);
       if (this.count("boar") < Math.max(1, Math.round(2 * (diff.wolves || 0.5))) && r() < 0.12) this.spawn("boar", player.pos);
+      // Faune selon l'habitat : plaines, forêts, montagnes, bords de l'eau
+      const W = this.world;
+      const plain = (x, z) => W.biomeAt(x, z).p > 0.4, forest = (x, z) => W.canopyAt(x, z) > 0.3;
+      const mount = (x, z, h) => W.biomeAt(x, z).m > 0.3 && h > 90;
+      const wet = (x, z) => { for (let a = 0; a < 6.28; a += 1.05) if (W.waterLevelAt(x + Math.cos(a) * 9, z + Math.sin(a) * 9) - W.heightAt(x + Math.cos(a) * 9, z + Math.sin(a) * 9) > 0.3) return true; return false; };
+      const dusk = night || (ctx.hours !== undefined && (ctx.hours < 8 || ctx.hours > 18));
+      const table = [
+        ["doe", 3, 0.35], ["roe", 3, 0.35], ["bison", 5, 0.3, plain, true], ["hare", 2, 0.35, plain],
+        ["dormouse", 1, 0.2, forest], ["hedgehog", 1, dusk ? 0.3 : 0.06], ["weasel", 1, 0.12],
+        ["marmot", 3, 0.5, mount], ["beaver", 2, 0.35, wet], ["otter", 1, 0.3, wet], ["marten", 1, 0.16, forest],
+        ["badger", 1, dusk ? 0.3 : 0.05, forest],
+      ];
+      for (const [t, max, p, hab, herd] of table) {
+        if (this.count(t) >= max || r() > p) continue;
+        const c = this.spawn(t, player.pos, { hab });
+        if (c && herd) for (let k = 0; k < 2 + Math.floor(r() * 3) && this.count(t) < max + 2; k++) this.create(t, c.pos.x + (r() - 0.5) * 14, c.pos.z + (r() - 0.5) * 14, { scale: k === 0 ? 0.7 : undefined });
+      }
+      if (diff.predators && this.count("wolverine") < 1 && r() < 0.05) this.spawn("wolverine", player.pos, { hab: (x, z, h) => mount(x, z, h) || forest(x, z) });
       if (diff.predators) {
         if (this.count("lynx") < Math.max(1, Math.round(diff.wolves)) && r() < 0.07) this.spawn("lynx", player.pos);
         if (this.count("bear") < diff.bears && r() < (day >= 2 ? 0.06 : 0.03)) this.spawn("bear", player.pos);
@@ -140,7 +212,7 @@ export class Creatures {
     }
     for (const c of [...this.list]) {
       const d = c.pos.distanceTo(player.pos);
-      const small = c.type === "squirrel" || c.type === "rabbit";
+      const small = c.sp.radius < 0.2;
       if (d > (small ? 80 : 220) || (c.dead && c.deadT > 240)) this.remove(c);
       else if (c.type === "wolf" && c.nocturnal && !night && d > 70) this.remove(c);
       else if (PREDATORS.has(c.type) && !diff.predators) this.remove(c);

@@ -20,6 +20,8 @@ import { registerFurniture } from "./furniture.js";
 import { MapView } from "./map.js";
 import { Birds } from "./birds.js";
 import { Insects } from "./insects.js";
+import { Herps } from "./herps.js";
+import { setFurShells } from "./anatomy.js";
 
 const SAVE_KEY = "lisiere-save-v8";        // v8 : île de 4 km, forêts denses, nouveau relief
 const OLD_SAVE_KEYS = ["lisiere-save-v7", "lisiere-save-v6", "lisiere-save-v5", "lisiere-save-v4", "lisiere-save-v3", "lisiere-save-v2", "lisiere-save-v1"];
@@ -34,9 +36,9 @@ const store = {
 
 // treeNear : arbres détaillés · treeFar : au-delà, imposteurs (toute l'île reste visible)
 const PRESETS = {
-  low:    { reflections: 0, msaa: 0, fxaa: true, ssao: 0, raySamples: 24, rayScale: 0.25, shadows: true, shadowSize: 1024, shadowRange: 32, shadowSoft: 1, viewDistance: 330, treeNear: 20, treeFar: 95, cullCos: 0.2, grassCount: 9000, grassRadius: 16, undergrowth: 2400, undergrowthRadius: 22, lodScale: 0.6, envInterval: 20, atlasScale: 0.5, impostorTile: 96, impostorThin: 1, terrainTex: 256, maxDeer: 5, maxSquirrels: 3, maxWolves: 4, maxCreatures: 12, antialias: false, maxPixelRatio: 1.0 },
-  medium: { reflections: 0.25, msaa: 0, fxaa: true, ssao: 1, raySamples: 36, rayScale: 0.35, shadows: true, shadowSize: 2048, shadowRange: 50, shadowSoft: 2, viewDistance: 480, treeNear: 30, treeFar: 150, cullCos: 0.12, grassCount: 24000, grassRadius: 24, undergrowth: 5000, undergrowthRadius: 32, lodScale: 0.9, envInterval: 10, atlasScale: 1, impostorTile: 128, impostorThin: 0, terrainTex: 512, maxDeer: 6, maxSquirrels: 4, maxWolves: 5, maxCreatures: 15, antialias: true, maxPixelRatio: 1.5 },
-  high:   { reflections: 0.35, msaa: 4, fxaa: false, ssao: 2, raySamples: 48, rayScale: 0.4, shadows: true, shadowSize: 4096, shadowRange: 70, shadowSoft: 2, viewDistance: 620, treeNear: 45, treeFar: 220, cullCos: 0.08, grassCount: 42000, grassRadius: 30, undergrowth: 8500, undergrowthRadius: 42, lodScale: 1.25, envInterval: 6, atlasScale: 1, impostorTile: 128, impostorThin: 0, terrainTex: 512, maxDeer: 8, maxSquirrels: 5, maxWolves: 6, maxCreatures: 20, antialias: true, maxPixelRatio: 1.6 },
+  low:    { reflections: 0, msaa: 0, fxaa: true, ssao: 0, raySamples: 24, rayScale: 0.25, shadows: true, shadowSize: 1024, shadowRange: 32, shadowSoft: 1, viewDistance: 330, treeNear: 20, treeFar: 95, cullCos: 0.2, grassCount: 9000, grassRadius: 16, undergrowth: 2400, undergrowthRadius: 22, lodScale: 0.6, envInterval: 20, atlasScale: 0.5, impostorTile: 96, impostorThin: 1, terrainTex: 256, maxDeer: 5, maxSquirrels: 3, maxWolves: 4, maxCreatures: 16, antialias: false, maxPixelRatio: 1.0 },
+  medium: { reflections: 0.25, msaa: 0, fxaa: true, ssao: 1, raySamples: 36, rayScale: 0.35, shadows: true, shadowSize: 2048, shadowRange: 50, shadowSoft: 2, viewDistance: 480, treeNear: 30, treeFar: 150, cullCos: 0.12, grassCount: 24000, grassRadius: 24, undergrowth: 5000, undergrowthRadius: 32, lodScale: 0.9, envInterval: 10, atlasScale: 1, impostorTile: 128, impostorThin: 0, terrainTex: 512, maxDeer: 6, maxSquirrels: 4, maxWolves: 5, maxCreatures: 24, antialias: true, maxPixelRatio: 1.5 },
+  high:   { reflections: 0.35, msaa: 4, fxaa: false, ssao: 2, raySamples: 48, rayScale: 0.4, shadows: true, shadowSize: 4096, shadowRange: 70, shadowSoft: 2, viewDistance: 620, treeNear: 45, treeFar: 220, cullCos: 0.08, grassCount: 42000, grassRadius: 30, undergrowth: 8500, undergrowthRadius: 42, lodScale: 1.25, envInterval: 6, atlasScale: 1, impostorTile: 128, impostorThin: 0, terrainTex: 512, maxDeer: 8, maxSquirrels: 5, maxWolves: 6, maxCreatures: 32, antialias: true, maxPixelRatio: 1.6 },
 };
 
 function detectQuality() {
@@ -187,6 +189,8 @@ class Game {
     this.fish = new Fish(this.scene, this.world, Q);
     this.birds = new Birds(this.scene, this.world, this.props);
     this.insects = new Insects(this.scene, this.world);
+    this.herps = new Herps(this.scene, this.world);
+    setFurShells(Q.name !== "low");   // pelage duveteux sauf en qualité « rapide »
 
     this.map = new MapView(this.world, (x, z) => { const [i, j] = this.world._cell(x, z); return this.world.canopy ? this.world.canopy[j * this.world.V + i] : 0; });
 
@@ -870,7 +874,7 @@ class Game {
       if (c.dead) return;
       const dmg = tool.damage * (0.85 + Math.random() * 0.3);
       this.sounds.hitFlesh();
-      if (this.creatures.damage(c, dmg, this.player.pos)) this.ui.toast(`${c.sp.name} : abattu${c.type === "bear" || c.type === "moose" ? " !" : ""}`);
+      if (this.creatures.damage(c, dmg, this.player.pos)) this.ui.toast(`${c.sp.name} : chasse réussie${c.sp.radius > 0.7 ? " !" : ""}`);
       return;
     }
     if (target.type !== "prop" || target.dist > tool.reach) { this.sounds.swing(); return; }
@@ -1157,7 +1161,7 @@ class Game {
       this.build.animate(dt, this.camera.position);
       this.feederTick(dt);
       this.creatures.update(dt, p, {
-        night: this.isNight(), day: this.day, fires: this.structures.fires, diff: this.diff,
+        night: this.isNight(), day: this.day, hours: this.hours, fires: this.structures.fires, diff: this.diff,
         onAttack: (dmg, c) => {
           const torch = this.tool === "torche" ? 0.6 : 1;
           p.damage(dmg * torch, ctx);
@@ -1210,6 +1214,7 @@ class Game {
     if (this.fish) this.fish.update(dt, this.camera.position, this.env.dayFactor);
     this.birds.update(dt, this.camera.position, this.env.dayFactor);
     this.insects.update(dt, this.camera.position, this.env.dayFactor);
+    this.herps.update(dt, this.camera.position, this.hours, p.pos);
     this.refl.render(this.scene, this.camera, settings.reflections && !p.underwater ? this.nearWaterLevel(dt) : null);
     this.post.render(this.scene, this.camera, this.env.sunInfo);
     input.endFrame();

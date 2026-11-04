@@ -280,14 +280,16 @@ export class Props {
       // ---- Arbres ----
       if (h > 3.0 && h < 430 && slope < (bm > 0.3 ? 0.68 : 0.46)) {
         const clearing = smoothstep(0.66, 0.76, forest) * (bank ? 0.3 : 1);
-        const dens = (1 - clearing) * smoothstep(3.0, 6.0, h) * (1 - smoothstep(360, 425, h)) * (0.85 + 0.15 * moist) * (1 - 0.9 * bp) * (1 - 0.6 * bw);
+        // Plaines : presque sans arbres, sauf des bosquets de conifères isolés et quelques arbres solitaires
+        const copse = bp > 0.3 ? smoothstep(0.82, 0.9, grove) * 0.7 + (rand() < 0.006 ? 0.6 : 0) : 0;
+        const dens = (1 - clearing) * smoothstep(3.0, 6.0, h) * (1 - smoothstep(360, 425, h)) * (0.85 + 0.15 * moist) * Math.max(1 - 0.97 * bp, copse) * (1 - 0.6 * bw);
         if (rand() < dens * 0.62) {
           let t;
           const u = rand();
           const alpine = Math.max(smoothstep(30, 60, h) * 0.85, bm * smoothstep(15, 40, h));
           if (rand() < alpine) t = h > 120 && rand() < 0.45 ? "fir" : "pine";
           else if ((bank || shoreWet) && u < 0.3) t = rand() < 0.5 ? "willow" : "poplar";
-          else if (bp > 0.4 && rand() < 0.7) t = "scots";
+          else if (bp > 0.3) t = rand() < 0.55 ? "pine" : rand() < 0.7 ? "scots" : "fir";
           else if (bw > 0.3 && rand() < 0.7) t = rand() < 0.75 ? "birch" : "willow";
           else if ((moist > 0.62 && u < 0.22) || (bank && u < 0.45)) t = "birch";
           else if (moist < 0.32 && u < 0.35) t = "scots";
@@ -338,6 +340,11 @@ export class Props {
           for (let q = 0; q < 4; q++) { const [rx, rz] = near(x, z, 5); if (!tooClose(rx, rz, 1.2)) this.add("rock", rx, rz, 0.35 + rand() * 0.8, rand); }
           continue;
         }
+      }
+      // Plaines : rochers erratiques et buissons d'armoise épars
+      if (bp > 0.5 && h > 3 && slope < 0.3) {
+        if (rand() < 0.012 && !tooClose(x, z, 6)) { this.add("rock", x, z, 0.6 + rand() * 1.8, rand); continue; }
+        if (rand() < 0.05 && !tooClose(x, z, 2)) { this.add("bush", x, z, 0.6 + rand() * 0.5, rand, rand() < 0.25 ? 1 : 0); continue; }
       }
       // Côtes rocheuses : blocs au pied des falaises
       if (h < 12 && slope > 0.35 && rand() < 0.15 && !tooClose(x, z, 4)) { this.add("rock", x, z, 1.5 + rand() * 3, rand); continue; }
