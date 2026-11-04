@@ -1,4 +1,4 @@
-// Vie aquatique : 10 espèces de poissons (eau douce et mer) en bancs, tortues de mer, particules.
+// Vie aquatique : 16 espèces de poissons (eau douce et mer) en bancs, tortues de mer, particules.
 // Chaque espèce est un maillage instancié sculpté (loft) ; la queue ondule dans le shader.
 import * as THREE from "three";
 import { mulberry32 } from "./noise.js";
@@ -68,6 +68,12 @@ export const FISH = {
   brochet:   { name: "Brochet", hab: "douce", len: 0.95, h: 0.13, w: 0.08, back: 0x3a4a2a, side: 0x7a8a4a, belly: 0xe0dcc0, spots: 0xc8c890, fin: 0x6a6a3a, dorsal: 0.25, n: [1, 1], sp: 1.0 },
   carpe:     { name: "Carpe", hab: "douce", len: 0.6, h: 0.22, w: 0.11, back: 0x5a4a2a, side: 0xb8902a, belly: 0xe8d8a8, fin: 0x8a6a3a, dorsal: 0.22, n: [2, 3], sp: 0.8 },
   gardon:    { name: "Gardon", hab: "douce", len: 0.22, h: 0.08, w: 0.035, back: 0x3a4a5a, side: 0xc8cccc, belly: 0xf0f0ee, fin: 0xc8402a, dorsal: 0.3, fork: true, n: [8, 14], sp: 1.5 },
+  omble:     { name: "Omble chevalier", hab: "douce", len: 0.4, h: 0.09, w: 0.05, back: 0x3a4a3a, side: 0x7a8a6a, belly: 0xe86a2a, spots: 0xf0d8b0, fin: 0xd8502a, dorsal: 0.22, n: [2, 4], sp: 1.5 },
+  sandre:    { name: "Sandre", hab: "douce", len: 0.6, h: 0.11, w: 0.06, back: 0x4a5040, side: 0xa8aa90, belly: 0xece8dc, bars: 7, fin: 0x6a6a5a, dorsal: 0.3, dorsal2: true, n: [1, 3], sp: 1.4 },
+  tanche:    { name: "Tanche", hab: "douce", len: 0.38, h: 0.12, w: 0.06, back: 0x2a3a1a, side: 0x6a7a2a, belly: 0xb8a84a, fin: 0x3a4a1a, dorsal: 0.22, n: [1, 3], sp: 0.7 },
+  rotengle:  { name: "Rotengle", hab: "douce", len: 0.25, h: 0.09, w: 0.035, back: 0x4a5a3a, side: 0xd8c070, belly: 0xf0e8c8, fin: 0xd8302a, dorsal: 0.3, fork: true, n: [6, 12], sp: 1.3 },
+  anguille:  { name: "Anguille", hab: "douce", len: 0.75, h: 0.045, w: 0.04, back: 0x2a2a1a, side: 0x6a6a3a, belly: 0xc8c090, fin: 0x3a3a2a, dorsal: 0.6, n: [1, 1], sp: 0.8 },
+  silure:    { name: "Silure", hab: "douce", len: 1.6, h: 0.22, w: 0.2, back: 0x2a2a28, side: 0x5a5a4a, belly: 0xd8d4c4, spots: 0x1a1a18, fin: 0x2a2a28, dorsal: 0.06, n: [1, 1], sp: 0.6 },
   maquereau: { name: "Maquereau", hab: "mer", len: 0.35, h: 0.07, w: 0.05, back: 0x2a6a6a, side: 0xb8c8c8, belly: 0xf4f4f4, wavy: true, fin: 0x5a7a7a, dorsal: 0.2, dorsal2: true, fork: true, n: [8, 14], sp: 2.4 },
   bar:       { name: "Bar", hab: "mer", len: 0.6, h: 0.15, w: 0.07, back: 0x5a6670, side: 0xc4ccd2, belly: 0xf0f2f4, fin: 0x7a848c, dorsal: 0.25, dorsal2: true, fork: true, n: [3, 6], sp: 1.8 },
   daurade:   { name: "Daurade royale", hab: "mer", len: 0.42, h: 0.17, w: 0.06, back: 0x7a8490, side: 0xc8ccd0, belly: 0xf0f0f0, band: 0xe8c040, fin: 0x8a8a90, dorsal: 0.25, fork: true, n: [4, 8], sp: 1.4 },
@@ -146,7 +152,7 @@ export class Fish {
     this.m4 = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.e = new THREE.Euler(); this.v = new THREE.Vector3(); this.sc = new THREE.Vector3();
   }
 
-  isSea(x, z) { return Math.hypot(x, z) > this.world.half * 0.62 || this.world.waterLevelAt(x, z) < 0.3 && this.world.heightAt(x, z) < -4; }
+  isSea(x, z) { return Math.hypot(x, z) > this.world.half * 0.92 || (this.world.waterLevelAt(x, z) < 0.3 && this.world.heightAt(x, z) < -3.5 && Math.hypot(x, z) > this.world.half * 0.6); }
 
   // Point d'eau assez profond près de c (ou null)
   findSpot(c, rMin, rMax, minDepth) {

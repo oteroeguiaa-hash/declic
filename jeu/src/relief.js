@@ -76,8 +76,12 @@ export class Relief {
       h = lerp(h, Math.max(h, hm), k);
     }
     // Prairies, forêts d'automne, marais
-    const P = smoothstep(0.6, 0.68, fbm(this.nBio, X / 1100, Z / 1100, 2) * 0.5 + 0.5) * (1 - M);
+    // Grandes plaines (type Yellowstone) : vallées ouvertes d'herbes hautes, surtout dans les terres basses
+    const pN = fbm(this.nBio, X / 1100, Z / 1100, 3) * 0.5 + 0.5 + (0.5 - massif) * 0.12;
+    const P = smoothstep(0.52, 0.6, pN) * (1 - M);
     const A = smoothstep(0.6, 0.68, fbm(this.nBio, X / 1000 + 31, Z / 1000 - 17, 2) * 0.5 + 0.5) * (1 - M) * (1 - P);
+    // Plaines : relief adouci, longues ondulations (le paysage reste naturel, pas plat)
+    if (P > 0) h = lerp(h, 4.5 + roll * 12 + hills * 7 + fbm(this.nE, x / 160, z / 160, 3) * 2.5, P * 0.65);
     let Wm = smoothstep(0.6, 0.68, fbm(this.nBio, X / 700 - 51, Z / 700 + 23, 2) * 0.5 + 0.5) * (1 - M) * (1 - massif) * smoothstep(0.55, 0.75, continental);
     Wm *= 1 - smoothstep(0.45, 0.7, roll);
 

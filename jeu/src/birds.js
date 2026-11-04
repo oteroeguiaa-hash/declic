@@ -1,4 +1,4 @@
-// Oiseaux : 10 espèces européennes avec leurs comportements (sautiller au sol, voler d'arbre en arbre,
+// Oiseaux : 25 espèces européennes avec leurs comportements (sautiller au sol, voler d'arbre en arbre,
 // tournoyer en vol plané, raser l'eau, pêcher à l'affût dans les hauts-fonds).
 import * as THREE from "three";
 import { buildBird } from "./anatomy.js";
@@ -18,6 +18,21 @@ export const BIRDS = {
   buse:       { name: "Buse variable", kind: "raptor", w: 1, size: 0.55, col: 0x6a4a30, belly: 0xdccca8, hook: true, beakCol: 0x3a3028, beak: 0.05, span: 1.15, tail: 0.35 },
   picvert:    { name: "Pic vert", kind: "small", w: 1.5, size: 0.32, col: 0x6a8a3a, crown: 0xc82a2a, belly: 0xb8c890, beak: 0.06, span: 0.85, legs: 0.08, tail: 0.32 },
   martin:     { name: "Martin-pêcheur", kind: "water", w: 2, size: 0.17, col: 0x2a8ac8, belly: 0xe0782a, wing: 0x2a6aa8, beak: 0.05, span: 0.7, legs: 0.06, tail: 0.25 },
+  bouvreuil:  { name: "Bouvreuil pivoine", kind: "small", w: 2, size: 0.16, col: 0x6a6a72, breast: 0xe0503a, belly: 0xe0503a, crown: 0x141414, wing: 0x2a2a2e, wingBar: 0xe8e8e8, span: 0.8, legs: 0.12, tail: 0.35 },
+  charbon:    { name: "Mésange charbonnière", kind: "small", w: 3, size: 0.14, col: 0x6a7a3a, head: 0x141414, cheek: 0xf4f4f0, belly: 0xe8d040, wing: 0x5a6a7a, wingBar: 0xe8e8e8, span: 0.85, legs: 0.12, tail: 0.35 },
+  pinson:     { name: "Pinson des arbres", kind: "small", w: 3, size: 0.15, col: 0x8a6a50, breast: 0xc8805a, crown: 0x5a7a9a, wing: 0x2a2a2a, wingBar: 0xf0f0f0, span: 0.85, legs: 0.12, tail: 0.38 },
+  chardon:    { name: "Chardonneret élégant", kind: "small", w: 2, size: 0.13, col: 0xa88a60, head: 0xd03a2a, crown: 0x141414, cheek: 0xf4f4f0, belly: 0xf0ece4, wing: 0x1a1a1a, wingBar: 0xf0c820, span: 0.85, legs: 0.11, tail: 0.32 },
+  epeiche:    { name: "Pic épeiche", kind: "small", w: 1.5, size: 0.23, col: 0x141414, belly: 0xe8e4dc, cheek: 0xf0f0f0, wingBar: 0xf4f4f4, beak: 0.05, span: 0.85, legs: 0.08, tail: 0.32 },
+  etourneau:  { name: "Étourneau sansonnet", kind: "flock", w: 2, size: 0.21, col: 0x1a2028, beakCol: 0xe0c040, span: 0.9, legs: 0.1, tail: 0.3 },
+  hirondelle: { name: "Hirondelle rustique", kind: "swift", w: 2.5, size: 0.17, col: 0x1a2440, belly: 0xf0e8e0, breast: 0xa8342a, fork: true, span: 1.15, tail: 0.6 },
+  martinet:   { name: "Martinet noir", kind: "swift", w: 2, size: 0.17, col: 0x262220, fork: true, span: 1.35, tail: 0.4 },
+  colvert:    { name: "Canard colvert", kind: "swim", w: 2, size: 0.55, col: 0x8a7a68, head: 0x1a5a2a, breast: 0x6a3a2a, belly: 0xc8c4bc, wingBar: 0x3a4ab0, beakCol: 0xe0c040, beak: 0.06, span: 0.9, tail: 0.25 },
+  cygne:      { name: "Cygne tuberculé", kind: "swim", w: 1, size: 1.1, col: 0xf6f6f2, beakCol: 0xe0702a, neck: 0.5, beak: 0.1, span: 1.1, tail: 0.2 },
+  aigle:      { name: "Aigle royal", kind: "raptor", w: 0.7, size: 0.85, col: 0x4a3220, crown: 0xb0844a, hook: true, beakCol: 0x2a2420, beak: 0.08, span: 1.3, tail: 0.35 },
+  faucon:     { name: "Faucon pèlerin", kind: "raptor", w: 0.7, size: 0.42, col: 0x4a5460, belly: 0xe8e4dc, cheek: 0x1a1c20, hook: true, beakCol: 0x2a2a30, beak: 0.04, span: 1.15, tail: 0.35 },
+  hulotte:    { name: "Chouette hulotte", kind: "owl", w: 2, owl: true, size: 0.4, col: 0x7a5a3a, belly: 0xb89a74, face: 0xa88a64, beakCol: 0xd8c8a0, beak: 0.03, span: 1.1, legs: 0.08, tail: 0.25 },
+  effraie:    { name: "Effraie des clochers", kind: "owl", w: 1.5, owl: true, size: 0.36, col: 0xc8a060, belly: 0xf4efe6, face: 0xf8f4ee, beakCol: 0xd8c8a0, beak: 0.03, span: 1.15, legs: 0.12, tail: 0.25 },
+  hibou:      { name: "Hibou des marais", kind: "owl", w: 1, owl: true, size: 0.38, col: 0xa8844c, belly: 0xe0c890, face: 0xd8c09a, beakCol: 0x2a2420, beak: 0.03, span: 1.2, legs: 0.08, tail: 0.25 },
   heron:      { name: "Héron cendré", kind: "wader", w: 1, size: 0.75, col: 0x8a8e94, belly: 0xe8e8e8, crown: 0x1a1a1c, beakCol: 0xd8b040, beak: 0.16, neck: 0.32, span: 1.05, legs: 0.85, tail: 0.25 },
 };
 
@@ -35,7 +50,7 @@ export class Birds {
   pickType(near, day) {
     const r = this.rand;
     const wet = this.nearWater(near);
-    const pool = Object.entries(BIRDS).filter(([k, b]) => (b.kind !== "water" && b.kind !== "wader") || wet);
+    const pool = Object.entries(BIRDS).filter(([k, b]) => ((b.kind !== "water" && b.kind !== "wader" && b.kind !== "swim") || wet) && ((b.kind === "owl") === (day < 0.3)));
     const tot = pool.reduce((a, [, b]) => a + b.w, 0);
     let x = r() * tot;
     for (const [k, b] of pool) { x -= b.w; if (x <= 0) return k; }
@@ -54,11 +69,12 @@ export class Birds {
     const b = BIRDS[type], r = this.rand;
     const parts = buildBird({ ...b, seed: (r() * 1e6) | 0 });
     let x, z, y, state = "fly";
-    if (b.kind === "wader" || b.kind === "water") {
+    if (b.kind === "wader" || b.kind === "water" || b.kind === "swim") {
       const w = this.nearWater(near); if (!w) return null;
       [x, z] = w; y = this.world.heightAt(x, z);
       if (b.kind === "wader" && this.world.waterLevelAt(x, z) - y > 0.7) return null;
-      state = b.kind === "wader" ? "stand" : "fly";
+      state = b.kind === "wader" ? "stand" : b.kind === "swim" ? "swim" : "fly";
+      if (b.kind === "swim") { if (this.world.waterLevelAt(x, z) - y < 0.4) return null; y = this.world.waterLevelAt(x, z); }
     } else {
       const a = r() * 6.28, d = 25 + r() * 40;
       x = near.x + Math.cos(a) * d; z = near.z + Math.sin(a) * d;
@@ -68,7 +84,7 @@ export class Birds {
     }
     const g = parts.group;
     const foot = (b.legs ? b.legs * b.size : 0) + b.size * 0.2;   // hauteur des pattes au-dessus du sol
-    g.position.set(x, y + (state === "fly" ? (b.kind === "raptor" ? 60 + r() * 30 : 6 + r() * 12) : foot), z);
+    g.position.set(x, y + (state === "fly" ? (b.kind === "raptor" ? 60 + r() * 30 : 6 + r() * 12) : state === "swim" ? -b.size * 0.08 : foot), z);
     this.scene.add(g);
     const bird = { foot, type, b, ...parts, pos: g.position, vel: new THREE.Vector3(), state, timer: 2 + r() * 4, target: new THREE.Vector3(), flap: r() * 6, center: new THREE.Vector3(x, 0, z), ang: r() * 6.28 };
     this.newTarget(bird);
@@ -92,7 +108,8 @@ export class Birds {
     const a = r() * 6.28, d = b.kind === "small" ? 8 + r() * 25 : 20 + r() * 50;
     const x = bd.pos.x + Math.cos(a) * d, z = bd.pos.z + Math.sin(a) * d;
     const g = this.world.heightAt(x, z);
-    bd.target.set(x, Math.max(g, 0) + (b.kind === "flock" ? 18 + r() * 15 : 3 + r() * 10), z);
+    bd.target.set(x, Math.max(g, 0) + (b.kind === "flock" ? 18 + r() * 15 : b.kind === "swift" ? 1.5 + r() * 9 : 3 + r() * 10), z);
+    if (b.kind === "swift") bd.target.set(bd.pos.x + Math.cos(a) * 60, bd.target.y, bd.pos.z + Math.sin(a) * 60);
   }
 
   remove(bd) { this.scene.remove(bd.group); bd.group.traverse((o) => o.geometry && o.geometry.dispose()); this.list.splice(this.list.indexOf(bd), 1); }
@@ -102,9 +119,9 @@ export class Birds {
     this.timer -= dt;
     if (this.timer <= 0) {
       this.timer = 2.5;
-      const max = day > 0.3 ? 16 : 3;
+      const max = day > 0.3 ? 18 : 3;
       if (this.list.length < max) this.spawn(this.pickType(cam, day), cam);
-      for (const bd of [...this.list]) if (bd.pos.distanceTo(cam) > 170 || (day < 0.2 && bd.state !== "fly" && r() < 0.3)) this.remove(bd);
+      for (const bd of [...this.list]) if (bd.pos.distanceTo(cam) > 170 || (day < 0.2 && bd.b.kind !== "owl" && bd.state !== "fly" && r() < 0.3) || (day > 0.35 && bd.b.kind === "owl" && r() < 0.3)) this.remove(bd);
     }
     const t = performance.now() * 0.001;
     for (const bd of this.list) {
@@ -118,6 +135,18 @@ export class Birds {
         bd.vel.lerp(tgt.sub(bd.pos).multiplyScalar(1.5), Math.min(1, dt * 2));
         bd.pos.addScaledVector(bd.vel, dt);
         flying = true;
+      } else if (b.kind === "swim" && bd.state !== "fly") {
+        // nage lentement à la surface ; le canard s'envole si on approche, le cygne s'éloigne
+        const wl = this.world.waterLevelAt(bd.pos.x, bd.pos.z);
+        if (bd.timer <= 0 || this.world.waterLevelAt(bd.target.x, bd.target.z) - this.world.heightAt(bd.target.x, bd.target.z) < 0.4) {
+          const a = r() * 6.28; bd.target.set(bd.pos.x + Math.cos(a) * 8, 0, bd.pos.z + Math.sin(a) * 8); bd.timer = 4 + r() * 6;
+        }
+        if (dPlayer < 9) { const a = Math.atan2(bd.pos.z - cam.z, bd.pos.x - cam.x); if (b.size < 0.8) { bd.state = "fly"; bd.target.set(bd.pos.x + Math.cos(a) * 40, wl + 8, bd.pos.z + Math.sin(a) * 40); bd.timer = 8; } else bd.target.set(bd.pos.x + Math.cos(a) * 10, 0, bd.pos.z + Math.sin(a) * 10); }
+        const to = this.v.set(bd.target.x - bd.pos.x, 0, bd.target.z - bd.pos.z);
+        bd.vel.lerp(to.normalize().multiplyScalar(dPlayer < 9 ? 1.4 : 0.45), Math.min(1, dt));
+        const nx = bd.pos.x + bd.vel.x * dt, nz = bd.pos.z + bd.vel.z * dt;
+        if (this.world.waterLevelAt(nx, nz) - this.world.heightAt(nx, nz) > 0.35) { bd.pos.x = nx; bd.pos.z = nz; } else bd.timer = 0;
+        bd.pos.y = wl - b.size * 0.08 + Math.sin(t * 1.3 + bd.flap) * 0.01;
       } else if (b.kind === "raptor") {
         // vol plané en grands cercles, battements rares
         bd.ang += dt * 0.12;
@@ -129,12 +158,13 @@ export class Birds {
       } else if (bd.state === "fly") {
         const to = this.v.copy(bd.target).sub(bd.pos);
         const dist = to.length();
-        const sp = b.kind === "water" ? 11 : b.kind === "wader" ? 5 : b.kind === "flock" ? 8 : 7;
+        const sp = b.kind === "swift" ? 15 : b.kind === "water" ? 11 : b.kind === "wader" ? 5 : b.kind === "flock" ? 8 : b.kind === "swim" ? 10 : 7;
         bd.vel.lerp(to.normalize().multiplyScalar(sp), Math.min(1, dt * 1.8));
         bd.pos.addScaledVector(bd.vel, dt);
         if (b.kind === "water") bd.pos.y = Math.max(bd.pos.y, this.world.waterLevelAt(bd.pos.x, bd.pos.z) + 0.4);
         if (dist < 1.5 || bd.timer < -12) {
-          if (b.kind === "small" || b.kind === "water" || b.kind === "wader") {
+          if (b.kind === "swim" && this.world.waterLevelAt(bd.pos.x, bd.pos.z) - this.world.heightAt(bd.pos.x, bd.pos.z) > 0.5) { bd.state = "swim"; bd.timer = 5; }
+          else if (b.kind === "small" || b.kind === "water" || b.kind === "wader" || b.kind === "owl") {
             bd.state = b.kind === "wader" ? "stand" : "ground";
             bd.pos.y = this.world.heightAt(bd.pos.x, bd.pos.z) + (bd.foot || 0.05);
             bd.timer = 3 + r() * 8;
@@ -158,7 +188,7 @@ export class Birds {
       if (bd.vel.lengthSq() > 0.05) bd.group.rotation.y = Math.atan2(bd.vel.x, bd.vel.z);
       bd.group.rotation.x = flying ? -Math.max(-0.5, Math.min(0.5, bd.vel.y * 0.08)) : 0;
       // Ailes : battements (plané pour la buse), repliées au sol
-      const glide = b.kind === "raptor" || (b.kind === "flock" && Math.sin(t * 0.7 + bd.flap) > 0.4);
+      const glide = b.kind === "raptor" || b.kind === "owl" && Math.sin(t * 0.9 + bd.flap) > 0 || ((b.kind === "flock" || b.kind === "swift") && Math.sin(t * 0.7 + bd.flap) > 0.4);
       bd.wings.forEach((w, i) => {
         const sx = i === 0 ? -1 : 1;
         if (flying) {
