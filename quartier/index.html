@@ -71,6 +71,14 @@
   #goto-form button { padding: 10px 14px; white-space: nowrap; }
   #save-here { width: 100%; margin-top: 10px; padding: 10px; }
   @media (max-width: 420px) { #places-list { grid-template-columns: 1fr; } }
+  #bar { position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 8px; z-index: 30; flex-wrap: nowrap; }
+  .seg { display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; backdrop-filter: blur(8px); }
+  .seg button { background: transparent; border-radius: 0; padding: 9px 11px; font-size: 13px; white-space: nowrap; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button.on { background: var(--acc); }
+  body.touch #bar { bottom: max(8px, env(safe-area-inset-bottom)); }
+  @media (max-width: 700px) { .seg button { padding: 8px 8px; font-size: 12px; } }
+  #lockhint { position: absolute; left: 50%; bottom: 62px; transform: translateX(-50%); font-size: 12px; opacity: .85; }
   #rotate { position: fixed; inset: 0; z-index: 50; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; text-align: center; background: #0d1117; }
   body.playing #rotate { display: none; }
   @media (orientation: portrait) and (pointer: coarse) { body.playing #rotate { display: flex; } }
@@ -95,6 +103,9 @@
 
     <label for="key">Clé Google « Map Tiles API »</label>
     <input id="key" autocomplete="off" spellcheck="false" placeholder="AIza…">
+
+    <label for="stib-key">Clé STIB (gratuite, pour voir les trams et bus en direct)</label>
+    <input id="stib-key" autocomplete="off" spellcheck="false" placeholder="facultatif">
 
     <label for="quality">Qualité</label>
     <select id="quality">
@@ -123,6 +134,16 @@
       </ol>
     </details>
 
+    <details>
+      <summary>Trams et bus STIB en direct : avoir la clé (2 min)</summary>
+      <ol>
+        <li>Va sur <a href="https://data.stib-mivb.brussels/" target="_blank" rel="noopener">data.stib-mivb.brussels</a> et crée un compte (gratuit).</li>
+        <li>Clique sur ton nom en haut → <b>Clés d'API</b> (API keys) → <b>Générer une nouvelle clé</b>.</li>
+        <li>Copie-la dans la case « Clé STIB ». Dans le jeu, le bouton <b>🚋 STIB</b> en bas les affiche ou les cache.</li>
+      </ol>
+      <p class="small">Position mise à jour toutes les 20 secondes environ, trams et bus dans un rayon de 3 km. Le métro roule sous terre, il n'est pas affiché. Données : STIB-MIVB (CC BY 4.0) et OpenStreetMap pour le tracé des lignes.</p>
+    </details>
+
     <details class="keys">
       <summary>Commandes</summary>
       <ol>
@@ -146,16 +167,28 @@
     <div class="chip small" id="fps"></div>
     <div class="btns">
       <button id="places-btn">📍 Lieux</button>
-      <button id="speed" title="Vitesse (touches 1 à 4)">×1</button>
-      <button id="fly">Drone</button>
       <button id="jump">Saut</button>
     </div>
   </div>
+  <div class="chip" id="lockhint" hidden>Échap : libérer la souris pour cliquer sur les boutons · 1 2 3 4 : vitesse · F : drone</div>
   <div class="chip" id="hint">Clique dans l'image pour regarder autour à la souris · ZQSD pour marcher · F drone</div>
   <div class="chip" id="toast" hidden></div>
   <div class="chip" id="loading" hidden>Chargement des images…</div>
   <div class="chip" id="error" hidden></div>
   <div id="attrib">Google</div>
+</div>
+<div id="bar" hidden>
+  <div class="seg">
+    <button id="mode-walk" class="on" title="Marcher (F)">🚶 Marcher</button>
+    <button id="mode-drone" title="Drone (F)">🚁 Drone</button>
+  </div>
+  <div class="seg">
+    <button id="speed-1" class="on" title="Touche 1">×1</button>
+    <button id="speed-2" title="Touche 2">×2</button>
+    <button id="speed-5" title="Touche 3">×5</button>
+    <button id="speed-10" title="Touche 4">×10</button>
+  </div>
+  <div class="seg"><button id="stib-btn" title="Trams et bus STIB en direct">🚋 STIB</button></div>
 </div>
 <div id="places" hidden>
   <div class="panel">

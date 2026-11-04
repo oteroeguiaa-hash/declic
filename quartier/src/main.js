@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import { Weather } from './weather.js';
+import { Stib } from './stib.js';
 
 // Rayons (sol, murs) accélérés : chaque morceau de ville reçoit un index spatial au chargement.
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -62,6 +63,7 @@ const GRAVITY = 22, JUMP = 7;
 $( 'key' ).value = store.get( 'quartier.key' );
 $( 'home' ).value = store.get( 'quartier.home' );
 $( 'quality' ).value = store.get( 'quartier.quality' ) || 'haute';
+$( 'stib-key' ).value = store.get( 'quartier.stibKey' );
 
 async function geocode( q ) {
 	// Nominatim (OpenStreetMap), limité à la Belgique.
@@ -107,6 +109,7 @@ async function launch( where ) {
 	store.set( 'quartier.key', key );
 	store.set( 'quartier.home', $( 'home' ).value.trim() );
 	store.set( 'quartier.quality', $( 'quality' ).value );
+	store.set( 'quartier.stibKey', $( 'stib-key' ).value.trim() );
 	store.set( 'quartier.startPlace', $( 'start-place' ).value );
 	$( 'msg' ).textContent = 'Recherche des adresses…';
 	await resolveHome();
@@ -127,6 +130,7 @@ async function launch( where ) {
 	document.body.classList.add( 'playing' );
 	goLandscape();
 	$( 'hud' ).hidden = false;
+	$( 'bar' ).hidden = false;
 	start( key, place, $( 'quality' ).value );
 }
 $( 'go-home-start' ).onclick = () => launch( 'home' );
@@ -144,7 +148,7 @@ function goLandscape() {
 // --------------------------------------------------------------------------------------------
 // Scène
 // --------------------------------------------------------------------------------------------
-let renderer, scene, camera, tiles, raycaster, weather, reorient;
+let renderer, scene, camera, tiles, raycaster, weather, reorient, stib;
 // Réglages par qualité : détail au loin (errorTarget, plus petit = plus net), rayon autour du joueur
 // chargé au détail maximal de Google, résolution max de l'écran.
 // far = distance de vue à pied (au-delà : brouillard) ; au loin on ne charge donc plus rien d'inutile.
@@ -237,8 +241,17 @@ function start( key, place, quality ) {
 	raycaster = new THREE.Raycaster();
 	raycaster.firstHitOnly = true;
 
+	// Trams et bus STIB en direct
+	stib = new Stib( scene, {
+		here: () => localToLatLon( player.pos ),
+		toLocal: ( lat, lon, t ) => latLonToLocal( lat, lon, 0, t ),
+		groundAt: ( x, z ) => { const h = upwardHits( x, z, player.pos.y + 150, 800 ); return h.length ? h[ h.length - 1 ].point.y : null; },
+		headingToYaw: ( h ) => northYaw - h,
+	}, ( msg ) => { if ( msg ) toast( msg ); } );
+
 	addEventListener( 'resize', onResize );
 	setupInput();
+	if ( ! TEST_TILESET && store.get( 'quartier.stibOn' ) !== '0' ) toggleStib( true );
 	teleport( place );
 	renderer.setAnimationLoop( frame );
 }
@@ -303,6 +316,7 @@ function teleport( place ) {
 	// direction du nord dans la scène (pour la boussole)
 	const north = TEST_TILESET ? new THREE.Vector3( 0, 0, -1 ) : latLonToLocal( place.lat + 0.001, place.lon, 0, new THREE.Vector3() ).sub( latLonToLocal( place.lat, place.lon, 0, _v ) );
 	northYaw = Math.atan2( - north.x, - north.z );
+	stib?.reset();
 	player.vel.set( 0, 0, 0 );
 	player.grounded = false; // pas de gravité tant qu'on n'a pas trouvé le sol
 	spawn.time = 0; spawn.quiet = 0;
@@ -341,13 +355,23 @@ function setupInput() {
 		look( e.movementX * 0.0022, e.movementY * 0.0022 );
 	} );
 	document.addEventListener( 'pointerlockchange', () => {
-		$( 'hint' ).hidden = document.pointerLockElement === canvas;
+		const locked = document.pointerLockElement === canvas;
+		$( 'hint' ).hidden = locked;
+		$( 'lockhint' ).hidden = ! locked;
 	} );
 
 	$( 'places-btn' ).onclick = togglePlaces;
 	$( 'places-close' ).onclick = closePlaces;
-	$( 'speed' ).onclick = cycleSpeed;
-	$( 'fly' ).onclick = toggleFly;
+	// barre du bas : marcher / drone, vitesse, STIB (pointerdown : réagit tout de suite au doigt)
+	const tap = ( id, fn ) => {
+		const el = $( id );
+		el.addEventListener( 'pointerdown', ( e ) => { e.preventDefault(); e.stopPropagation(); fn(); } );
+		el.addEventListener( 'click', ( e ) => e.preventDefault() );
+	};
+	tap( 'mode-walk', () => setFly( false ) );
+	tap( 'mode-drone', () => setFly( true ) );
+	for ( const m of SPEEDS ) tap( 'speed-' + m, () => setSpeed( m ) );
+	tap( 'stib-btn', () => toggleStib() );
 	$( 'goto-form' ).onsubmit = async ( e ) => {
 		e.preventDefault();
 		const q = $( 'goto' ).value.trim();
@@ -368,7 +392,8 @@ function setupInput() {
 		renderPlaces();
 		toast( '« ' + name + ' » enregistré' );
 	};
-	$( 'jump' ).onclick = jump;
+	$( 'jump' ).addEventListener( 'pointerdown', ( e ) => { e.preventDefault(); touchUp = true; jump(); } );
+	for ( const ev of [ 'pointerup', 'pointercancel', 'pointerleave' ] ) $( 'jump' ).addEventListener( ev, () => { touchUp = false; } );
 
 	setupTouch( canvas );
 }
@@ -424,8 +449,7 @@ function setupTouch( canvas ) {
 // --- vitesse -----------------------------------------------------------------------------------
 function setSpeed( m ) {
 	speedMult = m;
-	$( 'speed' ).textContent = '×' + m;
-	$( 'speed' ).classList.toggle( 'on', m > 1 );
+	for ( const s of SPEEDS ) $( 'speed-' + s ).classList.toggle( 'on', s === m );
 	toast( 'Vitesse ×' + m + ( m === 1 ? ' (marche tranquille)' : '' ) );
 }
 function cycleSpeed() { setSpeed( SPEEDS[ ( SPEEDS.indexOf( speedMult ) + 1 ) % SPEEDS.length ] ); }
@@ -476,13 +500,27 @@ function look( dx, dy ) {
 	player.pitch = THREE.MathUtils.clamp( player.pitch - dy, -1.5, 1.5 );
 }
 
-function toggleFly() {
-	player.fly = ! player.fly;
+function toggleFly() { setFly( ! player.fly ); }
+function setFly( on ) {
+	if ( player.fly === on ) return;
+	player.fly = on;
 	player.vel.set( 0, 0, 0 );
-	$( 'fly' ).classList.toggle( 'on', player.fly );
-	toast( player.fly ? 'Mode drone : Espace monte, C descend' : 'Retour à pied' );
+	$( 'mode-walk' ).classList.toggle( 'on', ! on );
+	$( 'mode-drone' ).classList.toggle( 'on', on );
+	$( 'jump' ).textContent = on ? 'Monter' : 'Saut';
+	toast( on ? ( isTouch ? 'Mode drone : le joystick avance, « Monter » pour prendre de la hauteur' : 'Mode drone : Espace monte, C descend' ) : 'Mode marche' );
 }
 
+async function toggleStib( on = ! stib.enabled ) {
+	$( 'stib-btn' ).classList.toggle( 'on', on );
+	store.set( 'quartier.stibOn', on ? '1' : '0' );
+	if ( ! on ) { stib.stop(); toast( 'Trams et bus masqués' ); return; }
+	toast( 'Trams et bus STIB en direct…' );
+	const ok = await stib.start( $( 'stib-key' ).value.trim() || store.get( 'quartier.stibKey' ) );
+	if ( ! ok ) $( 'stib-btn' ).classList.remove( 'on' );
+}
+
+let touchUp = false;
 function jump() {
 	if ( ! player.fly && player.onGround ) { player.vel.y = JUMP; player.onGround = false; }
 }
@@ -604,7 +642,7 @@ function update( dt ) {
 		// en drone, avancer suit le regard (on peut plonger vers une rue)
 		_look3.set( 0, 0, -1 ).applyEuler( _eul.set( player.pitch, player.yaw, 0, 'YXZ' ) );
 		_total.set( 0, 0, 0 ).addScaledVector( _look3, fx ).addScaledVector( _right, sx );
-		if ( k( 'Space' ) ) _total.y += 1;
+		if ( k( 'Space' ) || touchUp ) _total.y += 1;
 		if ( k( 'KeyC' ) || k( 'ControlLeft' ) ) _total.y -= 1;
 		if ( _total.lengthSq() > 1 ) _total.normalize();
 		_total.multiplyScalar( speed * dt );
@@ -747,6 +785,7 @@ function frame() {
 	updateRegions();
 	tiles.update();
 	weather.update( dt, camera.position );
+	stib.update( dt );
 	renderer.render( scene, camera );
 
 	hudTimer -= dt;
@@ -764,6 +803,7 @@ function frame() {
 		$( 'attrib' ).textContent = attr ? 'Google · ' + attr : 'Google';
 		$( 'weather' ).textContent = weather.label();
 		$( 'fps' ).textContent = Math.round( perf.fps ) + ' FPS';
+		$( 'stib-btn' ).textContent = stib.enabled && stib.count() ? '🚋 STIB · ' + stib.count() : '🚋 STIB';
 	}
 }
 
