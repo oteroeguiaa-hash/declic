@@ -8,7 +8,15 @@ import { Weather } from './weather.js';
 // Rayons (sol, murs) accélérés : chaque morceau de ville reçoit un index spatial au chargement.
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
-THREE.Mesh.prototype.raycast = acceleratedRaycast;
+// L'index est construit seulement pour les morceaux qu'un rayon touche vraiment (autour du joueur) :
+// pas de saccade quand des dizaines de tuiles arrivent en même temps.
+THREE.Mesh.prototype.raycast = function ( rc, hits ) {
+	const g = this.geometry;
+	if ( this.userData.tile && ! g.boundsTree ) {
+		try { g.computeBoundsTree(); } catch { this.userData.tile = false; }
+	}
+	return acceleratedRaycast.call( this, rc, hits );
+};
 import { TilesRenderer } from '3d-tiles-renderer';
 import {
 	GoogleCloudAuthPlugin,
@@ -17,7 +25,6 @@ import {
 	SphereRegion,
 	RayRegion,
 	ReorientationPlugin,
-	TilesFadePlugin,
 	UnloadTilesPlugin,
 } from '3d-tiles-renderer/plugins';
 
@@ -27,12 +34,26 @@ const store = {
 	set( k, v ) { try { localStorage.setItem( k, v ); } catch { /* navigation privée */ } },
 };
 
-// Repli si la recherche d'adresse ne répond pas : centre du parc Georges-Henri (Woluwe-Saint-Lambert).
-const PARC = { name: 'Parc Georges-Henri', lat: 50.8418, lon: 4.4093, query: 'Parc Georges Henri, Woluwe-Saint-Lambert, Belgique' };
+// Lieux de départ. Les coordonnées sont retrouvées sur OpenStreetMap au moment d'y aller ;
+// lat/lon = repli approximatif si la recherche ne répond pas.
+const PLACES = [
+	{ id: 'parc', name: 'Parc Georges-Henri', q: [ 'Parc Georges Henri, Woluwe-Saint-Lambert' ], lat: 50.8418, lon: 4.4093 },
+	{ id: 'cinquantenaire', name: 'Parc du Cinquantenaire', q: [ 'Parc du Cinquantenaire, Bruxelles' ], lat: 50.8399, lon: 4.3930 },
+	{ id: 'vergote', name: 'Rue Vergote', q: [ 'Rue Vergote, Woluwe-Saint-Lambert', 'Rue Vergote, Bruxelles', 'Square Vergote, Bruxelles' ] },
+	{ id: 'hoftenberg', name: 'Hof ten Berg', q: [ 'Hof ten Berg, Woluwe-Saint-Lambert', 'Hof ten Berg, Bruxelles' ] },
+	{ id: 'andromede', name: 'Andromède', q: [ 'Andromède, Woluwe-Saint-Lambert', 'Avenue Andromède, Bruxelles' ] },
+	{ id: 'docks', name: 'Docks Bruxsel', q: [ 'Docks Bruxsel, Bruxelles', 'Docks Bruxsel' ], lat: 50.8792, lon: 4.3737 },
+	{ id: 'shopping', name: 'Woluwe Shopping', q: [ 'Woluwe Shopping, Woluwe-Saint-Lambert', 'Woluwe Shopping' ], lat: 50.8473, lon: 4.4296 },
+	{ id: 'court', name: 'Court-Saint-Étienne · rue Émile Henricot', q: [ 'Rue Émile Henricot, Court-Saint-Étienne' ], lat: 50.6405, lon: 4.5660 },
+];
 const DEG = Math.PI / 180;
+// Mode d'essai pour le développement : ?tileset=URL charge une petite scène locale à la place de Google.
+const TEST_TILESET = new URLSearchParams( location.search ).get( 'tileset' );
 
 const EYE = 1.7; // hauteur des yeux (m)
-const WALK = 1.5, RUN = 4.5, FLY = 25, FLY_FAST = 80; // marche tranquille (vitesse d'un vrai piéton)
+const WALK = 1.5, DRONE = 8; // vitesse ×1 : un piéton tranquille, un drone qui se promène
+const SPEEDS = [ 1, 2, 5, 10 ];
+let speedMult = 1;
 const GRAVITY = 22, JUMP = 7;
 
 // --------------------------------------------------------------------------------------------
@@ -43,9 +64,8 @@ $( 'home' ).value = store.get( 'quartier.home' );
 $( 'quality' ).value = store.get( 'quartier.quality' ) || 'haute';
 
 async function geocode( q ) {
-	// Nominatim (OpenStreetMap), limité à la Belgique et centré sur Woluwe.
-	const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=be'
-		+ '&viewbox=4.36,50.87,4.47,50.81&q=' + encodeURIComponent( q );
+	// Nominatim (OpenStreetMap), limité à la Belgique.
+	const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=be&q=' + encodeURIComponent( q );
 	const res = await fetch( url, { headers: { 'Accept-Language': 'fr' } } );
 	if ( ! res.ok ) throw new Error( 'recherche indisponible' );
 	const [ hit ] = await res.json();
@@ -53,42 +73,64 @@ async function geocode( q ) {
 	return { lat: + hit.lat, lon: + hit.lon, name: hit.display_name.split( ',' ).slice( 0, 2 ).join( ',' ) };
 }
 
-const places = { parc: PARC, home: null };
+const places = { home: null };
+const favs = () => { try { return JSON.parse( store.get( 'quartier.favs' ) || '[]' ); } catch { return []; } };
 
-async function resolvePlaces() {
-	const home = $( 'home' ).value.trim();
-	const jobs = [ geocode( PARC.query ).then( ( p ) => { if ( p ) places.parc = { ...p, name: PARC.name }; } ).catch( () => {} ) ];
-	if ( home ) {
-		const q = /woluwe|bruxelles|brussel|\d{4}/i.test( home ) ? home : home + ', Woluwe-Saint-Lambert';
-		jobs.push( geocode( q ).then( ( p ) => { places.home = p ? { ...p, name: 'Ma rue' } : null; } ).catch( () => {} ) );
+// Trouve les coordonnées d'un lieu (mémorisées ensuite dans le navigateur).
+async function resolvePlace( p ) {
+	if ( p.resolved ) return p.resolved;
+	const cacheKey = 'quartier.geo.' + p.id;
+	try { const c = JSON.parse( store.get( cacheKey ) || 'null' ); if ( c ) return ( p.resolved = { ...c, name: p.name } ); } catch { /* */ }
+	for ( const q of p.q ) {
+		try {
+			const r = await geocode( q );
+			if ( r ) { store.set( cacheKey, JSON.stringify( { lat: r.lat, lon: r.lon } ) ); return ( p.resolved = { lat: r.lat, lon: r.lon, name: p.name } ); }
+		} catch { break; } // pas de réseau : inutile d'insister
 	}
-	await Promise.all( jobs );
+	return p.lat != null ? { lat: p.lat, lon: p.lon, name: p.name, approx: true } : null;
 }
 
-for ( const btn of document.querySelectorAll( '[data-start]' ) ) {
-	btn.addEventListener( 'click', async () => {
-		const key = $( 'key' ).value.trim();
-		if ( ! key ) { $( 'msg' ).textContent = 'Il faut une clé Google (voir le mode d\'emploi juste en dessous).'; return; }
-		store.set( 'quartier.key', key );
-		store.set( 'quartier.home', $( 'home' ).value.trim() );
-		store.set( 'quartier.quality', $( 'quality' ).value );
-		$( 'msg' ).textContent = 'Recherche des adresses…';
-		await resolvePlaces();
-		const where = btn.dataset.start;
-		if ( where === 'home' && ! places.home ) {
+async function resolveHome() {
+	const home = $( 'home' ).value.trim();
+	if ( ! home ) { places.home = null; return; }
+	const q = /woluwe|bruxelles|brussel|\d{4}/i.test( home ) ? home : home + ', Woluwe-Saint-Lambert';
+	try { const p = await geocode( q ); places.home = p ? { ...p, name: 'Ma rue' } : null; } catch { places.home = null; }
+}
+
+// liste des lieux dans le menu de départ
+for ( const p of PLACES ) $( 'start-place' ).add( new Option( p.name, p.id ) );
+$( 'start-place' ).value = store.get( 'quartier.startPlace' ) || 'parc';
+
+async function launch( where ) {
+	const key = $( 'key' ).value.trim();
+	if ( ! key ) { $( 'msg' ).textContent = 'Il faut une clé Google (voir le mode d\'emploi juste en dessous).'; return; }
+	store.set( 'quartier.key', key );
+	store.set( 'quartier.home', $( 'home' ).value.trim() );
+	store.set( 'quartier.quality', $( 'quality' ).value );
+	store.set( 'quartier.startPlace', $( 'start-place' ).value );
+	$( 'msg' ).textContent = 'Recherche des adresses…';
+	await resolveHome();
+	let place;
+	if ( where === 'home' ) {
+		place = places.home;
+		if ( ! place ) {
 			$( 'msg' ).textContent = $( 'home' ).value.trim()
 				? 'Adresse introuvable. Essaie par exemple « Rue …, 1200 Woluwe-Saint-Lambert ».'
 				: 'Écris d\'abord ton adresse.';
 			return;
 		}
-		$( 'menu' ).hidden = true;
-		document.body.classList.add( 'playing' );
-		goLandscape();
-		$( 'hud' ).hidden = false;
-		$( 'go-home' ).hidden = ! places.home;
-		start( key, places[ where ], $( 'quality' ).value );
-	} );
+	} else {
+		place = await resolvePlace( PLACES.find( ( p ) => p.id === $( 'start-place' ).value ) );
+		if ( ! place ) { $( 'msg' ).textContent = 'Lieu introuvable pour le moment, choisis-en un autre.'; return; }
+	}
+	$( 'menu' ).hidden = true;
+	document.body.classList.add( 'playing' );
+	goLandscape();
+	$( 'hud' ).hidden = false;
+	start( key, place, $( 'quality' ).value );
 }
+$( 'go-home-start' ).onclick = () => launch( 'home' );
+$( 'go-start' ).onclick = () => launch( 'pick' );
 
 // Plein écran + écran bloqué à l'horizontale (Android). Sur iPhone, ce n'est pas possible
 // depuis une page : un écran demande de tourner le téléphone.
@@ -102,13 +144,14 @@ function goLandscape() {
 // --------------------------------------------------------------------------------------------
 // Scène
 // --------------------------------------------------------------------------------------------
-let renderer, scene, camera, tiles, raycaster, weather;
+let renderer, scene, camera, tiles, raycaster, weather, reorient;
 // Réglages par qualité : détail au loin (errorTarget, plus petit = plus net), rayon autour du joueur
 // chargé au détail maximal de Google, résolution max de l'écran.
+// far = distance de vue à pied (au-delà : brouillard) ; au loin on ne charge donc plus rien d'inutile.
 const QUALITY = {
-	normale: { error: 14, radius: 35, maxPR: 1.25, minPR: 0.6, cache: 700, fade: false },
-	haute: { error: 7, radius: 60, maxPR: 1.75, minPR: 0.75, cache: 1100, fade: false },
-	ultra: { error: 3.5, radius: 90, maxPR: 2, minPR: 0.9, cache: 1800, fade: true },
+	normale: { error: 12, radius: 40, maxPR: 1.25, minPR: 0.6, cache: 700, far: 1600, msaa: false },
+	haute: { error: 6, radius: 70, maxPR: 1.6, minPR: 0.75, cache: 1100, far: 2400, msaa: 'lowdpi' },
+	ultra: { error: 3, radius: 110, maxPR: 2, minPR: 0.9, cache: 1800, far: 3200, msaa: true },
 };
 let Q = QUALITY.haute;
 let pixelRatio = 1;
@@ -122,7 +165,9 @@ const spawn = { time: 0, quiet: 0 };
 
 function start( key, place, quality ) {
 	Q = QUALITY[ quality ] || QUALITY.haute;
-	renderer = new THREE.WebGLRenderer( { antialias: true, powerPreference: 'high-performance' } );
+	// L'anticrénelage (MSAA) coûte cher sur les écrans haute densité, où il sert peu.
+	const msaa = Q.msaa === true || ( Q.msaa === 'lowdpi' && devicePixelRatio < 1.5 );
+	renderer = new THREE.WebGLRenderer( { antialias: msaa, powerPreference: 'high-performance', stencil: false } );
 	pixelRatio = Math.min( devicePixelRatio, Q.maxPR );
 	renderer.setPixelRatio( pixelRatio );
 	renderer.setSize( innerWidth, innerHeight );
@@ -130,23 +175,22 @@ function start( key, place, quality ) {
 	document.body.prepend( renderer.domElement );
 
 	scene = new THREE.Scene();
-	weather = new Weather( scene, renderer, place.lat, place.lon );
-	scene.add( new THREE.HemisphereLight( 0xffffff, 0x8a8f80, 2.2 ) );
-	const sun = new THREE.DirectionalLight( 0xfff3e0, 1.2 );
-	sun.position.set( 300, 600, 200 );
-	scene.add( sun );
+	weather = new Weather( scene, renderer, place.lat, place.lon, Q.far );
+	// (pas de lumières : la lumière est déjà dans les photos de Google, les tuiles sont « non éclairées »)
 
-	camera = new THREE.PerspectiveCamera( 70, innerWidth / innerHeight, 0.3, 20000 );
+	camera = new THREE.PerspectiveCamera( 70, innerWidth / innerHeight, 0.3, Q.far + 200 );
 
-	tiles = new TilesRenderer();
-	tiles.registerPlugin( new GoogleCloudAuthPlugin( { apiToken: key, autoRefreshToken: true, useRecommendedSettings: false } ) );
+	tiles = new TilesRenderer( TEST_TILESET || undefined );
+	if ( ! TEST_TILESET ) tiles.registerPlugin( new GoogleCloudAuthPlugin( { apiToken: key, autoRefreshToken: true, useRecommendedSettings: false } ) );
 	const draco = new DRACOLoader().setDecoderPath( './draco/' );
 	tiles.registerPlugin( new GLTFExtensionsPlugin( { dracoLoader: draco } ) );
 	tiles.registerPlugin( new UnloadTilesPlugin() );
-	if ( Q.fade ) tiles.registerPlugin( new TilesFadePlugin() ); // joli mais coûte des FPS
 	tiles.registerPlugin( new LoadRegionPlugin( { regions: [ footSphere, footRay ] } ) );
 	// Le point de départ devient l'origine, avec Y vers le ciel : on peut marcher en mètres.
-	tiles.registerPlugin( new ReorientationPlugin( { lat: place.lat * DEG, lon: place.lon * DEG, height: 0, recenter: true } ) );
+	reorient = TEST_TILESET
+		? new ReorientationPlugin( { up: '+z', recenter: false } )
+		: new ReorientationPlugin( { lat: place.lat * DEG, lon: place.lon * DEG, height: 0, recenter: true } );
+	tiles.registerPlugin( reorient );
 	// Plus le chiffre est petit, plus c'est détaillé (et lourd).
 	tiles.errorTarget = Q.error;
 	tiles.lruCache.maxSize = Q.cache;
@@ -157,20 +201,28 @@ function start( key, place, quality ) {
 	// À chaque morceau de ville reçu : textures nettes même au ras du sol (filtrage anisotrope),
 	// teinte de la météo / de l'heure, index spatial pour les collisions.
 	const maxAniso = renderer.capabilities.getMaxAnisotropy();
+	// Chaque morceau reçoit le matériau le plus léger possible (photo sans calcul de lumière),
+	// avec un petit étalonnage (contraste, couleurs) et la teinte de la météo partagée par tous.
 	tiles.addEventListener( 'load-model', ( { scene: model } ) => {
 		model.traverse( ( o ) => {
 			if ( ! o.isMesh ) return;
-			const m = o.material;
-			if ( Array.isArray( m ) || ! m.color ) return;
-			if ( m.map ) { m.map.anisotropy = maxAniso; m.map.needsUpdate = true; }
-			m.color.copy( weather.tint );
-			try { o.geometry.computeBoundsTree(); } catch { /* rayon classique */ }
+			o.userData.tile = true;
+			const old = o.material;
+			if ( Array.isArray( old ) ) return;
+			const mat = new THREE.MeshBasicMaterial( { map: old.map || null, side: old.side } );
+			if ( ! old.map && old.color ) mat.color.copy( old.color );
+			if ( mat.map ) { mat.map.anisotropy = maxAniso; mat.map.needsUpdate = true; }
+			mat.onBeforeCompile = gradeShader;
+			mat.customProgramCacheKey = () => 'tile-grade';
+			o.material = mat;
+			old.dispose();
 		} );
 	} );
 	tiles.addEventListener( 'dispose-model', ( { scene: model } ) => {
 		model.traverse( ( o ) => { if ( o.isMesh && o.geometry.boundsTree ) o.geometry.disposeBoundsTree(); } );
 	} );
-	weather.onTint( ( tint ) => tiles.group.traverse( ( o ) => { if ( o.isMesh && o.material.color ) o.material.color.copy( tint ); } ) );
+	weather.onTint( ( tint ) => grade.uTint.value.copy( tint ) );
+	grade.uTint.value.copy( weather.tint );
 	tiles.setCamera( camera );
 	tiles.setResolutionFromRenderer( camera, renderer );
 	scene.add( tiles.group );
@@ -189,6 +241,19 @@ function start( key, place, quality ) {
 	setupInput();
 	teleport( place );
 	renderer.setAnimationLoop( frame );
+}
+
+const grade = { uTint: { value: new THREE.Color( 1, 1, 1 ) } };
+function gradeShader( sh ) {
+	sh.uniforms.uTint = grade.uTint;
+	sh.fragmentShader = 'uniform vec3 uTint;\n' + sh.fragmentShader.replace( '#include <map_fragment>', `#include <map_fragment>
+	{
+		vec3 c = diffuseColor.rgb;
+		float l = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
+		c = mix( vec3( l ), c, 1.12 );                       // couleurs un peu plus vives
+		c = 0.18 * pow( max( c, 0.0 ) / 0.18, vec3( 1.06 ) ); // un peu plus de contraste
+		diffuseColor.rgb = c * uTint;
+	}` );
 }
 
 function onResize() {
@@ -223,18 +288,28 @@ function localToLatLon( pos ) {
 }
 
 function teleport( place ) {
-	// On se place au-dessus du point, le sol est trouvé dès que les tuiles arrivent.
-	latLonToLocal( place.lat, place.lon, 0, player.pos );
-	player.pos.y += 400;
+	// Le lieu devient le centre du monde (précision maximale, sol bien horizontal même à 30 km),
+	// puis on se place au-dessus : le sol est trouvé dès que les tuiles arrivent.
+	if ( TEST_TILESET ) {
+		player.pos.set( 0, 400, 0 );
+	} else {
+		reorient.lat = place.lat * DEG; reorient.lon = place.lon * DEG;
+		reorient.transformLatLonHeightToOrigin( place.lat * DEG, place.lon * DEG, 0 );
+		tiles.group.updateMatrixWorld( true );
+		latLonToLocal( place.lat, place.lon, 0, player.pos );
+		player.pos.y += 400;
+	}
+	weather.setLocation( place.lat, place.lon );
 	// direction du nord dans la scène (pour la boussole)
-	const north = latLonToLocal( place.lat + 0.001, place.lon, 0, new THREE.Vector3() ).sub( latLonToLocal( place.lat, place.lon, 0, _v ) );
+	const north = TEST_TILESET ? new THREE.Vector3( 0, 0, -1 ) : latLonToLocal( place.lat + 0.001, place.lon, 0, new THREE.Vector3() ).sub( latLonToLocal( place.lat, place.lon, 0, _v ) );
 	northYaw = Math.atan2( - north.x, - north.z );
 	player.vel.set( 0, 0, 0 );
 	player.grounded = false; // pas de gravité tant qu'on n'a pas trouvé le sol
 	spawn.time = 0; spawn.quiet = 0;
 	player.pitch = -0.35;
 	$( 'place' ).textContent = place.name;
-	toast( 'Chargement de ' + place.name + '…' );
+	toast( 'Chargement de ' + place.name + '…' + ( place.approx ? ' (position approximative)' : '' ) );
+	closePlaces();
 }
 
 // --------------------------------------------------------------------------------------------
@@ -250,7 +325,11 @@ function setupInput() {
 		keys.add( e.code );
 		if ( e.code === 'KeyF' ) toggleFly();
 		if ( e.code === 'KeyH' && places.home ) teleport( places.home );
-		if ( e.code === 'KeyP' ) teleport( places.parc );
+		if ( e.code === 'KeyP' ) goTo( PLACES[ 0 ] );
+		if ( e.code === 'KeyT' || e.code === 'KeyL' ) togglePlaces();
+		if ( e.code === 'KeyV' ) cycleSpeed();
+		const n = [ 'Digit1', 'Digit2', 'Digit3', 'Digit4' ].indexOf( e.code );
+		if ( n >= 0 ) setSpeed( SPEEDS[ n ] );
 		if ( e.code === 'Space' ) e.preventDefault();
 	} );
 	addEventListener( 'keyup', ( e ) => keys.delete( e.code ) );
@@ -265,9 +344,30 @@ function setupInput() {
 		$( 'hint' ).hidden = document.pointerLockElement === canvas;
 	} );
 
-	$( 'go-home' ).onclick = () => places.home && teleport( places.home );
-	$( 'go-parc' ).onclick = () => teleport( places.parc );
+	$( 'places-btn' ).onclick = togglePlaces;
+	$( 'places-close' ).onclick = closePlaces;
+	$( 'speed' ).onclick = cycleSpeed;
 	$( 'fly' ).onclick = toggleFly;
+	$( 'goto-form' ).onsubmit = async ( e ) => {
+		e.preventDefault();
+		const q = $( 'goto' ).value.trim();
+		if ( ! q ) return;
+		$( 'goto-msg' ).textContent = 'Recherche…';
+		try {
+			const r = await geocode( q );
+			if ( ! r ) { $( 'goto-msg' ).textContent = 'Adresse introuvable.'; return; }
+			$( 'goto-msg' ).textContent = '';
+			teleport( { lat: r.lat, lon: r.lon, name: r.name } );
+		} catch { $( 'goto-msg' ).textContent = 'Recherche indisponible, réessaie.'; }
+	};
+	$( 'save-here' ).onclick = () => {
+		const name = prompt( 'Nom de ce lieu ?', $( 'place' ).textContent );
+		if ( ! name ) return;
+		const { lat, lon } = localToLatLon( player.pos );
+		store.set( 'quartier.favs', JSON.stringify( [ ...favs(), { name, lat, lon } ] ) );
+		renderPlaces();
+		toast( '« ' + name + ' » enregistré' );
+	};
 	$( 'jump' ).onclick = jump;
 
 	setupTouch( canvas );
@@ -319,6 +419,56 @@ function setupTouch( canvas ) {
 	};
 	canvas.addEventListener( 'touchend', end );
 	canvas.addEventListener( 'touchcancel', end );
+}
+
+// --- vitesse -----------------------------------------------------------------------------------
+function setSpeed( m ) {
+	speedMult = m;
+	$( 'speed' ).textContent = '×' + m;
+	$( 'speed' ).classList.toggle( 'on', m > 1 );
+	toast( 'Vitesse ×' + m + ( m === 1 ? ' (marche tranquille)' : '' ) );
+}
+function cycleSpeed() { setSpeed( SPEEDS[ ( SPEEDS.indexOf( speedMult ) + 1 ) % SPEEDS.length ] ); }
+
+// --- panneau des lieux -------------------------------------------------------------------------
+function renderPlaces() {
+	const list = $( 'places-list' );
+	list.textContent = '';
+	const add = ( label, fn, del ) => {
+		const row = document.createElement( 'div' );
+		row.className = 'prow';
+		const b = document.createElement( 'button' );
+		b.textContent = label;
+		b.onclick = fn;
+		row.append( b );
+		if ( del ) {
+			const x = document.createElement( 'button' );
+			x.textContent = '✕'; x.className = 'del'; x.title = 'Supprimer';
+			x.onclick = del;
+			row.append( x );
+		}
+		list.append( row );
+	};
+	if ( places.home ) add( '🏠 Ma rue', () => teleport( places.home ) );
+	for ( const p of PLACES ) add( p.name, () => goTo( p ) );
+	favs().forEach( ( f, i ) => add( '★ ' + f.name, () => teleport( f ), () => {
+		const all = favs(); all.splice( i, 1 );
+		store.set( 'quartier.favs', JSON.stringify( all ) );
+		renderPlaces();
+	} ) );
+}
+function togglePlaces() { if ( $( 'places' ).hidden ) openPlaces(); else closePlaces(); }
+function openPlaces() {
+	renderPlaces();
+	$( 'places' ).hidden = false;
+	document.exitPointerLock?.();
+	keys.clear();
+}
+function closePlaces() { $( 'places' ).hidden = true; }
+async function goTo( p ) {
+	toast( 'Recherche de ' + p.name + '…' );
+	const r = await resolvePlace( p );
+	if ( r ) teleport( r ); else toast( p.name + ' : introuvable pour le moment' );
 }
 
 function look( dx, dy ) {
@@ -385,7 +535,53 @@ function groundAt( x, z, fromY, far = 400, lowest = false ) {
 }
 
 const STEP = 0.9; // hauteur max d'une marche / bordure qu'on enjambe
-const _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _move = new THREE.Vector3(), _chest = new THREE.Vector3();
+const _total = new THREE.Vector3(), _sub = new THREE.Vector3(), _dir = new THREE.Vector3(), _probe = new THREE.Vector3();
+
+// Un pas à pied : murs testés à hauteur de genou-hanche et de tête, on glisse le long des façades.
+function walkStep( step ) {
+	const feet = player.pos.y - EYE;
+	for ( const h of [ 1.0, 1.6 ] ) {
+		_probe.set( player.pos.x, feet + h, player.pos.z );
+		if ( ! slideFlat( _probe, step ) ) return false;
+	}
+	const nx = player.pos.x + step.x, nz = player.pos.z + step.z;
+	const g = groundAt( nx, nz, feet + STEP, 400 );
+	// pas de sol chargé là-bas, ou chute de plus de 6 m d'un coup : on ne bouge pas
+	if ( g === null || feet - g > 6 ) return false;
+	player.pos.x = nx; player.pos.z = nz;
+	return true;
+}
+
+// Corrige `step` (horizontal) s'il fait rentrer dans un mur depuis `origin` ; false = bloqué.
+function slideFlat( origin, step ) {
+	const len = step.length();
+	if ( len < 1e-6 ) return false;
+	const wall = castFirst( origin, _dir.copy( step ).divideScalar( len ), len + 0.35 );
+	if ( ! wall || ! wall.face ) return true;
+	const n = worldNormal( wall );
+	if ( Math.abs( n.y ) > 0.6 ) return true; // sol en pente, pas un mur
+	n.y = 0; n.normalize();
+	step.addScaledVector( n, - step.dot( n ) );
+	const l2 = step.length();
+	if ( l2 < 1e-4 ) return false;
+	return ! castFirst( origin, _dir.copy( step ).divideScalar( l2 ), l2 + 0.35 );
+}
+
+// Déplacement libre (drone) avec glissement sur toute surface touchée.
+function slideMove( pos, step, radius ) {
+	const len = step.length();
+	if ( len < 1e-6 ) return false;
+	const hit = castFirst( pos, _dir.copy( step ).divideScalar( len ), len + radius );
+	if ( hit && hit.face ) {
+		const n = worldNormal( hit );
+		step.addScaledVector( n, - step.dot( n ) );
+		const l2 = step.length();
+		if ( l2 < 1e-4 || castFirst( pos, _dir.copy( step ).divideScalar( l2 ), l2 + radius ) ) return false;
+	}
+	pos.add( step );
+	return true;
+}
+const _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _move = new THREE.Vector3();
 const _look3 = new THREE.Vector3(), _eul = new THREE.Euler();
 
 function update( dt ) {
@@ -404,12 +600,20 @@ function update( dt ) {
 	if ( _move.lengthSq() > 1 ) _move.normalize();
 
 	if ( player.fly ) {
-		const speed = fast ? FLY_FAST : FLY;
+		const speed = DRONE * speedMult * ( fast ? 3 : 1 );
 		// en drone, avancer suit le regard (on peut plonger vers une rue)
 		_look3.set( 0, 0, -1 ).applyEuler( _eul.set( player.pitch, player.yaw, 0, 'YXZ' ) );
-		player.pos.addScaledVector( _look3, fx * speed * dt ).addScaledVector( _right, sx * speed * dt );
-		if ( k( 'Space' ) ) player.pos.y += speed * dt;
-		if ( k( 'KeyC' ) || k( 'ControlLeft' ) ) player.pos.y -= speed * dt;
+		_total.set( 0, 0, 0 ).addScaledVector( _look3, fx ).addScaledVector( _right, sx );
+		if ( k( 'Space' ) ) _total.y += 1;
+		if ( k( 'KeyC' ) || k( 'ControlLeft' ) ) _total.y -= 1;
+		if ( _total.lengthSq() > 1 ) _total.normalize();
+		_total.multiplyScalar( speed * dt );
+		// le drone ne traverse pas les bâtiments : petits pas, et on glisse sur les murs
+		const n = Math.ceil( _total.length() / 1.5 );
+		if ( n > 0 ) {
+			_sub.copy( _total ).divideScalar( n );
+			for ( let i = 0; i < n; i ++ ) if ( ! slideMove( player.pos, _sub, 1.2 ) ) break;
+		}
 		const g = groundAt( player.pos.x, player.pos.z, player.pos.y + 1, 600 );
 		if ( g !== null && player.pos.y < g + EYE ) player.pos.y = g + EYE;
 		return;
@@ -437,23 +641,18 @@ function update( dt ) {
 	if ( k( 'Space' ) ) jump();
 	let feet = player.pos.y - EYE;
 
-	const speed = fast ? RUN : WALK;
-	const step = _move.multiplyScalar( speed * dt );
-	if ( step.lengthSq() > 0 ) {
-		// mur devant ? (rayon à hauteur de poitrine, un peu plus loin que le pas)
-		_chest.set( player.pos.x, feet + 1.1, player.pos.z );
-		const dir = step.clone().normalize();
-		const wall = castFirst( _chest, dir, step.length() + 0.45 );
-		if ( wall && wall.face && Math.abs( worldNormal( wall ).y ) < 0.6 ) {
-			// on glisse le long du mur
-			const n = worldNormal( wall ); n.y = 0; n.normalize();
-			step.addScaledVector( n, - step.dot( n ) );
-			if ( step.lengthSq() > 1e-8 && castFirst( _chest, step.clone().normalize(), step.length() + 0.45 ) ) step.set( 0, 0, 0 );
+	// ×1 marche tranquille … ×10 ; Maj = trois fois plus vite. Le mouvement est découpé en petits
+	// pas (35 cm max) pour qu'aucun mur ne soit « sauté », même à ×10.
+	const speed = WALK * speedMult * ( fast ? 3 : 1 );
+	_total.copy( _move ).multiplyScalar( speed * dt );
+	const dist = _total.length();
+	if ( dist > 0 ) {
+		const n = Math.ceil( dist / 0.35 );
+		_sub.copy( _total ).divideScalar( n );
+		for ( let i = 0; i < n; i ++ ) {
+			if ( ! walkStep( _sub ) ) break;
 		}
-		const nx = player.pos.x + step.x, nz = player.pos.z + step.z;
-		const g2 = groundAt( nx, nz, feet + STEP, 400 );
-		// pas de sol chargé là-bas, ou chute de plus de 6 m d'un coup : on ne bouge pas
-		if ( g2 !== null && feet - g2 < 6 ) { player.pos.x = nx; player.pos.z = nz; }
+		feet = player.pos.y - EYE;
 	}
 
 	// gravité
@@ -536,6 +735,15 @@ function frame() {
 	camera.rotation.set( player.pitch, player.yaw, 0, 'YXZ' );
 	camera.updateMatrixWorld();
 
+	// à pied on voit à Q.far mètres, en drone trois fois plus loin
+	const far = weather.fogFar * ( player.fly ? 3 : 1 );
+	scene.fog.far = far;
+	scene.fog.near = weather.fogNear * ( player.fly ? 3 : 1 );
+	if ( Math.abs( camera.far - ( far + 200 ) ) > 1 ) {
+		camera.far = far + 200;
+		camera.updateProjectionMatrix();
+	}
+
 	updateRegions();
 	tiles.update();
 	weather.update( dt, camera.position );
@@ -545,7 +753,9 @@ function frame() {
 	if ( hudTimer <= 0 ) {
 		hudTimer = 0.5;
 		const { lat, lon } = localToLatLon( player.pos );
-		$( 'coords' ).textContent = lat.toFixed( 5 ) + ', ' + lon.toFixed( 5 );
+		$( 'coords' ).textContent = TEST_TILESET
+			? player.pos.toArray().map( ( v ) => v.toFixed( 1 ) ).join( ' ' )
+			: lat.toFixed( 5 ) + ', ' + lon.toFixed( 5 );
 		const deg = ( ( ( northYaw - player.yaw ) / DEG ) % 360 + 360 ) % 360;
 		$( 'compass' ).textContent = [ 'N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO' ][ Math.round( deg / 45 ) % 8 ];
 		const loading = tiles.stats.downloading + tiles.stats.parsing;

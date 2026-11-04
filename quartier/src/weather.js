@@ -20,7 +20,10 @@ const FORCED = new URLSearchParams( location.search ).get( 'meteo' );
 
 export class Weather {
 
-	constructor( scene, renderer, lat, lon ) {
+	constructor( scene, renderer, lat, lon, maxFar = 2400 ) {
+		this.maxFar = maxFar;
+		this.fogFar = maxFar;
+		this.fogNear = maxFar * 0.25;
 		this.scene = scene;
 		this.renderer = renderer;
 		this.lat = lat;
@@ -52,6 +55,13 @@ export class Weather {
 	}
 
 	onTint( fn ) { this.listeners.push( fn ); }
+
+	// nouveau lieu : on ne redemande la météo que s'il est loin (> 5 km)
+	setLocation( lat, lon ) {
+		const km = Math.hypot( ( lat - this.lat ) * 111, ( lon - this.lon ) * 70 );
+		this.lat = lat; this.lon = lon;
+		if ( km > 5 ) this.refresh();
+	}
 
 	async refresh() {
 		if ( FORCED ) { this.force( FORCED ); this.apply(); return; }
@@ -113,8 +123,8 @@ export class Weather {
 		const fogged = [ 45, 48 ].includes( n.code );
 		const vis = THREE.MathUtils.clamp( fogged ? Math.min( n.visibility, 400 ) : n.visibility, 150, 20000 );
 		this.scene.fog.color.copy( bottom );
-		this.scene.fog.near = Math.min( 900, vis * 0.15 );
-		this.scene.fog.far = Math.min( 4000, vis * 0.9 + 200 );
+		this.fogFar = Math.min( this.maxFar, vis * 0.9 + 200 );
+		this.fogNear = Math.min( this.maxFar * 0.25, vis * 0.15 );
 
 		// lumière : les images Google ont la lumière d'une journée claire, on l'adapte
 		this.renderer.toneMappingExposure = THREE.MathUtils.lerp( 0.28, 1.0, day ) * ( 1 - 0.22 * grey * day );
@@ -128,7 +138,7 @@ export class Weather {
 		this.rain.visible = n.rain > 0;
 		const inten = THREE.MathUtils.clamp( n.rain / 4, 0.25, 1 );
 		this.rain.material.opacity = 0.2 + 0.3 * inten;
-		this.rain.geometry.setDrawRange( 0, Math.floor( this.rain.geometry.attributes.position.count * inten ) );
+		this.rain.geometry.setDrawRange( 0, Math.floor( this.rain.geometry.attributes.position.count * inten / 2 ) * 2 );
 		this.snow.visible = n.snow > 0;
 		this.stars.visible = day < 0.3 && n.cloud < 0.7;
 		this.stars.material.opacity = ( 1 - day / 0.3 ) * ( 1 - n.cloud );
@@ -144,9 +154,15 @@ export class Weather {
 	}
 
 	update( dt, camPos ) {
+		// la chute est calculée par la carte graphique : rien à recalculer ici à chaque image
 		const wind = this.now.wind / 3.6;
-		if ( this.rain.visible ) animateFall( this.rain, dt, camPos, 9.5, wind * 0.25 );
-		if ( this.snow.visible ) animateFall( this.snow, dt, camPos, 1.1, wind * 0.15, true );
+		const t = performance.now() / 1000;
+		for ( const [ obj, drift ] of [ [ this.rain, wind * 0.25 ], [ this.snow, wind * 0.15 ] ] ) {
+			const u = obj.userData.uniforms;
+			u.uTime.value = t;
+			u.uCam.value.copy( camPos );
+			u.uDrift.value = drift;
+		}
 		this.stars.position.copy( camPos );
 	}
 
@@ -171,37 +187,59 @@ function mix3( a, b, t ) {
 	return new THREE.Color( a ).lerp( new THREE.Color( b ), THREE.MathUtils.clamp( t, 0, 1 ) );
 }
 
-// --- précipitations : des particules dans une boîte de 50 m qui suit la caméra -------------------
+// --- précipitations : particules dans une boîte de 50 m qui suit la caméra -------------------
+// Positions de départ fixes ; la chute, le vent et le recyclage autour de la caméra sont faits
+// dans le shader (aucun calcul par particule côté processeur).
 const BOX = 50, HEIGHT = 30;
 
-function makeRain() {
-	const N = 6000;
-	const pos = new Float32Array( N * 6 );
+function fallingMaterial( mat, speed, tail, sway ) {
+	const uniforms = { uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uDrift: { value: 0 } };
+	mat.onBeforeCompile = ( sh ) => {
+		Object.assign( sh.uniforms, uniforms );
+		sh.vertexShader = 'uniform float uTime; uniform vec3 uCam; uniform float uDrift; attribute float aTail;\n'
+			+ sh.vertexShader.replace( '#include <begin_vertex>', `
+			vec3 transformed = position;
+			float fall = uTime * ${ speed.toFixed( 2 ) };
+			transformed.x += uDrift * uTime ${ sway ? '+ sin( uTime * 0.9 + position.y * 3.1 + position.z ) * 0.4' : '' };
+			transformed.x = uCam.x + mod( transformed.x - uCam.x, ${ BOX.toFixed( 1 ) } ) - ${ ( BOX / 2 ).toFixed( 1 ) };
+			transformed.z = uCam.z + mod( transformed.z - uCam.z, ${ BOX.toFixed( 1 ) } ) - ${ ( BOX / 2 ).toFixed( 1 ) };
+			transformed.y = uCam.y - ${ ( HEIGHT / 2 ).toFixed( 1 ) } + mod( position.y - fall, ${ HEIGHT.toFixed( 1 ) } ) - aTail * ${ tail.toFixed( 2 ) };
+			transformed.x -= aTail * uDrift * 0.04;
+			` );
+	};
+	return uniforms;
+}
+
+function fallingGeometry( N, perDrop ) {
+	const pos = new Float32Array( N * perDrop * 3 );
+	const tail = new Float32Array( N * perDrop );
 	for ( let i = 0; i < N; i ++ ) {
-		const x = ( Math.random() - 0.5 ) * BOX, y = Math.random() * HEIGHT, z = ( Math.random() - 0.5 ) * BOX;
-		pos.set( [ x, y, z, x, y - 0.45, z ], i * 6 );
+		const x = Math.random() * BOX, y = Math.random() * HEIGHT, z = Math.random() * BOX;
+		for ( let k = 0; k < perDrop; k ++ ) { pos.set( [ x, y, z ], ( i * perDrop + k ) * 3 ); tail[ i * perDrop + k ] = k; }
 	}
 	const geo = new THREE.BufferGeometry();
 	geo.setAttribute( 'position', new THREE.BufferAttribute( pos, 3 ) );
-	const mat = new THREE.LineBasicMaterial( { color: 0xb8c4d0, transparent: true, opacity: 0.45, fog: false } );
-	const lines = new THREE.LineSegments( geo, mat );
+	geo.setAttribute( 'aTail', new THREE.BufferAttribute( tail, 1 ) );
+	return geo;
+}
+
+function makeRain() {
+	const mat = new THREE.LineBasicMaterial( { color: 0xb8c4d0, transparent: true, opacity: 0.45, fog: false, depthWrite: false } );
+	const uniforms = fallingMaterial( mat, 9.5, 0.45, false );
+	const lines = new THREE.LineSegments( fallingGeometry( 6000, 2 ), mat );
 	lines.frustumCulled = false;
 	lines.visible = false;
-	lines.userData = { segments: true, intensity: 1 };
+	lines.userData.uniforms = uniforms;
 	return lines;
 }
 
 function makeSnow() {
-	const N = 5000;
-	const pos = new Float32Array( N * 3 );
-	for ( let i = 0; i < N; i ++ ) pos.set( [ ( Math.random() - 0.5 ) * BOX, Math.random() * HEIGHT, ( Math.random() - 0.5 ) * BOX ], i * 3 );
-	const geo = new THREE.BufferGeometry();
-	geo.setAttribute( 'position', new THREE.BufferAttribute( pos, 3 ) );
-	const mat = new THREE.PointsMaterial( { color: 0xffffff, size: 0.07, transparent: true, opacity: 0.9, fog: false } );
-	const pts = new THREE.Points( geo, mat );
+	const mat = new THREE.PointsMaterial( { color: 0xffffff, size: 0.07, transparent: true, opacity: 0.9, fog: false, depthWrite: false } );
+	const uniforms = fallingMaterial( mat, 1.1, 0, true );
+	const pts = new THREE.Points( fallingGeometry( 5000, 1 ), mat );
 	pts.frustumCulled = false;
 	pts.visible = false;
-	pts.userData = { segments: false };
+	pts.userData.uniforms = uniforms;
 	return pts;
 }
 
@@ -211,38 +249,15 @@ function makeStars() {
 	for ( let i = 0; i < N; i ++ ) {
 		const v = new THREE.Vector3().randomDirection();
 		v.y = Math.abs( v.y ) + 0.05;
-		v.normalize().multiplyScalar( 15000 );
+		v.normalize().multiplyScalar( 1200 ); // en deçà de la distance de vue
 		pos.set( [ v.x, v.y, v.z ], i * 3 );
 	}
 	const geo = new THREE.BufferGeometry();
 	geo.setAttribute( 'position', new THREE.BufferAttribute( pos, 3 ) );
-	const mat = new THREE.PointsMaterial( { color: 0xffffff, size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false } );
+	const mat = new THREE.PointsMaterial( { color: 0xffffff, size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false, depthTest: false } );
 	const pts = new THREE.Points( geo, mat );
 	pts.frustumCulled = false;
 	pts.visible = false;
 	pts.renderOrder = -1;
 	return pts;
-}
-
-// Les particules tombent dans un repère fixe ; la boîte suit la caméra par pas entiers
-// pour que la pluie ne « colle » pas à l'écran quand on marche.
-function animateFall( obj, dt, cam, speed, drift, sway = false ) {
-	const a = obj.geometry.attributes.position;
-	const arr = a.array;
-	const stride = obj.userData.segments ? 6 : 3;
-	const t = performance.now() / 1000;
-	obj.position.set( Math.round( cam.x / BOX ) * BOX, cam.y - HEIGHT / 2, Math.round( cam.z / BOX ) * BOX );
-	const ox = cam.x - obj.position.x, oz = cam.z - obj.position.z;
-	for ( let i = 0; i < arr.length; i += stride ) {
-		let x = arr[ i ] + drift * dt + ( sway ? Math.sin( t + i ) * 0.3 * dt : 0 );
-		let y = arr[ i + 1 ] - speed * dt;
-		let z = arr[ i + 2 ];
-		if ( y < 0 ) y += HEIGHT;
-		// on garde les particules dans une boîte centrée sur la caméra
-		if ( x - ox > BOX / 2 ) x -= BOX; else if ( x - ox < - BOX / 2 ) x += BOX;
-		if ( z - oz > BOX / 2 ) z -= BOX; else if ( z - oz < - BOX / 2 ) z += BOX;
-		arr[ i ] = x; arr[ i + 1 ] = y; arr[ i + 2 ] = z;
-		if ( stride === 6 ) { arr[ i + 3 ] = x - drift * 0.04; arr[ i + 4 ] = y - 0.45; arr[ i + 5 ] = z; }
-	}
-	a.needsUpdate = true;
 }
