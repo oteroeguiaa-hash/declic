@@ -11,6 +11,8 @@ import { OsmWalls } from './osmwalls.js';
 import { Footsteps } from './footsteps.js';
 import { Traffic } from './traffic.js';
 import { makeCar, makeTram, TYPES } from './cars.js';
+import { Interior, euro } from './interior.js';
+import { Shops } from './shops.js';
 
 // Rayons (sol, murs) accélérés : chaque morceau de ville reçoit un index spatial au chargement.
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -154,7 +156,8 @@ function goLandscape() {
 // --------------------------------------------------------------------------------------------
 // Scène
 // --------------------------------------------------------------------------------------------
-let renderer, scene, camera, tiles, raycaster, weather, reorient, gps, nightCity, streetView, walls, steps, traffic;
+let renderer, scene, camera, tiles, raycaster, weather, reorient, gps, nightCity, streetView, walls, steps, traffic, interior, shops;
+let nearShop = null, currentHint = null;
 // Réglages par qualité : détail au loin (errorTarget, plus petit = plus net), rayon autour du joueur
 // chargé au détail maximal de Google, résolution max de l'écran.
 // far = distance de vue à pied (au-delà : brouillard) ; au loin on ne charge donc plus rien d'inutile.
@@ -318,9 +321,12 @@ function start( key, place, quality ) {
 	};
 	const counts = { normale: { car: 10, tram: 2, foot: 18 }, haute: { car: 18, tram: 3, foot: 32 }, ultra: { car: 28, tram: 4, foot: 48 } }[ quality ] || { car: 18, tram: 3, foot: 32 };
 	traffic = new Traffic( scene, lifeGeo, counts, renderer );
+	// magasins : vrais commerces du quartier, intérieurs fabriqués selon leur type
+	interior = new Interior( renderer );
+	shops = new Shops( { ...lifeGeo, Vector3: THREE.Vector3, fake: TEST_TILESET ? () => [ { type: 'node', lat: -8 / 111320, lon: 0, tags: { shop: 'bakery', name: 'Boulangerie d\'essai' } } ] : null } );
 	weather.onTint( ( t ) => traffic.setTint( t ) );
 	traffic.setTint( weather.tint );
-	if ( TEST_TILESET ) { window.__gps = gps; window.__player = player; window.__sv = () => streetView; window.__THREE = THREE; window.__night = () => nightCity; window.__show = () => ( { makeCar, makeTram, TYPES, renderer, scene, traffic } ); } // pour les essais automatiques
+	if ( TEST_TILESET ) { window.__gps = gps; window.__player = player; window.__sv = () => streetView; window.__THREE = THREE; window.__night = () => nightCity; window.__show = () => ( { makeCar, makeTram, TYPES, renderer, scene, traffic } ); window.__in = () => interior; } // pour les essais automatiques
 
 	addEventListener( 'resize', onResize );
 	setupInput();
@@ -405,6 +411,7 @@ function teleport( place ) {
 	walls?.reset();
 	streetView?.reset();
 	traffic?.reset();
+	shops?.reset();
 	player.vel.set( 0, 0, 0 );
 	player.grounded = false; // pas de gravité tant qu'on n'a pas trouvé le sol
 	spawn.time = 0; spawn.quiet = 0;
@@ -427,6 +434,8 @@ function setupInput() {
 		if ( e.code === 'KeyM' || ( e.code === 'Escape' && gps?.isOpen ) ) { gps.toggle(); return; }
 		if ( gps?.isOpen ) return; // la carte est ouverte : les touches sont pour elle
 		keys.add( e.code );
+		if ( e.code === 'KeyE' || e.code === 'Enter' ) doAction();
+		if ( interior?.active ) return; // dans un magasin : seulement marcher, regarder, agir
 		if ( e.code === 'KeyF' ) toggleFly();
 		if ( e.code === 'KeyH' && places.home ) teleport( places.home );
 		if ( e.code === 'KeyP' ) goTo( PLACES[ 0 ] );
@@ -461,6 +470,7 @@ function setupInput() {
 		el.addEventListener( 'click', ( e ) => e.preventDefault() );
 	};
 	tap( 'speed', cycleSpeed );
+	tap( 'act-btn', doAction );
 	tap( 'fly', toggleFly );
 	// bouton heure : Maintenant → 5h → Lever → 10h → 12h → 16h → Coucher → 18h → 22h → Minuit → …
 	tap( 'night', () => {
@@ -879,6 +889,7 @@ function recenterIfFar() {
 	walls?.reset();
 	streetView?.reset();
 	traffic?.reset();
+	shops?.reset();
 	weather.setLocation( lat / DEG, lon / DEG );
 }
 
@@ -894,6 +905,80 @@ function worldNormal( hit ) {
 let northYaw = 0, lastX = 0, lastZ = 0, bobPhase = 0, bobAmp = 0;
 const clock = new THREE.Clock();
 let hudTimer = 0;
+
+// --- dans un magasin -----------------------------------------------------------------------------
+function frameInside( dt ) {
+	const k = ( c ) => keys.has( c );
+	let fx = 0, sx = 0;
+	if ( k( 'KeyW' ) || k( 'KeyZ' ) || k( 'ArrowUp' ) ) fx += 1;
+	if ( k( 'KeyS' ) || k( 'ArrowDown' ) ) fx -= 1;
+	if ( k( 'KeyD' ) || k( 'ArrowRight' ) ) sx += 1;
+	if ( k( 'KeyA' ) || k( 'KeyQ' ) || k( 'ArrowLeft' ) ) sx -= 1;
+	fx -= stick.y; sx += stick.x;
+	_fwd.set( - Math.sin( player.yaw ), 0, - Math.cos( player.yaw ) );
+	_right.set( Math.cos( player.yaw ), 0, - Math.sin( player.yaw ) );
+	_move.set( 0, 0, 0 ).addScaledVector( _fwd, fx ).addScaledVector( _right, sx );
+	if ( _move.lengthSq() > 1 ) _move.normalize();
+	const speed = ( k( 'ShiftLeft' ) ? 2.6 : 1.4 );
+	_walkVel.lerp( _tmpV.copy( _move ).multiplyScalar( speed ), 1 - Math.exp( - dt * 8 ) );
+	interior.update( _tmpV.copy( _walkVel ).multiplyScalar( dt ), camera, player.yaw, player.pitch );
+	steps.update( dt, Math.hypot( _walkVel.x, _walkVel.z ) );
+	if ( Math.abs( camera.far - 60 ) > 1 ) { camera.far = 60; camera.updateProjectionMatrix(); }
+	interior.render( renderer, camera );
+	hudTimer -= dt;
+	if ( hudTimer <= 0 ) {
+		hudTimer = 0.15;
+		currentHint = interior.hint();
+		showAction( currentHint ? currentHint.text : null );
+		$( 'coords' ).textContent = '💶 ' + euro( interior.wallet ) + ( interior.basket.length ? ' · 🛒 ' + interior.basket.length : '' );
+	}
+}
+
+function showAction( text ) {
+	const b = $( 'act-btn' );
+	if ( ! text ) { b.hidden = true; return; }
+	b.hidden = false;
+	b.textContent = text + ( isTouch ? '' : '  (E)' );
+}
+
+function doAction() {
+	if ( interior.active ) {
+		const h = currentHint || interior.hint();
+		if ( ! h ) return;
+		if ( h.act === 'exit' ) return leaveShop();
+		const msg = interior.act( h.act );
+		if ( msg ) toast( msg );
+		currentHint = null;
+		return;
+	}
+	if ( nearShop ) enterShop( nearShop );
+}
+
+function enterShop( s ) {
+	document.exitPointerLock?.();
+	interior.enter( s, weather.night > 0.5 );
+	outsidePos = player.pos.clone();
+	player.yaw = 0; // face au fond du magasin (l'entrée est derrière nous)
+	player.pitch = - 0.05;
+	_walkVel.set( 0, 0, 0 );
+	placeBefore = $( 'place' ).textContent;
+	$( 'place' ).textContent = s.name;
+	$( 'minimap' ).style.visibility = 'hidden';
+	toast( 'Bienvenue chez ' + s.name + ' · ' + s.label );
+}
+
+let outsidePos = null, placeBefore = '';
+function leaveShop() {
+	interior.exit();
+	if ( outsidePos ) player.pos.copy( outsidePos );
+	player.yaw += Math.PI; // on ressort face à la rue
+	_walkVel.set( 0, 0, 0 );
+	camera.far = 0; // forcera la remise à jour
+	$( 'minimap' ).style.visibility = '';
+	$( 'act-btn' ).hidden = true;
+	$( 'place' ).textContent = placeBefore;
+	toast( 'À bientôt !' );
+}
 
 // Résolution dynamique : si les FPS baissent, on baisse un peu la résolution (puis le détail
 // au loin) ; quand ça va mieux, on remonte. Le détail autour du joueur ne change jamais.
@@ -923,6 +1008,7 @@ function frame() {
 	const rawDt = clock.getDelta();
 	const dt = Math.min( rawDt, 0.05 );
 	adaptPerformance( rawDt );
+	if ( interior.active ) { frameInside( dt ); return; }
 	update( dt );
 
 	// léger balancement de la tête quand on marche, comme un vrai pas
@@ -976,6 +1062,11 @@ function frame() {
 		$( 'attrib' ).textContent = attr ? 'Google · ' + attr : 'Google';
 		$( 'weather' ).textContent = weather.label();
 		$( 'fps' ).textContent = Math.round( perf.fps ) + ' FPS';
+		// devant un vrai commerce, à pied : bouton « Entrer »
+		const onFoot = ! player.fly && player.grounded && speedMult <= 10;
+		if ( onFoot ) shops.maybeLoad();
+		nearShop = onFoot ? shops.nearest( player.pos.x, player.pos.z ) : null;
+		showAction( nearShop ? `🚪 Entrer · ${ nearShop.name } (${ nearShop.label })` : null );
 		// la boussole se place à gauche, juste sous le nom du lieu (loin des boutons)
 		const placeBottom = $( 'place' ).parentElement.getBoundingClientRect().bottom;
 		$( 'minimap' ).style.top = Math.round( placeBottom + 8 ) + 'px';

@@ -3,7 +3,8 @@
 // Ce ne sont pas les vrais véhicules (pas de données en direct), mais tout roule au bon endroit :
 // voitures à droite de la chaussée, trams sur les rails, piétons sur les trottoirs.
 import * as THREE from 'three';
-import { makeCar, makeTram, allCarMaterials } from './cars.js';
+import { makeCar, makeTram, allCarMaterials, loadCustomCars } from './cars.js';
+loadCustomCars();
 
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
 const RADIUS = 450;       // m de réseau chargés autour du joueur

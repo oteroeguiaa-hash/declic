@@ -94,6 +94,8 @@
   .me-icon { background: none; border: 0; }
   .me-dot { position: relative; width: 22px; height: 22px; border-radius: 50%; background: #4f9dff; border: 3px solid #fff; box-shadow: 0 0 0 6px #4f9dff44, 0 2px 6px #0007; box-sizing: border-box; }
   .me-cone { position: absolute; left: 50%; top: 50%; width: 0; height: 0; margin: -30px 0 0 -9px; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 22px solid #4f9dffaa; transform-origin: 9px 30px; }
+  #act-btn { position: fixed; left: 50%; bottom: max(70px, calc(env(safe-area-inset-bottom) + 60px)); transform: translateX(-50%); z-index: 30; padding: 13px 20px; border-radius: 14px; font-size: 15px; background: #161b22e6; border: 1px solid #ffffff40; backdrop-filter: blur(8px); box-shadow: 0 6px 20px #0008; white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis; }
+  #act-btn[hidden] { display: none; }
   #rotate { position: fixed; inset: 0; z-index: 50; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; text-align: center; background: #0d1117; }
   body.playing #rotate { display: none; }
   @media (orientation: portrait) and (pointer: coarse) { body.playing #rotate { display: flex; } }
@@ -182,6 +184,7 @@
   <div class="chip" id="error" hidden></div>
   <div id="attrib">Google</div>
 </div>
+<button id="act-btn" hidden></button>
 <div id="minimap" title="Ouvrir la carte (M)">
   <div id="minimap-inner"></div>
   <svg class="mm-arrow" viewBox="0 0 24 24" width="16" height="16"><path d="M12 3 L18.5 20 L12 16.2 L5.5 20 Z" fill="#4f9dff" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg>
