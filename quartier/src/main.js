@@ -14,7 +14,7 @@ import { makeCar, makeTram, TYPES } from './cars.js';
 import { Interior, euro } from './interior.js';
 import { Shops } from './shops.js';
 import { lookupPlace } from './places.js';
-import { CityGen } from './citygen.js';
+import { CityGen, maskUniforms, MASK_HEAD, MASK_CODE } from './citygen.js';
 import { osmStatus } from './osm.js';
 import { Ambience } from './ambience.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -217,8 +217,11 @@ function start( key, place, quality ) {
 	tiles.errorTarget = Q.error;
 	tiles.lruCache.maxSize = Q.cache;
 	tiles.lruCache.minSize = Math.round( Q.cache * 0.6 );
-	tiles.downloadQueue.maxJobs = 12;
-	tiles.parseQueue.maxJobs = 2;
+	tiles.downloadQueue.maxJobs = 20;
+	tiles.parseQueue.maxJobs = 3;
+	tiles.loadSiblings = false;          // on va droit au détail de ce qu'on regarde
+	tiles.lruCache.maxBytesSize = ( quality === 'normale' ? 0.45 : 0.9 ) * 2 ** 30;
+	tiles.lruCache.minBytesSize = ( quality === 'normale' ? 0.3 : 0.6 ) * 2 ** 30;
 
 	// À chaque morceau de ville reçu : textures nettes même au ras du sol (filtrage anisotrope),
 	// teinte de la météo / de l'heure, index spatial pour les collisions.
@@ -337,6 +340,7 @@ function start( key, place, quality ) {
 		...lifeGeo, Vector3: THREE.Vector3,
 		roofAt: ( x, z ) => { const h = upwardHits( x, z, player.pos.y + 300, 900 ); return h.length ? h[ 0 ].point.y : null; },
 		fake: TEST_TILESET ? () => [
+			{ type: 'way', id: 12345, tags: { building: 'yes' }, geometry: [ [ -12, -10 ], [ -12, 10 ], [ -30, 10 ], [ -30, -10 ], [ -12, -10 ] ].map( ( [ z, x ] ) => ( { lat: z / 111320, lon: x / 111320 } ) ) },
 			{ type: 'way', id: 501, tags: { building: 'house' }, geometry: [ [ 6, 40 ], [ 6, 49 ], [ -4, 49 ], [ -4, 40 ], [ 6, 40 ] ].map( ( [ z, x ] ) => ( { lat: z / 111320, lon: x / 111320 } ) ) },
 			{ type: 'way', id: 502, tags: { building: 'house' }, geometry: [ [ 6, 49 ], [ 6, 57 ], [ -4, 57 ], [ -4, 49 ], [ 6, 49 ] ].map( ( [ z, x ] ) => ( { lat: z / 111320, lon: x / 111320 } ) ) },
 			{ type: 'way', id: 503, tags: { building: 'apartments', 'building:levels': '5' }, geometry: [ [ 14, 40 ], [ 14, 58 ], [ 26, 58 ], [ 26, 40 ], [ 14, 40 ] ].map( ( [ z, x ] ) => ( { lat: z / 111320, lon: x / 111320 } ) ) },
@@ -351,7 +355,7 @@ function start( key, place, quality ) {
 	shops = new Shops( { ...lifeGeo, Vector3: THREE.Vector3, fake: TEST_TILESET ? () => [ { type: 'node', lat: -8 / 111320, lon: 0, tags: { shop: 'bakery', name: 'Boulangerie d\'essai' } } ] : null } );
 	weather.onTint( ( t ) => traffic.setTint( t ) );
 	traffic.setTint( weather.tint );
-	if ( TEST_TILESET ) { window.__gps = gps; window.__player = player; window.__sv = () => streetView; window.__THREE = THREE; window.__night = () => nightCity; window.__show = () => ( { makeCar, makeTram, TYPES, renderer, scene, traffic } ); window.__in = () => interior; } // pour les essais automatiques
+	if ( TEST_TILESET ) { window.__gps = gps; window.__player = player; window.__sv = () => streetView; window.__THREE = THREE; window.__night = () => nightCity; window.__show = () => ( { makeCar, makeTram, TYPES, renderer, scene, traffic } ); window.__in = () => interior; window.__city = () => city; window.__mask = maskUniforms; } // pour les essais automatiques
 
 	addEventListener( 'resize', onResize );
 	setupInput();
@@ -364,9 +368,10 @@ function gradeShader( sh ) {
 	sh.uniforms.uTint = grade.uTint;
 	sh.uniforms.uSunDir = grade.uSunDir;
 	sh.uniforms.uSunLow = grade.uSunLow;
-	Object.assign( sh.uniforms, nightUniforms, svUniforms );
+	Object.assign( sh.uniforms, nightUniforms, svUniforms, maskUniforms );
 	sh.vertexShader = NIGHT_VERTEX[ 0 ] + '\n' + sh.vertexShader.replace( '#include <project_vertex>', NIGHT_VERTEX[ 1 ] );
-	sh.fragmentShader = 'uniform vec3 uTint; uniform vec3 uSunDir; uniform float uSunLow;\n' + NIGHT_HEAD + SV_HEAD + sh.fragmentShader.replace( '#include <map_fragment>', `#include <map_fragment>
+	sh.fragmentShader = 'uniform vec3 uTint; uniform vec3 uSunDir; uniform float uSunLow;\n' + NIGHT_HEAD + SV_HEAD + MASK_HEAD + sh.fragmentShader.replace( '#include <map_fragment>', `#include <map_fragment>
+	${ MASK_CODE }
 	${ SV_CODE }
 	{
 		vec3 c = diffuseColor.rgb;
@@ -1081,7 +1086,7 @@ function adaptPerformance( rawDt ) {
 	let changed = false;
 	if ( perf.fps < 48 ) {
 		if ( pixelRatio > Q.minPR + 0.01 ) { pixelRatio = Math.max( Q.minPR, pixelRatio - 0.15 ); changed = true; }
-		else if ( tiles.errorTarget < Q.error * 2 ) tiles.errorTarget *= 1.2;
+		// (on ne dégrade plus le détail de la ville : c'est ce qui la rendait « fondue »)
 	} else if ( perf.fps > 57 ) {
 		if ( tiles.errorTarget > Q.error ) tiles.errorTarget = Math.max( Q.error, tiles.errorTarget / 1.2 );
 		else if ( pixelRatio < maxPR - 0.01 ) { pixelRatio = Math.min( maxPR, pixelRatio + 0.05 ); changed = true; }
@@ -1130,7 +1135,8 @@ function frame() {
 		streetView.update( dt, player.pos, svActive );
 	}
 	steps.update( dt, player.onGround && ! player.fly && speedMult <= 5 ? Math.hypot( _walkVel.x, _walkVel.z ) : 0 );
-	if ( speedMult <= 100 && ! ( player.fly && player.pos.y - ( player.groundY ?? player.pos.y ) > 300 ) ) city.update( player.pos );
+	if ( ! ( speedMult <= 100 && ! ( player.fly && player.pos.y - ( player.groundY ?? player.pos.y ) > 300 ) ) ) { maskUniforms.uMaskOn.value = 0; city.near.visible = false; }
+	else city.update( player.pos, ! player.fly && player.grounded && speedMult <= 10, player.groundY ?? player.pos.y - EYE );
 	ambience.set( { day: 1 - weather.night, rain: weather.now.rain > 0 ? Math.min( 1, weather.now.rain / 3 ) : 0, wind: Math.min( 1, ( weather.now.wind || 10 ) / 40 ), inside: false } );
 	traffic.setNight( THREE.MathUtils.smoothstep( weather.night, 0.3, 0.8 ) );
 	traffic.setLighting( weather.sunDir, 1 - weather.night );

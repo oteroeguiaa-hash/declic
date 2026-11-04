@@ -189,13 +189,43 @@ function treeMesh( rnd, autumn ) {
 	return g;
 }
 
+// Masque « ville nette » : vue de dessus des bâtiments remplacés autour du joueur. Le shader des tuiles
+// Google efface ce qui dépasse du sol à l'intérieur de ces contours (les bâtiments « fondus »), et le jeu
+// y met ses propres bâtiments, nets, à la vraie hauteur mesurée dans la 3D Google.
+export const maskUniforms = {
+	uMask: { value: null }, uMaskOn: { value: 0 }, uMaskCenter: { value: new THREE.Vector2() },
+	uMaskSize: { value: 440 }, uMaskBase: { value: 0 },
+};
+export const MASK_HEAD = `uniform sampler2D uMask; uniform float uMaskOn, uMaskSize, uMaskBase; uniform vec2 uMaskCenter;`;
+export const MASK_CODE = `
+	if ( uMaskOn > 0.5 ) {
+		vec2 muv = ( vWPos.xz - uMaskCenter ) / uMaskSize + 0.5;
+		if ( muv.x > 0.0 && muv.x < 1.0 && muv.y > 0.0 && muv.y < 1.0 ) {
+			vec4 mk = texture2D( uMask, muv );
+			if ( mk.r > 0.5 && vWPos.y > uMaskBase + mk.g * 60.0 - 30.0 + 0.4 ) discard;
+		}
+	}
+`;
+const NEAR = 170;      // rayon (m) où les bâtiments Google sont remplacés en mode marche
+const MASK_PX = 1024;
+
 export class CityGen {
 
 	// geo = { here(), toLocal(lat, lon, target), groundAt(x, z), roofAt(x, z), Vector3 }
 	constructor( scene, geo ) {
 		this.geo = geo;
-		this.group = new THREE.Group();
-		scene.add( this.group );
+		this.group = new THREE.Group();     // bâtiments manquants chez Google (toujours affichés)
+		this.near = new THREE.Group();      // bâtiments remplaçant la 3D Google autour du joueur (mode marche)
+		scene.add( this.group, this.near );
+		this.maskCanvas = document.createElement( 'canvas' );
+		this.maskCanvas.width = this.maskCanvas.height = MASK_PX;
+		this.maskTex = new THREE.CanvasTexture( this.maskCanvas );
+		this.maskTex.flipY = false;
+		this.maskTex.minFilter = this.maskTex.magFilter = THREE.NearestFilter;
+		this.maskTex.generateMipmaps = false;
+		maskUniforms.uMask.value = this.maskTex;
+		this.maskDirty = false;
+		this.replace = false;
 		this.items = [];
 		this.center = null;
 		this.loading = false;
@@ -203,8 +233,9 @@ export class CityGen {
 	}
 
 	reset() {
-		this.group.traverse( ( o ) => { if ( o.geometry ) o.geometry.dispose(); } );
-		this.group.clear();
+		for ( const g of [ this.group, this.near ] ) { g.traverse( ( o ) => { if ( o.geometry ) o.geometry.dispose(); } ); g.clear(); }
+		maskUniforms.uMaskOn.value = 0;
+		this.maskCenter = null;
 		this.items = []; this.center = null; this.built = 0;
 	}
 
@@ -239,7 +270,11 @@ export class CityGen {
 		this.loading = false;
 	}
 
-	update( pos ) {
+	// replace : vrai en mode marche (bâtiments Google remplacés autour du joueur)
+	update( pos, replace = false, groundY = pos.y ) {
+		this.replace = replace;
+		this.near.visible = replace;
+		this.updateMask( pos, groundY );
 		const here = this.geo.here();
 		if ( ! this.loading && ( ! this.center || Math.hypot( ( here.lat - this.center.lat ) * 111320, ( here.lon - this.center.lon ) * 111320 * Math.cos( here.lat * Math.PI / 180 ) ) > RADIUS * 0.5 ) ) {
 			this.reset(); this.load( here );
@@ -249,9 +284,20 @@ export class CityGen {
 		const autumn = new Date().getMonth() >= 9 || new Date().getMonth() <= 1;
 		for ( const it of this.items ) {
 			if ( budget <= 0 ) break;
-			if ( it.state !== 'new' ) continue;
 			const x = it.type === 'tree' ? it.x : it.cx, z = it.type === 'tree' ? it.z : it.cz;
-			if ( Math.hypot( x - pos.x, z - pos.z ) > 320 ) continue;
+			const dist = Math.hypot( x - pos.x, z - pos.z );
+			// bâtiment présent chez Google, proche, en mode marche : on le remplace par une version nette
+			if ( it.state === 'google' && replace && dist < NEAR && this.maskCenter && Math.abs( x - this.maskCenter.x ) < 200 && Math.abs( z - this.maskCenter.y ) < 200 ) {
+				let seed = it.id % 2147483646 + 1; const rnd = () => ( seed = seed * 16807 % 2147483647 ) / 2147483647;
+				it.mesh = buildingMesh( it, rnd );
+				this.near.add( it.mesh );
+				it.state = 'replaced';
+				this.maskDirty = true;
+				budget --;
+				continue;
+			}
+			if ( it.state !== 'new' ) continue;
+			if ( dist > 320 ) continue;
 			budget --;
 			if ( it.type === 'tree' ) {
 				const g = this.geo.groundAt( x, z ), top = this.geo.roofAt( x, z );
@@ -272,13 +318,53 @@ export class CityGen {
 			}
 			const roof = this.geo.roofAt( it.cx, it.cz );
 			if ( roof === null ) continue;
+			if ( roof - it.ground > 2.2 ) {
+				// déjà en 3D chez Google : on retient sa vraie hauteur (pour le remplacer de près, plus tard)
+				it.h = Math.min( 80, roof - it.ground );
+				if ( it.house ) it.h = Math.max( 3, it.h - Math.min( 4, Math.sqrt( it.area ) * 0.45 ) ); // la mesure inclut le toit
+				it.state = 'google';
+				continue;
+			}
 			it.state = 'done';
-			if ( roof - it.ground > 2.2 ) continue; // déjà en 3D chez Google
 			let seed = it.id % 2147483646 + 1; const rnd = () => ( seed = seed * 16807 % 2147483647 ) / 2147483647;
 			this.group.add( buildingMesh( it, rnd ) );
 			this.built ++;
 			if ( this.built === 3 ) this.onStatus?.( '🏗️ Pas de 3D Google ici : le jeu construit les bâtiments' );
 		}
+	}
+
+	// recentre le masque quand on s'éloigne, retire les remplacements trop loin, redessine si besoin
+	updateMask( pos, groundY ) {
+		// (on recentre aussi si le sol de référence a beaucoup changé : arrivée depuis le ciel, côte…)
+		if ( ! this.maskCenter || Math.hypot( pos.x - this.maskCenter.x, pos.z - this.maskCenter.y ) > 60 || Math.abs( groundY - this.maskBase ) > 15 ) {
+			this.maskCenter = new THREE.Vector2( pos.x, pos.z );
+			this.maskBase = groundY;
+			for ( const it of this.items ) {
+				if ( it.state === 'replaced' && ( Math.abs( it.cx - pos.x ) > 200 || Math.abs( it.cz - pos.z ) > 200 ) ) {
+					this.near.remove( it.mesh ); it.mesh.traverse( ( o ) => o.geometry?.dispose() ); it.mesh = null; it.state = 'google';
+				}
+			}
+			this.maskDirty = true;
+		}
+		if ( this.maskDirty && ( ! this.lastMask || performance.now() - this.lastMask > 400 ) ) {
+			this.maskDirty = false; this.lastMask = performance.now();
+			const g = this.maskCanvas.getContext( '2d' ), S = MASK_PX / maskUniforms.uMaskSize.value;
+			const toPx = ( x, z ) => [ ( x - this.maskCenter.x ) * S + MASK_PX / 2, ( z - this.maskCenter.y ) * S + MASK_PX / 2 ];
+			g.clearRect( 0, 0, MASK_PX, MASK_PX );
+			g.lineJoin = 'round'; g.lineWidth = 2.4 * S; // on déborde un peu : les façades Google dépassent souvent du plan
+			for ( const it of this.items ) {
+				if ( it.state !== 'replaced' ) continue;
+				const gv = Math.round( THREE.MathUtils.clamp( ( it.ground - this.maskBase + 30 ) / 60, 0, 1 ) * 255 );
+				g.fillStyle = g.strokeStyle = `rgb(255,${ gv },0)`;
+				g.beginPath();
+				it.pts.forEach( ( p, i ) => { const [ px, py ] = toPx( p.x, p.z ); if ( i ) g.lineTo( px, py ); else g.moveTo( px, py ); } );
+				g.closePath(); g.fill(); g.stroke();
+			}
+			this.maskTex.needsUpdate = true;
+			maskUniforms.uMaskCenter.value.copy( this.maskCenter );
+			maskUniforms.uMaskBase.value = this.maskBase;
+		}
+		maskUniforms.uMaskOn.value = this.replace ? 1 : 0;
 	}
 
 }
