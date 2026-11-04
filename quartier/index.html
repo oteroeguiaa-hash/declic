@@ -58,6 +58,19 @@
   body.touch #jump { display: block; position: fixed; right: max(22px, env(safe-area-inset-right)); bottom: max(22px, env(safe-area-inset-bottom)); width: 70px; height: 70px; border-radius: 50%; padding: 0; background: #161b22aa; font-size: 14px; }
   body.touch .top { left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); }
   body.touch #attrib { left: max(10px, env(safe-area-inset-left)); }
+  #places { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; background: #0006; padding: 12px; }
+  #places[hidden] { display: none !important; }
+  .panel { width: min(460px, 100%); max-height: 100%; overflow: auto; background: #161b22f2; border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
+  .phead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 17px; }
+  .phead button { background: transparent; padding: 4px 10px; }
+  #places-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .prow { display: flex; gap: 4px; }
+  .prow button { flex: 1; text-align: left; padding: 10px 12px; font-size: 14px; font-weight: 600; background: #ffffff12; border: 1px solid var(--line); }
+  .prow button.del { flex: 0 0 auto; text-align: center; color: #ff9a8a; }
+  #goto-form { display: flex; gap: 8px; margin-top: 12px; }
+  #goto-form button { padding: 10px 14px; white-space: nowrap; }
+  #save-here { width: 100%; margin-top: 10px; padding: 10px; }
+  @media (max-width: 420px) { #places-list { grid-template-columns: 1fr; } }
   #rotate { position: fixed; inset: 0; z-index: 50; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; text-align: center; background: #0d1117; }
   body.playing #rotate { display: none; }
   @media (orientation: portrait) and (pointer: coarse) { body.playing #rotate { display: flex; } }
@@ -90,9 +103,12 @@
       <option value="ultra">Ultra (gros ordinateur, le plus net)</option>
     </select>
 
+    <label for="start-place">Lieu de départ</label>
+    <select id="start-place"></select>
+
     <div class="row">
-      <button data-start="home">Partir de ma rue</button>
-      <button data-start="parc" class="alt">Parc Georges-Henri</button>
+      <button id="go-home-start">Partir de ma rue</button>
+      <button id="go-start" class="alt">Partir du lieu choisi</button>
     </div>
     <div id="msg" role="status"></div>
 
@@ -111,8 +127,9 @@
       <summary>Commandes</summary>
       <ol>
         <li><b>Clic</b> dans l'image pour tourner la tête à la souris (Échap pour sortir).</li>
-        <li><b>ZQSD</b> / WASD / flèches : marcher tranquillement. <b>Maj</b> : courir. <b>Espace</b> : sauter.</li>
-        <li><b>F</b> : mode drone (Espace monte, C descend). <b>H</b> : ma rue. <b>P</b> : le parc.</li>
+        <li><b>ZQSD</b> / WASD / flèches : marcher. <b>Maj</b> : courir. <b>Espace</b> : sauter.</li>
+        <li><b>1 2 3 4</b> (ou <b>V</b>) : vitesse ×1, ×2, ×5, ×10. On ne traverse pas les bâtiments, même vite.</li>
+        <li><b>F</b> : mode drone (Espace monte, C descend). <b>T</b> : les lieux. <b>H</b> : ma rue. <b>P</b> : parc Georges-Henri.</li>
       </ol>
     </details>
     <p class="small">La météo et l'heure sont celles de Woluwe en ce moment : pluie, neige, brouillard, nuit…</p>
@@ -128,8 +145,8 @@
     <div class="chip" id="weather" title="Météo et heure réelles à Woluwe"></div>
     <div class="chip small" id="fps"></div>
     <div class="btns">
-      <button id="go-home">Ma rue</button>
-      <button id="go-parc">Parc</button>
+      <button id="places-btn">📍 Lieux</button>
+      <button id="speed" title="Vitesse (touches 1 à 4)">×1</button>
       <button id="fly">Drone</button>
       <button id="jump">Saut</button>
     </div>
@@ -139,6 +156,15 @@
   <div class="chip" id="loading" hidden>Chargement des images…</div>
   <div class="chip" id="error" hidden></div>
   <div id="attrib">Google</div>
+</div>
+<div id="places" hidden>
+  <div class="panel">
+    <div class="phead"><b>Aller à…</b><button id="places-close" aria-label="Fermer">✕</button></div>
+    <div id="places-list"></div>
+    <form id="goto-form"><input id="goto" placeholder="Une adresse en Belgique…" autocomplete="off"><button>Y aller</button></form>
+    <div id="goto-msg" class="small"></div>
+    <button id="save-here" class="alt">★ Enregistrer ma position</button>
+  </div>
 </div>
 <div id="pad" hidden><div id="knob"></div></div>
 <div id="rotate">
