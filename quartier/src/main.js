@@ -14,6 +14,12 @@ import { makeCar, makeTram, TYPES } from './cars.js';
 import { Interior, euro } from './interior.js';
 import { Shops } from './shops.js';
 import { lookupPlace } from './places.js';
+import { CityGen } from './citygen.js';
+import { Ambience } from './ambience.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 
 // Rayons (sol, murs) accélérés : chaque morceau de ville reçoit un index spatial au chargement.
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -158,7 +164,7 @@ function goLandscape() {
 // Scène
 // --------------------------------------------------------------------------------------------
 let renderer, scene, camera, tiles, raycaster, weather, reorient, gps, nightCity, streetView, walls, steps, traffic, interior, shops;
-let nearShop = null, currentHint = null, apiKey = '', qualityName = 'haute';
+let nearShop = null, currentHint = null, apiKey = '', qualityName = 'haute', city = null, ambience = null, post = null;
 // Réglages par qualité : détail au loin (errorTarget, plus petit = plus net), rayon autour du joueur
 // chargé au détail maximal de Google, résolution max de l'écran.
 // far = distance de vue à pied (au-delà : brouillard) ; au loin on ne charge donc plus rien d'inutile.
@@ -325,6 +331,20 @@ function start( key, place, quality ) {
 	traffic = new Traffic( scene, lifeGeo, counts, renderer );
 	// magasins : vrais commerces du quartier, intérieurs fabriqués selon leur type
 	interior = new Interior( renderer );
+	// ville construite par le jeu là où Google n'a pas de 3D
+	city = new CityGen( scene, {
+		...lifeGeo, Vector3: THREE.Vector3,
+		roofAt: ( x, z ) => { const h = upwardHits( x, z, player.pos.y + 300, 900 ); return h.length ? h[ 0 ].point.y : null; },
+		fake: TEST_TILESET ? () => [
+			{ type: 'way', id: 501, tags: { building: 'house' }, geometry: [ [ 6, 40 ], [ 6, 49 ], [ -4, 49 ], [ -4, 40 ], [ 6, 40 ] ].map( ( [ z, x ] ) => ( { lat: z / 111320, lon: x / 111320 } ) ) },
+			{ type: 'way', id: 502, tags: { building: 'house' }, geometry: [ [ 6, 49 ], [ 6, 57 ], [ -4, 57 ], [ -4, 49 ], [ 6, 49 ] ].map( ( [ z, x ] ) => ( { lat: z / 111320, lon: x / 111320 } ) ) },
+			{ type: 'way', id: 503, tags: { building: 'apartments', 'building:levels': '5' }, geometry: [ [ 14, 40 ], [ 14, 58 ], [ 26, 58 ], [ 26, 40 ], [ 14, 40 ] ].map( ( [ z, x ] ) => ( { lat: z / 111320, lon: x / 111320 } ) ) },
+			{ type: 'node', id: 504, lat: 9 / 111320, lon: 36 / 111320, tags: { natural: 'tree' } },
+			{ type: 'node', id: 505, lat: 9 / 111320, lon: 62 / 111320, tags: { natural: 'tree' } },
+		] : null,
+	} );
+	ambience = new Ambience();
+	setupPost();
 	shops = new Shops( { ...lifeGeo, Vector3: THREE.Vector3, fake: TEST_TILESET ? () => [ { type: 'node', lat: -8 / 111320, lon: 0, tags: { shop: 'bakery', name: 'Boulangerie d\'essai' } } ] : null } );
 	weather.onTint( ( t ) => traffic.setTint( t ) );
 	traffic.setTint( weather.tint );
@@ -414,6 +434,7 @@ function teleport( place ) {
 	streetView?.reset();
 	traffic?.reset();
 	shops?.reset();
+	city?.reset();
 	player.vel.set( 0, 0, 0 );
 	player.grounded = false; // pas de gravité tant qu'on n'a pas trouvé le sol
 	spawn.time = 0; spawn.quiet = 0;
@@ -893,6 +914,7 @@ function recenterIfFar() {
 	streetView?.reset();
 	traffic?.reset();
 	shops?.reset();
+	city?.reset();
 	weather.setLocation( lat / DEG, lon / DEG );
 }
 
@@ -908,6 +930,42 @@ function worldNormal( hit ) {
 let northYaw = 0, lastX = 0, lastZ = 0, bobPhase = 0, bobAmp = 0;
 const clock = new THREE.Clock();
 let hudTimer = 0;
+
+// --- rendu « cinéma » dehors : vignette douce, grain fin (qualité Haute / Ultra) ---------------
+const CinemaShader = {
+	uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uVignette: { value: 0.35 }, uGrain: { value: 0.022 } },
+	vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`,
+	fragmentShader: `
+		uniform sampler2D tDiffuse; uniform float uTime, uVignette, uGrain; varying vec2 vUv;
+		float h( vec2 p ) { return fract( sin( dot( p, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ); }
+		void main() {
+			vec4 c = texture2D( tDiffuse, vUv );
+			float d = distance( vUv, vec2( 0.5 ) );
+			c.rgb *= mix( 1.0, smoothstep( 0.9, 0.25, d ), uVignette );
+			c.rgb += ( h( vUv * 1000.0 + fract( uTime ) * 97.0 ) - 0.5 ) * uGrain * ( 0.4 + c.rgb );
+			gl_FragColor = c;
+		}`,
+};
+function setupPost() {
+	if ( qualityName === 'normale' ) { post = null; return; }
+	const rt = new THREE.WebGLRenderTarget( 1, 1, { type: THREE.HalfFloatType, samples: 4 } );
+	const composer = new EffectComposer( renderer, rt );
+	composer.addPass( new RenderPass( scene, camera ) );
+	const cinema = new ShaderPass( CinemaShader );
+	composer.addPass( cinema );
+	composer.addPass( new OutputPass() );
+	post = { composer, cinema, w: 0, h: 0, pr: 0 };
+}
+function renderPost() {
+	if ( ! post ) { renderer.render( scene, camera ); return; }
+	const pr = renderer.getPixelRatio();
+	if ( post.w !== innerWidth || post.h !== innerHeight || post.pr !== pr ) {
+		post.w = innerWidth; post.h = innerHeight; post.pr = pr;
+		post.composer.setPixelRatio( pr ); post.composer.setSize( innerWidth, innerHeight );
+	}
+	post.cinema.uniforms.uTime.value = performance.now() / 1000;
+	post.composer.render();
+}
 
 // --- dans un magasin -----------------------------------------------------------------------------
 function frameInside( dt ) {
@@ -1063,17 +1121,19 @@ function frame() {
 	updateRegions();
 	tiles.update();
 	weather.update( dt, camera.position );
-	const svActive = ! player.fly && player.grounded && speedMult <= 10 && ! TEST_TILESET;
+	const svActive = false; // photos Street View plaquées : retirées (la 3D reste telle quelle)
 	if ( ! TEST_TILESET ) {
 		walls.maybeLoad();
 		streetView.update( dt, player.pos, svActive );
 	}
 	steps.update( dt, player.onGround && ! player.fly && speedMult <= 5 ? Math.hypot( _walkVel.x, _walkVel.z ) : 0 );
+	if ( speedMult <= 100 && ! ( player.fly && player.pos.y - ( player.groundY ?? player.pos.y ) > 300 ) ) city.update( player.pos );
+	ambience.set( { day: 1 - weather.night, rain: weather.now.rain > 0 ? Math.min( 1, weather.now.rain / 3 ) : 0, wind: Math.min( 1, ( weather.now.wind || 10 ) / 40 ), inside: false } );
 	traffic.setNight( THREE.MathUtils.smoothstep( weather.night, 0.3, 0.8 ) );
 	traffic.setLighting( weather.sunDir, 1 - weather.night );
 	traffic.update( dt, player.pos, speedMult > 100 || ( player.fly && player.pos.y - ( player.groundY ?? player.pos.y ) > 250 ) );
 	nightCity.update( dt, player.pos, weather.night, renderer.toneMappingExposure, player.groundY ?? player.pos.y - EYE );
-	renderer.render( scene, camera );
+	renderPost();
 
 	hudTimer -= dt;
 	if ( hudTimer <= 0 ) {
