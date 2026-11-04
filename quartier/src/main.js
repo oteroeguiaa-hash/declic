@@ -6,6 +6,9 @@ import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-
 import { Weather } from './weather.js';
 import { GpsMap } from './map.js';
 import { NightCity, nightUniforms, NIGHT_HEAD, NIGHT_CODE, NIGHT_VERTEX } from './night.js';
+import { StreetView, svUniforms, SV_HEAD, SV_CODE } from './streetview.js';
+import { OsmWalls } from './osmwalls.js';
+import { Footsteps } from './footsteps.js';
 
 // Rayons (sol, murs) accélérés : chaque morceau de ville reçoit un index spatial au chargement.
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -149,7 +152,7 @@ function goLandscape() {
 // --------------------------------------------------------------------------------------------
 // Scène
 // --------------------------------------------------------------------------------------------
-let renderer, scene, camera, tiles, raycaster, weather, reorient, gps, nightCity;
+let renderer, scene, camera, tiles, raycaster, weather, reorient, gps, nightCity, streetView, walls, steps;
 // Réglages par qualité : détail au loin (errorTarget, plus petit = plus net), rayon autour du joueur
 // chargé au détail maximal de Google, résolution max de l'écran.
 // far = distance de vue à pied (au-delà : brouillard) ; au loin on ne charge donc plus rien d'inutile.
@@ -250,6 +253,30 @@ function start( key, place, quality ) {
 	} );
 	gps.onMilestone = ( msg ) => toast( msg );
 
+	// Marche : vrais murs (OpenStreetMap), photos Street View projetées sur la 3D, bruits de pas
+	walls = new OsmWalls( {
+		Vector3: THREE.Vector3,
+		here: () => localToLatLon( player.pos ),
+		toLocal: ( lat, lon, t ) => latLonToLocal( lat, lon, 0, t ),
+	} );
+	streetView = new StreetView( renderer, scene, tiles.group, key, {
+		here: () => localToLatLon( player.pos ),
+		toLocal: ( lat, lon, t ) => latLonToLocal( lat, lon, 0, t ),
+		groundAt: ( x, z ) => { const h = upwardHits( x, z, player.pos.y + 60, 300 ); return h.length ? h[ h.length - 1 ].point.y : null; },
+		feet: () => player.pos.y - EYE,
+		axes: () => ( {
+			north: new THREE.Vector3( - Math.sin( northYaw ), 0, - Math.cos( northYaw ) ),
+			east: new THREE.Vector3( Math.cos( northYaw ), 0, - Math.sin( northYaw ) ),
+		} ),
+		hideForDepth: ( hide, prev ) => {
+			const objs = [ weather.rain, weather.snow, weather.stars, nightCity.group ];
+			if ( hide ) { const was = objs.map( ( o ) => o.visible ); objs.forEach( ( o ) => { o.visible = false; } ); return was; }
+			objs.forEach( ( o, i ) => { o.visible = prev[ i ]; } );
+		},
+	} );
+	streetView.onStatus = ( msg ) => { if ( msg ) toast( msg ); };
+	steps = new Footsteps();
+
 	// la ville la nuit : fenêtres, lampadaires, traînées de phares
 	nightCity = new NightCity( scene, {
 		here: () => TEST_TILESET ? { lat: player.pos.z, lon: player.pos.x } : localToLatLon( player.pos ),
@@ -260,7 +287,7 @@ function start( key, place, quality ) {
 			...Array.from( { length: 10 }, ( _, i ) => ( { type: 'node', lat: 24, lon: -100 + i * 22 } ) ),
 		] : null,
 	} );
-	if ( TEST_TILESET ) { window.__gps = gps; window.__player = player; } // pour les essais automatiques
+	if ( TEST_TILESET ) { window.__gps = gps; window.__player = player; window.__sv = () => streetView; window.__THREE = THREE; } // pour les essais automatiques
 
 	addEventListener( 'resize', onResize );
 	setupInput();
@@ -271,9 +298,10 @@ function start( key, place, quality ) {
 const grade = { uTint: { value: new THREE.Color( 1, 1, 1 ) } };
 function gradeShader( sh ) {
 	sh.uniforms.uTint = grade.uTint;
-	Object.assign( sh.uniforms, nightUniforms );
+	Object.assign( sh.uniforms, nightUniforms, svUniforms );
 	sh.vertexShader = NIGHT_VERTEX[ 0 ] + '\n' + sh.vertexShader.replace( '#include <project_vertex>', NIGHT_VERTEX[ 1 ] );
-	sh.fragmentShader = 'uniform vec3 uTint;\n' + NIGHT_HEAD + sh.fragmentShader.replace( '#include <map_fragment>', `#include <map_fragment>
+	sh.fragmentShader = 'uniform vec3 uTint;\n' + NIGHT_HEAD + SV_HEAD + sh.fragmentShader.replace( '#include <map_fragment>', `#include <map_fragment>
+	${ SV_CODE }
 	{
 		vec3 c = diffuseColor.rgb;
 		float l = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
@@ -332,6 +360,8 @@ function teleport( place ) {
 	const north = TEST_TILESET ? new THREE.Vector3( 0, 0, -1 ) : latLonToLocal( place.lat + 0.001, place.lon, 0, new THREE.Vector3() ).sub( latLonToLocal( place.lat, place.lon, 0, _v ) );
 	northYaw = Math.atan2( - north.x, - north.z );
 	nightCity?.reset();
+	walls?.reset();
+	streetView?.reset();
 	player.vel.set( 0, 0, 0 );
 	player.grounded = false; // pas de gravité tant qu'on n'a pas trouvé le sol
 	spawn.time = 0; spawn.quiet = 0;
@@ -613,19 +643,29 @@ function groundAt( x, z, fromY, far = 400, lowest = false ) {
 }
 
 const STEP = 0.9; // hauteur max d'une marche / bordure qu'on enjambe
+const _walkVel = new THREE.Vector3(), _tmpV = new THREE.Vector3();
 const _total = new THREE.Vector3(), _sub = new THREE.Vector3(), _dir = new THREE.Vector3(), _probe = new THREE.Vector3();
 
 // Un pas à pied : murs testés à hauteur de genou-hanche et de tête, on glisse le long des façades.
 function walkStep( step ) {
 	const feet = player.pos.y - EYE;
-	for ( const h of [ 1.0, 1.6 ] ) {
+	if ( walls?.ready ) {
+		// vrais murs : seuls les bâtiments et murs / clôtures d'OpenStreetMap arrêtent
+		const p = walls.move( player.pos.x, player.pos.z, player.pos.x + step.x, player.pos.z + step.z );
+		if ( p.x === player.pos.x && p.z === player.pos.z ) return false;
+		const g = groundAt( p.x, p.z, feet + STEP, 400 );
+		// sol pas encore chargé : on avance quand même à la même hauteur (plus de mur invisible)
+		if ( g !== null && feet - g > 6 ) return false; // vrai vide (pont, mur de soutènement)
+		player.pos.x = p.x; player.pos.z = p.z;
+		return true;
+	}
+	for ( const h of [ 1.6 ] ) {
 		_probe.set( player.pos.x, feet + h, player.pos.z );
 		if ( ! slideFlat( _probe, step ) ) return false;
 	}
 	const nx = player.pos.x + step.x, nz = player.pos.z + step.z;
 	const g = groundAt( nx, nz, feet + STEP, 400 );
-	// pas de sol chargé là-bas, ou chute de plus de 6 m d'un coup : on ne bouge pas
-	if ( g === null || feet - g > 6 ) return false;
+	if ( g !== null && feet - g > 6 ) return false;
 	player.pos.x = nx; player.pos.z = nz;
 	return true;
 }
@@ -726,7 +766,10 @@ function update( dt ) {
 	// ×1 marche tranquille … ×10 ; Maj = trois fois plus vite. Le mouvement est découpé en petits
 	// pas (35 cm max) pour qu'aucun mur ne soit « sauté », même à ×10.
 	const speed = WALK * speedMult * ( fast ? 3 : 1 );
-	_total.copy( _move ).multiplyScalar( speed * dt );
+	// démarrage et arrêt progressifs, comme un vrai pas (pas d'arrêt net)
+	_walkVel.lerp( _tmpV.copy( _move ).multiplyScalar( speed ), 1 - Math.exp( - dt * ( _move.lengthSq() > 0 ? 7 : 10 ) ) );
+	if ( _walkVel.lengthSq() < 1e-4 ) _walkVel.set( 0, 0, 0 );
+	_total.copy( _walkVel ).multiplyScalar( dt );
 	const dist = _total.length();
 	if ( dist > 0 && speedMult > COLLIDE_MAX ) {
 		// très grande vitesse : on file au ras des toits, sans tester les murs
@@ -789,6 +832,8 @@ function recenterIfFar() {
 	latLonToLocal( lat / DEG, lon / DEG, h, player.pos );
 	player.vel.set( 0, 0, 0 );
 	nightCity?.reset();
+	walls?.reset();
+	streetView?.reset();
 	weather.setLocation( lat / DEG, lon / DEG );
 }
 
@@ -859,6 +904,12 @@ function frame() {
 	updateRegions();
 	tiles.update();
 	weather.update( dt, camera.position );
+	const svActive = ! player.fly && player.grounded && speedMult <= 10 && ! TEST_TILESET;
+	if ( ! TEST_TILESET ) {
+		walls.maybeLoad();
+		streetView.update( dt, player.pos, svActive );
+	}
+	steps.update( dt, player.onGround && ! player.fly && speedMult <= 5 ? Math.hypot( _walkVel.x, _walkVel.z ) : 0 );
 	nightCity.update( dt, player.pos, weather.night, renderer.toneMappingExposure, player.groundY ?? player.pos.y - EYE );
 	renderer.render( scene, camera );
 
