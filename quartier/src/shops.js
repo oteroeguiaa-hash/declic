@@ -39,7 +39,7 @@ export class Shops {
 				if ( el.tags.shop === 'vacant' ) continue;
 				this.geo.toLocal( lat, lon, P );
 				const kind = shopKind( el.tags );
-				this.list.push( { x: P.x, z: P.z, name: el.tags.name || KIND_LABEL[ kind ], kind, label: KIND_LABEL[ kind ] } );
+				this.list.push( { x: P.x, z: P.z, lat, lon, name: el.tags.name || KIND_LABEL[ kind ], named: !! el.tags.name, kind, label: KIND_LABEL[ kind ] } );
 			}
 		} catch { this.center = null; }
 		this.loading = false;

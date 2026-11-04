@@ -3,6 +3,25 @@
 // supermarché, pharmacie, café, vêtements… On prend des articles, on paye à la caisse.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+
+// emoji et format pour l'illustration et la mention de poids sur les emballages
+const PACK = {
+	'Lait demi-écrémé 1 L': [ '🥛', '1 L · Lait de vache belge' ], 'Eau plate 1,5 L': [ '💧', '1,5 L · Eau minérale naturelle' ], 'Coca 1,5 L': [ '🥤', '1,5 L · Soda cola' ],
+	'Bière (6 × 25 cl)': [ '🍺', '6 × 25 cl · Pils belge 5,2 %' ], 'Chips paprika': [ '🥔', '200 g · Saveur paprika' ], 'Spéculoos': [ '🍪', '250 g · Biscuits caramélisés' ],
+	'Chocolat noir': [ '🍫', '200 g · 72 % cacao' ], 'Céréales': [ '🥣', '375 g · Pétales de maïs' ], 'Pâtes 500 g': [ '🍝', '500 g · Spaghetti n° 5' ],
+	'Sauce tomate': [ '🍅', '400 g · Au basilic' ], 'Jus d\'orange 1 L': [ '🍊', '1 L · 100 % pur jus' ], 'Café moulu': [ '☕', '500 g · Arabica' ],
+	'Fromage': [ '🧀', '250 g · Gouda jeune' ], 'Yaourts (×4)': [ '🍶', '4 × 125 g · Nature' ], 'Gaufres': [ '🧇', '8 pièces · Gaufres de Liège' ],
+	'Paracétamol': [ '💊', '500 mg · 20 comprimés' ], 'Pastilles gorge': [ '🍬', '24 pastilles · Miel citron' ], 'Vitamine C': [ '🍋', '1000 mg · 20 comprimés' ],
+	'Pansements': [ '🩹', '20 pièces · Assortis' ], 'Spray nasal': [ '👃', '15 ml · Eau de mer' ], 'Brosse à dents': [ '🪥', 'Souple · 1 pièce' ], 'Chaussettes': [ '🧦', '3 paires · 39-42' ],
+	'Petit article': [ '🎁', '' ], 'Article': [ '📦', '' ], 'Grand article': [ '📦', '' ], 'Cadeau': [ '🎁', 'Emballage cadeau' ], 'Accessoire': [ '✨', '' ], 'Écharpe': [ '🧣', 'Laine mérinos' ],
+};
+const BRANDS = [ 'Maison Woluwe', 'Les Délices', 'Belle Vallée', 'Bon Goût', 'Terroir', 'Le Marché', 'Pure', 'Nature & Co' ];
 
 // --- catalogue (prix réalistes en Belgique) ---------------------------------------------------------
 const CATALOG = {
@@ -61,7 +80,7 @@ function canvasTex( w, h, draw, repeat ) {
 	if ( repeat ) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set( repeat[ 0 ], repeat[ 1 ] ); }
 	return t;
 }
-const floorTiles = ( a, b, rep ) => canvasTex( 256, 256, ( g, w, h ) => {
+const floorTiles = ( a, b, rep = null ) => canvasTex( 256, 256, ( g, w, h ) => {
 	for ( let y = 0; y < 4; y ++ ) for ( let x = 0; x < 4; x ++ ) {
 		g.fillStyle = ( x + y ) % 2 ? a : b; g.fillRect( x * 64, y * 64, 64, 64 );
 		g.fillStyle = 'rgba(255,255,255,0.05)'; g.fillRect( x * 64 + 6, y * 64 + 6, 30, 20 );
@@ -69,7 +88,7 @@ const floorTiles = ( a, b, rep ) => canvasTex( 256, 256, ( g, w, h ) => {
 	g.strokeStyle = 'rgba(0,0,0,0.18)'; g.lineWidth = 2;
 	for ( let i = 0; i <= 4; i ++ ) { g.beginPath(); g.moveTo( i * 64, 0 ); g.lineTo( i * 64, h ); g.moveTo( 0, i * 64 ); g.lineTo( w, i * 64 ); g.stroke(); }
 }, rep );
-const woodFloor = ( rep ) => canvasTex( 256, 256, ( g ) => {
+const woodFloor = ( rep = null ) => canvasTex( 256, 256, ( g ) => {
 	for ( let i = 0; i < 8; i ++ ) {
 		const l = 40 + Math.random() * 16;
 		g.fillStyle = `hsl(28, 38%, ${ l }%)`; g.fillRect( 0, i * 32, 256, 32 );
@@ -83,25 +102,75 @@ const plaster = ( col ) => canvasTex( 128, 128, ( g ) => {
 }, [ 4, 2 ] );
 
 const labelCache = new Map();
+// Emballage lisible : marque, nom du produit en gros, illustration, contenance, Nutri-Score, code-barres
 function labelTex( name, color ) {
 	const k = name + color;
 	if ( labelCache.has( k ) ) return labelCache.get( k );
-	const c = new THREE.Color( color );
-	const t = canvasTex( 128, 128, ( g ) => {
-		g.fillStyle = '#' + c.getHexString(); g.fillRect( 0, 0, 128, 128 );
-		g.fillStyle = 'rgba(255,255,255,0.88)'; g.fillRect( 8, 40, 112, 48 );
-		g.fillStyle = '#222'; g.font = 'bold 15px system-ui, sans-serif'; g.textAlign = 'center';
-		const words = name.split( ' ' );
-		g.fillText( words.slice( 0, 2 ).join( ' ' ), 64, 60 );
-		if ( words.length > 2 ) g.fillText( words.slice( 2 ).join( ' ' ), 64, 78 );
-		g.fillStyle = 'rgba(255,255,255,0.25)'; g.fillRect( 0, 0, 128, 14 );
+	const c = new THREE.Color( color ), [ emoji, sub ] = PACK[ name ] || [ '', '' ];
+	const brand = BRANDS[ Math.abs( [ ...name ].reduce( ( h, ch ) => h * 31 + ch.charCodeAt( 0 ), 7 ) ) % BRANDS.length ];
+	const t = canvasTex( 512, 512, ( g, w, h ) => {
+		const base = '#' + c.getHexString(), dark = '#' + c.clone().multiplyScalar( 0.55 ).getHexString(), light = '#' + c.clone().lerp( new THREE.Color( 1, 1, 1 ), 0.45 ).getHexString();
+		const gr = g.createLinearGradient( 0, 0, 0, h ); gr.addColorStop( 0, light ); gr.addColorStop( 0.5, base ); gr.addColorStop( 1, dark );
+		g.fillStyle = gr; g.fillRect( 0, 0, w, h );
+		// bandeau de marque
+		g.fillStyle = 'rgba(255,255,255,0.92)'; g.beginPath(); g.roundRect( 40, 26, 432, 70, 35 ); g.fill();
+		g.fillStyle = dark; g.font = 'italic bold 40px Georgia, serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText( brand, 256, 63 );
+		// illustration
+		if ( emoji ) { g.font = '170px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif'; g.fillText( emoji, 256, 222 ); }
+		// nom du produit
+		g.fillStyle = '#fff'; g.shadowColor = 'rgba(0,0,0,0.45)'; g.shadowBlur = 8;
+		let size = 64; g.font = `900 ${ size }px system-ui, sans-serif`;
+		const label = name.replace( / \(.*\)/, '' ).replace( / [0-9,]+ ?(L|g|kg)$/, '' );
+		while ( g.measureText( label ).width > 460 && size > 30 ) { size -= 4; g.font = `900 ${ size }px system-ui, sans-serif`; }
+		g.fillText( label, 256, 352 );
+		g.shadowBlur = 0;
+		g.font = '600 28px system-ui, sans-serif'; g.fillStyle = 'rgba(255,255,255,0.92)'; g.fillText( sub, 256, 404 );
+		// Nutri-Score
+		const ns = [ '#038141', '#85bb2f', '#fecb02', '#ee8100', '#e63e11' ], pick = Math.abs( label.length * 7 ) % 5;
+		ns.forEach( ( col, i ) => { g.fillStyle = col; g.fillRect( 40 + i * 30, 440, 30, i === pick ? 46 : 34 ); } );
+		g.fillStyle = '#fff'; g.font = 'bold 22px system-ui'; g.fillText( 'ABCDE'[ pick ], 55 + pick * 30, 465 );
+		// code-barres
+		g.fillStyle = '#fff'; g.fillRect( 330, 436, 150, 56 );
+		g.fillStyle = '#111'; for ( let x = 336; x < 474; x += 2 + ( ( x * 13 ) % 5 === 0 ? 2 : 0 ) ) if ( ( x * 7 ) % 3 ) g.fillRect( x, 440, ( x % 4 ) ? 1 : 2, 40 );
+		g.font = '12px monospace'; g.fillText( '5 410000 ' + ( 100000 + label.length * 977 ), 405, 488 );
 	} );
 	labelCache.set( k, t );
 	return t;
 }
 
+// textures « physiques » : relief (normal map) et brillance variables pour le sol, les murs, le bois
+function normalFromHeight( hc ) {
+	const w = hc.width, h = hc.height, src = hc.getContext( '2d' ).getImageData( 0, 0, w, h ).data;
+	const out = document.createElement( 'canvas' ); out.width = w; out.height = h;
+	const g = out.getContext( '2d' ), img = g.createImageData( w, h );
+	const H = ( x, y ) => src[ ( ( ( y + h ) % h ) * w + ( ( x + w ) % w ) ) * 4 ] / 255;
+	for ( let y = 0; y < h; y ++ ) for ( let x = 0; x < w; x ++ ) {
+		const dx = ( H( x - 1, y ) - H( x + 1, y ) ) * 2.5, dy = ( H( x, y - 1 ) - H( x, y + 1 ) ) * 2.5;
+		const l = Math.hypot( dx, dy, 1 ), i = ( y * w + x ) * 4;
+		img.data[ i ] = ( dx / l * 0.5 + 0.5 ) * 255; img.data[ i + 1 ] = ( dy / l * 0.5 + 0.5 ) * 255; img.data[ i + 2 ] = ( 1 / l * 0.5 + 0.5 ) * 255; img.data[ i + 3 ] = 255;
+	}
+	g.putImageData( img, 0, 0 );
+	const t = new THREE.CanvasTexture( out ); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+	return t;
+}
+function heightCanvas( w, h, draw ) { const c = document.createElement( 'canvas' ); c.width = w; c.height = h; draw( c.getContext( '2d' ), w, h ); return c; }
+function surface( mapTex, hc, rep, rough ) {
+	const nm = normalFromHeight( hc );
+	for ( const t of [ mapTex, nm ] ) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set( rep[ 0 ], rep[ 1 ] ); }
+	return new THREE.MeshStandardMaterial( { map: mapTex, normalMap: nm, normalScale: new THREE.Vector2( 0.8, 0.8 ), roughness: rough, metalness: 0 } );
+}
+const tileHeight = () => heightCanvas( 256, 256, ( g ) => { g.fillStyle = '#fff'; g.fillRect( 0, 0, 256, 256 ); g.fillStyle = '#000'; for ( let i = 0; i <= 4; i ++ ) { g.fillRect( i * 64 - 2, 0, 4, 256 ); g.fillRect( 0, i * 64 - 2, 256, 4 ); } } );
+const plasterHeight = () => heightCanvas( 256, 256, ( g ) => { g.fillStyle = '#888'; g.fillRect( 0, 0, 256, 256 ); for ( let i = 0; i < 2500; i ++ ) { g.fillStyle = `rgba(${ Math.random() < 0.5 ? '0,0,0' : '255,255,255' },${ Math.random() * 0.25 })`; g.beginPath(); g.arc( Math.random() * 256, Math.random() * 256, 1 + Math.random() * 3, 0, 7 ); g.fill(); } } );
+const woodHeight = () => heightCanvas( 256, 256, ( g ) => { g.fillStyle = '#fff'; g.fillRect( 0, 0, 256, 256 ); g.fillStyle = '#000'; for ( let i = 0; i < 8; i ++ ) { g.fillRect( 0, i * 32, 256, 2 ); g.fillRect( ( i * 97 ) % 256, i * 32, 2, 32 ); } for ( let k = 0; k < 300; k ++ ) { g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect( Math.random() * 256, Math.random() * 256, 40, 1 ); } } );
+
 // --- articles en 3D ---------------------------------------------------------------------------------
 const std = ( o ) => new THREE.MeshStandardMaterial( { roughness: 0.6, metalness: 0, ...o } );
+// boîte : étiquette sur l'avant et l'arrière, couleur unie sur les côtés (ordre : +x, -x, +y, -y, +z, -z)
+function packMats( label, color ) {
+	const side = std( { color: new THREE.Color( color ).multiplyScalar( 0.85 ), roughness: 0.45 } );
+	const front = std( { map: label, roughness: 0.38 } );
+	return [ side, side, side, side, front, front ];
+}
 function productMesh( name, shape, color ) {
 	const label = labelTex( name, color );
 	let m;
@@ -128,9 +197,9 @@ function productMesh( name, shape, color ) {
 		case 'pants': m = new THREE.Mesh( new THREE.BoxGeometry( 0.36, 0.7, 0.05 ).translate( 0, - 0.35, 0 ), std( { color, roughness: 0.9 } ) ); break;
 		case 'shoe': m = new THREE.Mesh( new THREE.CapsuleGeometry( 0.045, 0.16, 6, 10 ).rotateX( Math.PI / 2 ).scale( 1.1, 0.8, 1 ), std( { color, roughness: 0.5 } ) ); break;
 		case 'bag': m = new THREE.Mesh( new THREE.CapsuleGeometry( 0.06, 0.12, 4, 10 ).scale( 1.3, 1, 0.5 ), std( { map: label, roughness: 0.35, metalness: 0.3 } ) ); break;
-		case 'carton': m = new THREE.Mesh( new THREE.BoxGeometry( 0.07, 0.2, 0.07 ), std( { map: label } ) ); break;
-		case 'smallbox': m = new THREE.Mesh( new THREE.BoxGeometry( 0.09, 0.06, 0.035 ), std( { map: label } ) ); break;
-		default: m = new THREE.Mesh( new THREE.BoxGeometry( 0.16, 0.24, 0.06 ), std( { map: label } ) );
+		case 'carton': m = new THREE.Mesh( new THREE.BoxGeometry( 0.08, 0.22, 0.08 ), packMats( label, color ) ); break;
+		case 'smallbox': m = new THREE.Mesh( new THREE.BoxGeometry( 0.11, 0.075, 0.04 ), packMats( label, color ) ); break;
+		default: m = new THREE.Mesh( new THREE.BoxGeometry( 0.19, 0.27, 0.07 ), packMats( label, color ) );
 	}
 	return m;
 }
@@ -163,6 +232,7 @@ export class Interior {
 		this.scene = null;
 		this.raycaster = new THREE.Raycaster();
 		this.basket = [];
+		RectAreaLightUniformsLib.init();
 		const pm = new THREE.PMREMGenerator( renderer );
 		this.env = pm.fromScene( new RoomEnvironment(), 0.04 ).texture;
 		pm.dispose();
@@ -174,12 +244,15 @@ export class Interior {
 		try { localStorage.setItem( 'quartier.wallet', JSON.stringify( Math.round( this.wallet * 100 ) / 100 ) ); localStorage.setItem( 'quartier.bag', JSON.stringify( this.bag.slice( - 200 ) ) ); } catch { /* */ }
 	}
 
-	enter( shop, night ) {
+	// theme (facultatif) : couleurs tirées des vraies photos du magasin { wall, floor, accent, warm }
+	enter( shop, night, theme = null, quality = 'haute' ) {
+		this.quality = quality;
 		this.dispose();
 		this.shop = shop;
 		this.kind = shop.kind;
 		const scene = this.scene = new THREE.Scene();
 		scene.environment = this.env;
+		scene.environmentIntensity = 0.35;
 		scene.background = new THREE.Color( 0x111111 );
 		this.items = [];
 		this.solids = []; // boîtes de collision {minX, maxX, minZ, maxZ}
@@ -189,27 +262,45 @@ export class Interior {
 		this.W = W; this.D = D;
 
 		// pièce : sol, murs, plafond
-		const floor = new THREE.Mesh( new THREE.PlaneGeometry( W, D ).rotateX( - Math.PI / 2 ),
-			std( { map: K === 'cafe' || K === 'vetements' ? woodFloor( [ W / 3, D / 3 ] ) : floorTiles( K === 'pharmacie' ? '#e8ecef' : '#d9d4c9', K === 'pharmacie' ? '#dfe5ea' : '#cfc8bb', [ W / 2, D / 2 ] ), roughness: 0.35 } ) );
+		const woody = K === 'cafe' || K === 'vetements';
+		const tA = theme?.floor || ( K === 'pharmacie' ? '#e8ecef' : '#d9d4c9' ), tB = theme?.floor2 || ( K === 'pharmacie' ? '#dfe5ea' : '#cfc8bb' );
+		const floorMat = woody ? surface( woodFloor(), woodHeight(), [ W / 3, D / 3 ], 0.5 ) : surface( floorTiles( tA, tB ), tileHeight(), [ W / 2, D / 2 ], 0.22 );
+		const floor = new THREE.Mesh( new THREE.PlaneGeometry( W, D ).rotateX( - Math.PI / 2 ), floorMat );
 		scene.add( floor );
-		const wallCol = { boulangerie: '#efe3cf', supermarche: '#f1f1ee', pharmacie: '#f4f7f8', cafe: '#3d3530', vetements: '#e9e6e1', autre: '#ecebe7' }[ K ];
-		const wallMat = std( { map: plaster( wallCol ), roughness: 0.9 } );
+		const wallCol = theme?.wall || { boulangerie: '#efe3cf', supermarche: '#f1f1ee', pharmacie: '#f4f7f8', cafe: '#3d3530', vetements: '#e9e6e1', autre: '#ecebe7' }[ K ];
+		const wallMat = surface( plaster( wallCol ), plasterHeight(), [ 4, 2 ], 0.92 );
+		// plinthes : un détail qui « ancre » les murs au sol
+		const skirt = std( { color: 0x2b2b2b, roughness: 0.5 } );
+		for ( const [ w, x, z, ry ] of [ [ W, 0, - D / 2 + 0.01, 0 ], [ D, - W / 2 + 0.01, 0, Math.PI / 2 ], [ D, W / 2 - 0.01, 0, - Math.PI / 2 ] ] ) { const sk = new THREE.Mesh( new THREE.BoxGeometry( w, 0.1, 0.02 ), skirt ); sk.position.set( x, 0.05, z ); sk.rotation.y = ry; scene.add( sk ); }
 		const mkWall = ( w, x, z, ry ) => { const m = new THREE.Mesh( new THREE.PlaneGeometry( w, H ), wallMat ); m.position.set( x, H / 2, z ); m.rotation.y = ry; scene.add( m ); };
 		mkWall( W, 0, - D / 2, 0 ); mkWall( W, 0, D / 2, Math.PI ); mkWall( D, - W / 2, 0, Math.PI / 2 ); mkWall( D, W / 2, 0, - Math.PI / 2 );
 		const ceil = new THREE.Mesh( new THREE.PlaneGeometry( W, D ).rotateX( Math.PI / 2 ), std( { color: 0xf2f2f0, roughness: 0.95 } ) );
 		ceil.position.y = H; scene.add( ceil );
 
-		// lumière : panneaux lumineux au plafond + lumière d'ambiance (le reflet vient de l'environnement)
-		scene.add( new THREE.HemisphereLight( 0xfff6ea, 0x6b6157, K === 'cafe' ? 0.9 : 1.4 ) );
-		const warm = K === 'cafe' || K === 'boulangerie' ? 0xffd9a0 : 0xfff6ec;
-		const panelMat = new THREE.MeshBasicMaterial( { color: warm } );
-		const nx = Math.max( 1, Math.round( W / 4 ) ), nz = Math.max( 1, Math.round( D / 4 ) );
+		// lumière : de vrais panneaux lumineux (lumière surfacique douce), des spots qui projettent
+		// des ombres douces, une ambiance faible ; les reflets viennent de l'environnement
+		const hq = quality !== 'normale';
+		scene.add( new THREE.HemisphereLight( 0xfff6ea, 0x4a4038, K === 'cafe' ? 0.25 : 0.4 ) );
+		const warm = theme?.warm ?? ( K === 'cafe' || K === 'boulangerie' ? 0xffcf8f : 0xfff3e6 );
+		const panelMat = new THREE.MeshBasicMaterial( { color: new THREE.Color( warm ).multiplyScalar( 3 ) } ); // assez fort pour « briller » (halo)
+		const nx = Math.max( 1, Math.round( W / 4 ) ), nz = Math.max( 1, Math.round( D / 4.5 ) );
+		let areas = 0;
 		for ( let i = 0; i < nx; i ++ ) for ( let j = 0; j < nz; j ++ ) {
 			const x = - W / 2 + ( i + 0.5 ) * W / nx, z = - D / 2 + ( j + 0.5 ) * D / nz;
 			const p = new THREE.Mesh( new THREE.PlaneGeometry( 1.2, 0.3 ).rotateX( Math.PI / 2 ), panelMat ); p.position.set( x, H - 0.01, z ); scene.add( p );
+			if ( hq && areas < 8 ) {
+				const ra = new THREE.RectAreaLight( warm, K === 'cafe' ? 9 : 14, 1.2, 0.3 );
+				ra.position.set( x, H - 0.02, z ); ra.lookAt( x, 0, z ); scene.add( ra ); areas ++;
+			}
 		}
-		const lights = [ [ - W / 4, - D / 4 ], [ W / 4, - D / 4 ], [ 0, D / 4 ] ];
-		for ( const [ x, z ] of lights ) { const l = new THREE.PointLight( warm, K === 'cafe' ? 14 : 22, Math.max( W, D ) * 1.2, 1.6 ); l.position.set( x, H - 0.4, z ); scene.add( l ); }
+		if ( ! hq ) for ( const [ x, z ] of [ [ - W / 4, - D / 4 ], [ W / 4, - D / 4 ], [ 0, D / 4 ] ] ) { const l = new THREE.PointLight( warm, 18, Math.max( W, D ) * 1.2, 1.6 ); l.position.set( x, H - 0.4, z ); scene.add( l ); }
+		// deux spots à ombres douces (sur les rayons / la vitrine)
+		for ( const [ x, z ] of [ [ - W / 5, - D / 6 ], [ W / 5, D / 8 ] ] ) {
+			const sp = new THREE.SpotLight( warm, K === 'cafe' ? 40 : 60, H * 3, 1.0, 0.7, 1.4 );
+			sp.position.set( x, H - 0.05, z ); sp.target.position.set( x * 0.6, 0, z - 1 );
+			if ( hq ) { sp.castShadow = true; sp.shadow.mapSize.set( 1024, 1024 ); sp.shadow.radius = 6; sp.shadow.bias = - 0.0005; sp.shadow.normalBias = 0.02; }
+			scene.add( sp, sp.target );
+		}
 
 		// vitrine et porte côté rue (z = +D/2) : on voit dehors (jour ou nuit)
 		const outside = new THREE.MeshBasicMaterial( { color: night ? 0x0d1424 : 0xbcd3ea } );
@@ -236,10 +327,36 @@ export class Interior {
 		this.solids.push( { minX: cx - 1.15, maxX: cx + 1.15, minZ: cz - 0.4, maxZ: cz + 0.4 } );
 		this.checkout = new THREE.Vector3( cx, 0, cz + 1.0 );
 
+		// tout projette et reçoit des ombres (en qualité haute)
+		if ( hq ) scene.traverse( ( o ) => { if ( o.isMesh && o.material !== panelMat ) { o.castShadow = o.geometry.type !== 'PlaneGeometry'; o.receiveShadow = true; } } );
+
 		// on arrive juste devant la porte, face à l'intérieur
 		this.pos = new THREE.Vector3( 0, 1.65, D / 2 - 1.2 );
 		this.active = true;
 		this.basket = [];
+		this.setupPost();
+	}
+
+	// rendu « cinéma » : occlusion ambiante (ombres de contact dans les coins), léger halo, ACES
+	setupPost() {
+		const r = this.renderer;
+		this.saved = { tm: r.toneMapping, exp: r.toneMappingExposure, sh: r.shadowMap.enabled };
+		r.toneMapping = THREE.ACESFilmicToneMapping;
+		r.toneMappingExposure = 1.0;
+		r.shadowMap.enabled = this.quality !== 'normale';
+		r.shadowMap.type = THREE.PCFSoftShadowMap;
+		this.composer = null;
+		if ( this.quality === 'normale' ) return;
+		const size = r.getDrawingBufferSize( new THREE.Vector2() );
+		const cam = this.camera || new THREE.PerspectiveCamera();
+		this.composer = new EffectComposer( r );
+		this.renderPass = new RenderPass( this.scene, cam );
+		this.composer.addPass( this.renderPass );
+		this.ao = new GTAOPass( this.scene, cam, size.x, size.y );
+		this.ao.blendIntensity = 0.85;
+		this.composer.addPass( this.ao );
+		this.composer.addPass( new UnrealBloomPass( new THREE.Vector2( size.x, size.y ), 0.28, 0.5, 0.92 ) );
+		this.composer.addPass( new OutputPass() );
 	}
 
 	// remplit le magasin selon son type
@@ -249,7 +366,9 @@ export class Interior {
 		const addItem = ( def, x, y, z, ry = 0 ) => {
 			const [ name, price, shape, color ] = def;
 			const m = productMesh( name, shape, color );
-			m.position.set( x, y, z ); m.rotation.y += ry;
+			m.position.set( x, y, z );
+			// face avant tournée vers l'allée (le devant de l'étagère)
+			if ( ry !== null ) { const base = m.rotation.clone(); m.lookAt( x + Math.sin( ry ), y, z + Math.cos( ry ) ); m.rotation.x += base.x; m.rotation.z += base.z; }
 			m.userData.item = { name, price };
 			scene.add( m );
 			this.items.push( m );
@@ -390,7 +509,13 @@ export class Interior {
 		return '';
 	}
 
-	render( renderer, camera ) { renderer.render( this.scene, camera ); }
+	render( renderer, camera ) {
+		if ( ! this.composer ) { renderer.render( this.scene, camera ); return; }
+		this.renderPass.camera = camera; this.ao.camera = camera;
+		const size = renderer.getDrawingBufferSize( new THREE.Vector2() );
+		if ( this.ao.width !== size.x || this.ao.height !== size.y ) this.composer.setSize( size.x / renderer.getPixelRatio(), size.y / renderer.getPixelRatio() );
+		this.composer.render();
+	}
 
 	dispose() {
 		if ( ! this.scene ) return;
@@ -398,7 +523,12 @@ export class Interior {
 		this.scene = null;
 	}
 
-	exit() { this.active = false; this.basket = []; this.dispose(); }
+	exit() {
+		this.active = false; this.basket = [];
+		if ( this.saved ) { const r = this.renderer; r.toneMapping = this.saved.tm; r.toneMappingExposure = this.saved.exp; r.shadowMap.enabled = this.saved.sh; }
+		this.composer?.dispose?.(); this.composer = null;
+		this.dispose();
+	}
 
 }
 
