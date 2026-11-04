@@ -87,7 +87,7 @@ ${HASH}`)
   float fade = 1.0 - smoothstep(uR * 0.6, uR, dist);
   float h2 = h21(floor(wxz * 0.9));
   // en terrain découvert : herbes hautes par endroits (prairies) ; sous les arbres : herbe courte et clairsemée
-  float s = aOff.w * keep * fade * (1.0 + (0.45 * h2 * h2 + bio.g * 0.75) * (1.0 - canopy)) * (1.0 - 0.4 * canopy);
+  float s = aOff.w * keep * fade * (1.0 + (0.45 * h2 * h2 + bio.g * 0.5) * (1.0 - canopy)) * (1.0 - 0.4 * canopy);
   float fh = h21(floor(wxz * 2.3) + 7.0);
   vFlower = step(fh, (0.07 + 0.08 * bio.g) * (1.0 - canopy));
   float fc = fract(fh * 113.7);

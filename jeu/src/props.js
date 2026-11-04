@@ -281,7 +281,7 @@ export class Props {
       if (h > 3.0 && h < 430 && slope < (bm > 0.3 ? 0.68 : 0.46)) {
         const clearing = smoothstep(0.66, 0.76, forest) * (bank ? 0.3 : 1);
         // Plaines : presque sans arbres, sauf des bosquets de conifères isolés et quelques arbres solitaires
-        const copse = bp > 0.3 ? smoothstep(0.7, 0.8, grove) * 0.75 + (rand() < 0.012 ? 0.6 : 0) : 0;
+        const copse = bp > 0.3 ? smoothstep(0.82, 0.9, grove) * 0.7 + (rand() < 0.006 ? 0.6 : 0) : 0;
         const dens = (1 - clearing) * smoothstep(3.0, 6.0, h) * (1 - smoothstep(360, 425, h)) * (0.85 + 0.15 * moist) * Math.max(1 - 0.97 * bp, copse) * (1 - 0.6 * bw);
         if (rand() < dens * 0.62) {
           let t;
