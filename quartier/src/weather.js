@@ -145,7 +145,7 @@ export class Weather {
 		this.rain.geometry.setDrawRange( 0, Math.floor( this.rain.geometry.attributes.position.count * inten / 2 ) * 2 );
 		this.snow.visible = n.snow > 0;
 		this.stars.visible = day < 0.3 && n.cloud < 0.7;
-		this.stars.material.opacity = ( 1 - day / 0.3 ) * ( 1 - n.cloud );
+		this.stars.material.opacity = ( 1 - day / 0.3 ) * ( 1 - n.cloud ) * 0.55;
 	}
 
 	label() {
@@ -248,7 +248,7 @@ function makeSnow() {
 }
 
 function makeStars() {
-	const N = 1500;
+	const N = 700;
 	const pos = new Float32Array( N * 3 );
 	for ( let i = 0; i < N; i ++ ) {
 		const v = new THREE.Vector3().randomDirection();
@@ -258,7 +258,7 @@ function makeStars() {
 	}
 	const geo = new THREE.BufferGeometry();
 	geo.setAttribute( 'position', new THREE.BufferAttribute( pos, 3 ) );
-	const mat = new THREE.PointsMaterial( { color: 0xffffff, size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false, depthTest: false } );
+	const mat = new THREE.PointsMaterial( { color: 0xffffff, size: 0.7, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false, depthTest: false } );
 	const pts = new THREE.Points( geo, mat );
 	pts.frustumCulled = false;
 	pts.visible = false;

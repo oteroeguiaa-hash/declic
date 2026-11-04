@@ -66,6 +66,7 @@ export class GpsMap {
 		} ).setView( [ 50.84, 4.41 ], 17 );
 		this.miniInner = document.getElementById( 'minimap-inner' );
 		this.miniNorth = document.getElementById( 'mm-north' );
+		this.miniEl = document.getElementById( 'minimap' );
 		document.getElementById( 'minimap' ).addEventListener( 'pointerdown', ( e ) => { e.preventDefault(); e.stopPropagation(); this.open(); } );
 
 		// grande carte
@@ -114,7 +115,7 @@ export class GpsMap {
 		const deg = heading * 180 / Math.PI;
 		this.miniInner.style.transform = `rotate(${ ( - deg ).toFixed( 1 ) }deg)`;
 		// le N rouge fait le tour du cadran
-		const r = 38, a = - heading;
+		const r = this.miniEl.offsetWidth / 2 - 8, a = - heading;
 		this.miniNorth.style.transform = `translate(${ ( Math.sin( a ) * r ).toFixed( 1 ) }px, ${ ( - Math.cos( a ) * r ).toFixed( 1 ) }px)`;
 		const el = this.bigMe.getElement()?.querySelector( '.me-cone' );
 		if ( el ) el.style.transform = `rotate(${ deg.toFixed( 0 ) }deg)`;

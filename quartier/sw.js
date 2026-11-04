@@ -1,6 +1,6 @@
 /* Balade 3D : service worker (appli installable, ouverture rapide).
    Seuls les fichiers du jeu sont mis en cache ; les images 3D viennent de Google en direct. */
-const VERSION = "quartier-v9";
+const VERSION = "quartier-v10";
 const FILES = ["./", "./index.html", "./app.js", "./manifest.webmanifest", "./leaflet.css", "./icons/icon-192.png", "./icons/icon-512.png",
   "./draco/draco_decoder.js", "./draco/draco_decoder.wasm", "./draco/draco_wasm_wrapper.js"];
 
