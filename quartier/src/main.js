@@ -6,6 +6,9 @@ import { TilesRenderer } from '3d-tiles-renderer';
 import {
 	GoogleCloudAuthPlugin,
 	GLTFExtensionsPlugin,
+	LoadRegionPlugin,
+	SphereRegion,
+	RayRegion,
 	ReorientationPlugin,
 	TileCompressionPlugin,
 	TilesFadePlugin,
@@ -73,10 +76,21 @@ for ( const btn of document.querySelectorAll( '[data-start]' ) ) {
 			return;
 		}
 		$( 'menu' ).hidden = true;
+		document.body.classList.add( 'playing' );
+		goLandscape();
 		$( 'hud' ).hidden = false;
 		$( 'go-home' ).hidden = ! places.home;
 		start( key, places[ where ], $( 'quality' ).value );
 	} );
+}
+
+// Plein écran + écran bloqué à l'horizontale (Android). Sur iPhone, ce n'est pas possible
+// depuis une page : un écran demande de tourner le téléphone.
+function goLandscape() {
+	if ( ! matchMedia( '(pointer: coarse)' ).matches ) return;
+	const el = document.documentElement;
+	const fs = el.requestFullscreen?.( { navigationUI: 'hide' } );
+	Promise.resolve( fs ).catch( () => {} ).then( () => screen.orientation?.lock?.( 'landscape' ) ).catch( () => {} );
 }
 
 // --------------------------------------------------------------------------------------------
@@ -84,6 +98,12 @@ for ( const btn of document.querySelectorAll( '[data-start]' ) ) {
 // --------------------------------------------------------------------------------------------
 let renderer, scene, camera, tiles, raycaster;
 const player = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), yaw: 0, pitch: 0, onGround: false, fly: false, grounded: false };
+// Zones chargées au maximum de détail même hors de l'écran : autour des pieds, et la colonne
+// verticale sous le joueur. Sinon, le sol sous nos pieds (hors champ) reste en basse résolution,
+// décalé de plusieurs dizaines de mètres, et on se retrouve sous la ville.
+const footSphere = new SphereRegion( { errorTarget: 0.5 } );
+const footRay = new RayRegion( { errorTarget: 0.5 } );
+const spawn = { time: 0, quiet: 0 };
 
 function start( key, place, quality ) {
 	renderer = new THREE.WebGLRenderer( { antialias: true, logarithmicDepthBuffer: false } );
@@ -109,6 +129,7 @@ function start( key, place, quality ) {
 	tiles.registerPlugin( new TileCompressionPlugin() );
 	tiles.registerPlugin( new UnloadTilesPlugin() );
 	tiles.registerPlugin( new TilesFadePlugin() );
+	tiles.registerPlugin( new LoadRegionPlugin( { regions: [ footSphere, footRay ] } ) );
 	// Le point de départ devient l'origine, avec Y vers le ciel : on peut marcher en mètres.
 	tiles.registerPlugin( new ReorientationPlugin( { lat: place.lat * DEG, lon: place.lon * DEG, height: 0, recenter: true } ) );
 	// Plus le chiffre est petit, plus c'est détaillé (et lourd).
@@ -190,6 +211,7 @@ function teleport( place ) {
 	northYaw = Math.atan2( - north.x, - north.z );
 	player.vel.set( 0, 0, 0 );
 	player.grounded = false; // pas de gravité tant qu'on n'a pas trouvé le sol
+	spawn.time = 0; spawn.quiet = 0;
 	player.pitch = -0.35;
 	$( 'place' ).textContent = place.name;
 	toast( 'Chargement de ' + place.name + '…' );
@@ -307,6 +329,29 @@ function castFirst( origin, dir, far ) {
 	return hits[ 0 ] || null;
 }
 
+// Tous les impacts d'un rayon vertical qui touchent une surface tournée vers le ciel
+// (sol, trottoir, toit, haut d'un arbre), du plus haut au plus bas.
+function upwardHits( x, z, fromY, far ) {
+	raycaster.set( _v.set( x, fromY, z ), DOWN );
+	raycaster.far = far;
+	raycaster.firstHitOnly = false;
+	const hits = raycaster.intersectObject( tiles.group, true );
+	raycaster.firstHitOnly = true;
+	return hits.filter( ( h ) => h.face && worldNormal( h ).y > 0.3 );
+}
+
+// Garde les zones de détail maximal collées au joueur (repère interne des tuiles).
+const _ray = new THREE.Ray();
+function updateRegions() {
+	tiles.group.updateMatrixWorld( true );
+	_inv.copy( tiles.group.matrixWorld ).invert();
+	footSphere.sphere.center.copy( player.pos ).applyMatrix4( _inv );
+	footSphere.sphere.radius = player.grounded ? 45 : 25;
+	_ray.origin.set( player.pos.x, player.pos.y + 200, player.pos.z ).applyMatrix4( _inv );
+	_ray.direction.copy( DOWN ).transformDirection( _inv );
+	footRay.ray.copy( _ray );
+}
+
 // Sol sous un point : rayon lancé depuis `fromY` vers le bas. `lowest` = garder le dernier impact
 // (utile à l'arrivée : on passe à travers les arbres et les toits pour trouver la rue).
 function groundAt( x, z, fromY, far = 400, lowest = false ) {
@@ -352,9 +397,17 @@ function update( dt ) {
 
 	// Arrivée : on attend en l'air que le sol soit chargé, puis on se pose dans la rue.
 	if ( ! player.grounded ) {
-		const g = groundAt( player.pos.x, player.pos.z, player.pos.y + 50, 1500, true );
-		if ( g === null || tiles.stats.downloading > 4 ) return; // laisser arriver le détail d'abord
-		player.pos.y = g + EYE;
+		// On attend que toute la colonne sous nos pieds soit chargée en pleine résolution
+		// (plus rien en téléchargement pendant un moment), puis on se pose sur la surface
+		// tournée vers le ciel la plus basse : la rue, pas le toit ni le haut d'un arbre.
+		spawn.time += dt;
+		const busy = tiles.stats.downloading + tiles.stats.parsing > 0;
+		spawn.quiet = busy ? 0 : spawn.quiet + dt;
+		if ( spawn.time < 1.5 || ( spawn.quiet < 0.8 && spawn.time < 20 ) ) return;
+		const hits = upwardHits( player.pos.x, player.pos.z, player.pos.y + 100, 3000 );
+		if ( ! hits.length ) { spawn.time = 1.5; return; }
+		player.pos.y = hits[ hits.length - 1 ].point.y + EYE;
+		player.vel.set( 0, 0, 0 );
 		player.grounded = true;
 		player.pitch = 0;
 		toast( 'Bonne balade !' );
@@ -388,7 +441,15 @@ function update( dt ) {
 	player.pos.y += player.vel.y * dt;
 	feet = player.pos.y - EYE;
 	const floor = groundAt( player.pos.x, player.pos.z, Math.max( feet, player.pos.y - player.vel.y * dt - EYE ) + STEP, 400 );
-	if ( floor === null ) { player.pos.y -= player.vel.y * dt; player.vel.y = 0; return; }
+	if ( floor === null ) {
+		// Plus rien sous nos pieds : soit le sol n'est pas encore chargé, soit on est passé
+		// sous la surface (le détail vient d'arriver plus haut). On remonte sur le sol au-dessus.
+		const above = upwardHits( player.pos.x, player.pos.z, feet + 80, 200 ).filter( ( h ) => h.point.y > feet - 0.5 );
+		if ( above.length ) player.pos.y = above[ above.length - 1 ].point.y + EYE;
+		else player.pos.y -= player.vel.y * dt;
+		player.vel.y = 0;
+		return;
+	}
 	if ( feet <= floor || ( feet - floor < 0.25 && player.vel.y <= 0 ) ) {
 		// au sol (monte les bordures en douceur, descend sans sautiller)
 		player.pos.y = feet < floor ? THREE.MathUtils.damp( feet, floor, 20, dt ) + EYE : floor + EYE;
@@ -429,6 +490,7 @@ function frame() {
 	camera.rotation.set( player.pitch, player.yaw, 0, 'YXZ' );
 	camera.updateMatrixWorld();
 
+	updateRegions();
 	tiles.update();
 	renderer.render( scene, camera );
 
