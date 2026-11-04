@@ -254,7 +254,7 @@ export class NightCity {
 		const t = el.tags;
 		let h = parseFloat( t.height ) || ( parseFloat( t[ 'building:levels' ] ) ? parseFloat( t[ 'building:levels' ] ) * 3 + 1.5 : 0 );
 		if ( /^(garage|garages|shed|roof|carport|hut|kiosk|greenhouse|service|transformer_tower)$/.test( t.building ) ) return;
-		this.buildings.push( { id: el.id, pts, ccw: area > 0, cx, cz, h, ground: null, done: false } );
+		this.buildings.push( { id: el.id, pts, ccw: area > 0, area: Math.abs( area / 2 ), cx, cz, h, ground: null, done: false } );
 	}
 
 	// murs mitoyens (communs à deux maisons) : pas de fenêtres dessus
@@ -328,7 +328,8 @@ export class NightCity {
 			if ( ! b.h ) {
 				const roof = this.geo.roofAt( b.cx, b.cz ); used ++;
 				if ( roof === null ) continue;
-				b.h = Math.max( 3, Math.min( 80, roof - b.ground ) );
+				// pas de 3D Google ici (toit au niveau du sol) : même hauteur que la ville construite par le jeu
+				b.h = roof - b.ground > 2.2 ? Math.max( 3, Math.min( 80, roof - b.ground ) ) : ( Math.abs( b.area || 100 ) < 160 ? 6 : 9 );
 			}
 			b.done = true;
 			if ( b.h >= 3 ) this.buildWindows( b );
