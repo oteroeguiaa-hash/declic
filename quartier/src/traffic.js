@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { makeCar, makeTram, allCarMaterials, loadCustomCars } from './cars.js';
 loadCustomCars();
 
-const OVERPASS = 'https://overpass-api.de/api/interpreter';
+import { osmArea } from './osm.js';
 const RADIUS = 450;       // m de réseau chargés autour du joueur
 const SPACING = 6;        // m entre deux points d'un tracé
 const CAR_ROADS = /^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street)(_link)?$/;
@@ -141,8 +141,8 @@ export class Traffic {
 		const bbox = [ c.lat - d, c.lon - e, c.lat + d, c.lon + e ].map( ( v ) => v.toFixed( 5 ) ).join( ',' );
 		const q = `[out:json][timeout:25];(way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street|footway|pedestrian|path)(_link)?$"](${ bbox });way["railway"="tram"](${ bbox }););out geom;`;
 		try {
-			const data = this.geo.fake ? { elements: this.geo.fake() } : await ( await fetch( OVERPASS, { method: 'POST', body: 'data=' + encodeURIComponent( q ) } ) ).json();
-			if ( this.center !== c ) return;
+			const data = { elements: this.geo.fake ? this.geo.fake() : await osmArea( c.lat, c.lon ) };
+			if ( this.center !== c ) { this.loading = false; return; }
 			this.build( data.elements || [] );
 		} catch { this.center = null; }
 		this.loading = false;

@@ -1,7 +1,7 @@
 // Murs de la marche : les vrais contours des bâtiments (et murs / clôtures) d'OpenStreetMap.
 // Avant, les collisions se faisaient sur le maillage 3D de Google, où arbres, voitures garées et
 // buissons forment des blocs : d'où les « murs invisibles ». Ici, seuls les vrais bâtiments arrêtent.
-const OVERPASS = 'https://overpass-api.de/api/interpreter';
+import { osmArea } from './osm.js';
 const RADIUS = 600;   // m chargés autour du joueur
 const CELL = 8;       // grille d'accélération (m)
 
@@ -32,9 +32,8 @@ export class OsmWalls {
 		const bbox = [ c.lat - d, c.lon - e, c.lat + d, c.lon + e ].map( ( v ) => v.toFixed( 5 ) ).join( ',' );
 		const q = `[out:json][timeout:25];(way["building"](${ bbox });way["barrier"~"^(wall|fence|city_wall|retaining_wall)$"](${ bbox }););out geom;`;
 		try {
-			const res = await fetch( OVERPASS, { method: 'POST', body: 'data=' + encodeURIComponent( q ) } );
-			const data = await res.json();
-			this.build( data.elements || [] );
+			const els = await osmArea( c.lat, c.lon );
+			this.build( els.filter( ( el ) => el.type === 'way' && ( el.tags?.building || /^(wall|fence|city_wall|retaining_wall)$/.test( el.tags?.barrier || '' ) ) ) );
 			this.center = c;
 			this.ready = true;
 		} catch { /* on réessaiera ; en attendant, collisions sur la 3D */ }
