@@ -56,6 +56,9 @@ export class Weather {
 
 	onTint( fn ) { this.listeners.push( fn ); }
 
+	// bouton 🌙 : voir la ville de nuit tout de suite
+	setForcedNight( on ) { this.forcedNight = on; this.apply(); }
+
 	// nouveau lieu : on ne redemande la météo que s'il est loin (> 5 km)
 	setLocation( lat, lon ) {
 		const km = Math.hypot( ( lat - this.lat ) * 111, ( lon - this.lon ) * 70 );
@@ -102,6 +105,7 @@ export class Weather {
 		const n = this.now;
 		this.sunElev = this.forcedNight ? -20 : sunElevation( new Date(), this.lat, this.lon );
 		const day = THREE.MathUtils.smoothstep( this.sunElev, -7, 6 );          // 0 nuit, 1 jour
+		this.night = 1 - day;
 		const dusk = Math.max( 0, 1 - Math.abs( this.sunElev - 1 ) / 8 );      // lever / coucher
 		const grey = THREE.MathUtils.clamp( n.cloud * 0.8 + ( n.rain > 0 || n.snow > 0 ? 0.3 : 0 ), 0, 1 );
 

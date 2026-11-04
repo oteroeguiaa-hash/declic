@@ -5,6 +5,7 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import { Weather } from './weather.js';
 import { GpsMap } from './map.js';
+import { NightCity, nightUniforms, NIGHT_HEAD, NIGHT_CODE, NIGHT_VERTEX } from './night.js';
 
 // Rayons (sol, murs) accélérés : chaque morceau de ville reçoit un index spatial au chargement.
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -148,7 +149,7 @@ function goLandscape() {
 // --------------------------------------------------------------------------------------------
 // Scène
 // --------------------------------------------------------------------------------------------
-let renderer, scene, camera, tiles, raycaster, weather, reorient, gps;
+let renderer, scene, camera, tiles, raycaster, weather, reorient, gps, nightCity;
 // Réglages par qualité : détail au loin (errorTarget, plus petit = plus net), rayon autour du joueur
 // chargé au détail maximal de Google, résolution max de l'écran.
 // far = distance de vue à pied (au-delà : brouillard) ; au loin on ne charge donc plus rien d'inutile.
@@ -248,7 +249,18 @@ function start( key, place, quality ) {
 		onOpen: () => { document.exitPointerLock?.(); keys.clear(); stick.x = stick.y = 0; },
 	} );
 	gps.onMilestone = ( msg ) => toast( msg );
-	if ( TEST_TILESET ) window.__gps = gps; // pour les essais automatiques
+
+	// la ville la nuit : fenêtres, lampadaires, traînées de phares
+	nightCity = new NightCity( scene, {
+		here: () => TEST_TILESET ? { lat: player.pos.z, lon: player.pos.x } : localToLatLon( player.pos ),
+		toLocal: TEST_TILESET ? ( lat, lon, t ) => t.set( lon, 0, lat ) : ( lat, lon, t ) => latLonToLocal( lat, lon, 0, t ),
+		groundAt: ( x, z ) => { const h = upwardHits( x, z, player.pos.y + 150, 800 ); return h.length ? h[ h.length - 1 ].point.y : null; },
+		fake: TEST_TILESET ? () => [
+			{ type: 'way', id: 1, tags: { highway: 'primary' }, geometry: [ { lat: 30, lon: -150 }, { lat: 30, lon: 150 } ] },
+			...Array.from( { length: 10 }, ( _, i ) => ( { type: 'node', lat: 24, lon: -100 + i * 22 } ) ),
+		] : null,
+	} );
+	if ( TEST_TILESET ) { window.__gps = gps; window.__player = player; } // pour les essais automatiques
 
 	addEventListener( 'resize', onResize );
 	setupInput();
@@ -259,13 +271,16 @@ function start( key, place, quality ) {
 const grade = { uTint: { value: new THREE.Color( 1, 1, 1 ) } };
 function gradeShader( sh ) {
 	sh.uniforms.uTint = grade.uTint;
-	sh.fragmentShader = 'uniform vec3 uTint;\n' + sh.fragmentShader.replace( '#include <map_fragment>', `#include <map_fragment>
+	Object.assign( sh.uniforms, nightUniforms );
+	sh.vertexShader = NIGHT_VERTEX[ 0 ] + '\n' + sh.vertexShader.replace( '#include <project_vertex>', NIGHT_VERTEX[ 1 ] );
+	sh.fragmentShader = 'uniform vec3 uTint;\n' + NIGHT_HEAD + sh.fragmentShader.replace( '#include <map_fragment>', `#include <map_fragment>
 	{
 		vec3 c = diffuseColor.rgb;
 		float l = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
 		c = mix( vec3( l ), c, 1.12 );                       // couleurs un peu plus vives
 		c = 0.18 * pow( max( c, 0.0 ) / 0.18, vec3( 1.06 ) ); // un peu plus de contraste
 		diffuseColor.rgb = c * uTint;
+		${ NIGHT_CODE }
 	}` );
 }
 
@@ -316,7 +331,7 @@ function teleport( place ) {
 	// direction du nord dans la scène (pour la boussole)
 	const north = TEST_TILESET ? new THREE.Vector3( 0, 0, -1 ) : latLonToLocal( place.lat + 0.001, place.lon, 0, new THREE.Vector3() ).sub( latLonToLocal( place.lat, place.lon, 0, _v ) );
 	northYaw = Math.atan2( - north.x, - north.z );
-	jumped = true; // pour la trace d'exploration : on ne relie pas l'ancien point au nouveau
+	nightCity?.reset();
 	player.vel.set( 0, 0, 0 );
 	player.grounded = false; // pas de gravité tant qu'on n'a pas trouvé le sol
 	spawn.time = 0; spawn.quiet = 0;
@@ -374,6 +389,13 @@ function setupInput() {
 	};
 	tap( 'speed', cycleSpeed );
 	tap( 'fly', toggleFly );
+	tap( 'night', () => {
+		const on = ! weather.forcedNight;
+		weather.setForcedNight( on );
+		$( 'night' ).textContent = on ? '☀️' : '🌙';
+		$( 'night' ).classList.toggle( 'on', on );
+		toast( on ? 'La ville de nuit' : 'Retour à l\'heure réelle' );
+	} );
 	$( 'goto-form' ).onsubmit = async ( e ) => {
 		e.preventDefault();
 		const q = $( 'goto' ).value.trim();
@@ -674,6 +696,7 @@ function update( dt ) {
 		}
 		const g = groundAt( player.pos.x, player.pos.z, player.pos.y + 1, 600 );
 		if ( g !== null && player.pos.y < g + EYE ) player.pos.y = g + EYE;
+		if ( g !== null ) player.groundY = g;
 		recenterIfFar();
 		return;
 	}
@@ -744,6 +767,7 @@ function update( dt ) {
 		if ( player.pos.y - EYE < floor - 0.08 ) player.pos.y = floor - 0.08 + EYE;
 		player.vel.y = 0;
 		player.onGround = true;
+		player.groundY = floor;
 	} else {
 		player.onGround = false;
 	}
@@ -764,6 +788,7 @@ function recenterIfFar() {
 	tiles.group.updateMatrixWorld( true );
 	latLonToLocal( lat / DEG, lon / DEG, h, player.pos );
 	player.vel.set( 0, 0, 0 );
+	nightCity?.reset();
 	weather.setLocation( lat / DEG, lon / DEG );
 }
 
@@ -776,7 +801,6 @@ function worldNormal( hit ) {
 // --------------------------------------------------------------------------------------------
 // Boucle
 // --------------------------------------------------------------------------------------------
-let jumped = true;
 let northYaw = 0, lastX = 0, lastZ = 0, bobPhase = 0, bobAmp = 0;
 const clock = new THREE.Clock();
 let hudTimer = 0;
@@ -835,6 +859,7 @@ function frame() {
 	updateRegions();
 	tiles.update();
 	weather.update( dt, camera.position );
+	nightCity.update( dt, player.pos, weather.night, renderer.toneMappingExposure, player.groundY ?? player.pos.y - EYE );
 	renderer.render( scene, camera );
 
 	hudTimer -= dt;
@@ -857,7 +882,6 @@ function frame() {
 		$( 'minimap' ).style.top = Math.round( btnBottom + 10 ) + 'px';
 		if ( ! TEST_TILESET ) {
 			gps.update( lat, lon, northYaw - player.yaw );
-			if ( player.grounded || player.fly ) { gps.track( lat, lon, jumped ); jumped = false; }
 			gps.setMiniZoom( Math.max( 5, Math.min( 17, Math.round( 17 - Math.log10( speedMult ) * 1.8 - ( player.fly ? 1 : 0 ) ) ) ) );
 		}
 	}
