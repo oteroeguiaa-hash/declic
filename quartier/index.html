@@ -83,10 +83,6 @@
   #minimap::after { content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none; box-shadow: inset 0 0 0 1.5px #ffffff70, inset 0 0 16px #000a; }
   #mm-north { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; transform: translate(0, -38px); z-index: 2; font: 800 10px/14px system-ui, sans-serif; text-align: center; color: #ff5a4e; text-shadow: 0 0 3px #000, 0 0 2px #000; pointer-events: none; }
   body.touch #fps { display: none; } /* place pour garder les boutons sur une seule ligne */
-  #fog { position: absolute; left: 0; top: 0; pointer-events: none; }
-  #explore-stats { position: absolute; left: max(10px, env(safe-area-inset-left)); bottom: 70px; z-index: 1000; font-size: 13px; font-weight: 500; }
-  #explore-stats b { color: #7dd3fc; }
-  .trail-glow { filter: blur(3px); }
   #mapview { position: fixed; inset: 0; z-index: 45; background: #0d1117; }
   #mapview[hidden] { display: none !important; }
   #bigmap { position: absolute; inset: 0; }
@@ -175,6 +171,7 @@
       <button id="places-btn">📍 Lieux</button>
       <button id="speed" title="Vitesse : touche pour accélérer (touches + et -)">×1</button>
       <button id="fly" title="Drone / marche (F)">🚁 Drone</button>
+      <button id="night" title="Voir la ville de nuit">🌙</button>
       <button id="jump">Saut</button>
     </div>
   </div>
@@ -192,15 +189,11 @@
 </div>
 <div id="mapview" hidden>
   <div id="bigmap"></div>
-  <canvas id="fog"></canvas>
-  <div id="explore-stats" class="chip"></div>
   <div class="mapbar">
     <button id="map-close">✕ Fermer</button>
     <button id="map-me">📍 Moi</button>
     <button id="map-type">🛰️ Satellite</button>
     <button id="map-traffic">🚦 Trafic</button>
-    <button id="map-fog" title="Brouillard d'exploration">🌫️ Exploration</button>
-    <button id="map-reset" title="Effacer l'exploration">🗑️</button>
     <span id="map-msg" class="small"></span>
   </div>
   <div class="maphint chip">Touche la carte pour t'y téléporter · pince ou molette pour zoomer</div>
