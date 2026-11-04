@@ -15,6 +15,7 @@ import { Interior, euro } from './interior.js';
 import { Shops } from './shops.js';
 import { lookupPlace } from './places.js';
 import { CityGen } from './citygen.js';
+import { osmStatus } from './osm.js';
 import { Ambience } from './ambience.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -343,6 +344,8 @@ function start( key, place, quality ) {
 			{ type: 'node', id: 505, lat: 9 / 111320, lon: 62 / 111320, tags: { natural: 'tree' } },
 		] : null,
 	} );
+	city.onStatus = ( m ) => toast( m );
+	osmStatus.onError = () => toast( 'OpenStreetMap ne répond pas, nouvel essai dans un moment…' );
 	ambience = new Ambience();
 	setupPost();
 	shops = new Shops( { ...lifeGeo, Vector3: THREE.Vector3, fake: TEST_TILESET ? () => [ { type: 'node', lat: -8 / 111320, lon: 0, tags: { shop: 'bakery', name: 'Boulangerie d\'essai' } } ] : null } );

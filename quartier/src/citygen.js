@@ -5,7 +5,7 @@
 // bâtiment manque dans la 3D Google et on le construit.
 import * as THREE from 'three';
 
-const OVERPASS = 'https://overpass-api.de/api/interpreter';
+import { osmArea } from './osm.js';
 const RADIUS = 420;
 
 // --- textures de façade (une travée = 1 fenêtre × 1 étage, répétée) ---------------------------------------
@@ -215,8 +215,8 @@ export class CityGen {
 		const bbox = [ c.lat - d, c.lon - e, c.lat + d, c.lon + e ].map( ( v ) => v.toFixed( 5 ) ).join( ',' );
 		const q = `[out:json][timeout:25];(way["building"](${ bbox });node["natural"="tree"](${ bbox }););out geom;`;
 		try {
-			const els = this.geo.fake ? this.geo.fake() : ( await ( await fetch( OVERPASS, { method: 'POST', body: 'data=' + encodeURIComponent( q ) } ) ).json() ).elements || [];
-			if ( this.center !== c ) return;
+			const els = this.geo.fake ? this.geo.fake() : await osmArea( c.lat, c.lon );
+			if ( this.center !== c ) { this.loading = false; return; }
 			const P = new this.geo.Vector3();
 			for ( const el of els ) {
 				if ( el.type === 'node' && el.tags?.natural === 'tree' ) {
@@ -277,6 +277,7 @@ export class CityGen {
 			let seed = it.id % 2147483646 + 1; const rnd = () => ( seed = seed * 16807 % 2147483647 ) / 2147483647;
 			this.group.add( buildingMesh( it, rnd ) );
 			this.built ++;
+			if ( this.built === 3 ) this.onStatus?.( '🏗️ Pas de 3D Google ici : le jeu construit les bâtiments' );
 		}
 	}
 

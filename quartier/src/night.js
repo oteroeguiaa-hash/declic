@@ -3,7 +3,7 @@
 // sur les grands axes, comme sur une photo de nuit en pose longue.
 import * as THREE from 'three';
 
-const OVERPASS = 'https://overpass-api.de/api/interpreter';
+import { osmArea } from './osm.js';
 const RADIUS = 900;        // m autour du joueur pour les lampadaires et les routes
 const MAX_LAMPS = 16;      // lampadaires qui éclairent vraiment (les plus proches)
 const LAMP_H = 6;          // hauteur des ampoules
@@ -180,10 +180,9 @@ export class NightCity {
 		const q = `[out:json][timeout:25];(way["building"](${ bboxB });node["highway"="street_lamp"](${ bbox });way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street)(_link)?$"](${ bbox }););out geom;`;
 		try {
 			if ( this.geo.fake ) { this.build( this.geo.fake() ); this.loading = false; return; } // essais hors ligne
-			const res = await fetch( OVERPASS, { method: 'POST', body: 'data=' + encodeURIComponent( q ) } );
-			const data = await res.json();
-			if ( this.center !== c ) return; // on a bougé entre-temps
-			this.build( data.elements || [] );
+			const els = await osmArea( c.lat, c.lon );
+			if ( this.center !== c ) { this.loading = false; return; } // on a bougé entre-temps
+			this.build( els.filter( ( el ) => ( el.type === 'node' && el.tags?.highway === 'street_lamp' ) || ( el.type === 'way' && ( el.tags?.building || el.tags?.highway ) ) ) );
 		} catch { this.center = null; /* réessai plus tard */ }
 		this.loading = false;
 	}

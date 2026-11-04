@@ -1,7 +1,7 @@
 // Les vrais commerces du quartier (OpenStreetMap) : nom, type et position, pour pouvoir y entrer.
 import { shopKind, KIND_LABEL } from './interior.js';
 
-const OVERPASS = 'https://overpass-api.de/api/interpreter';
+import { osmArea } from './osm.js';
 const RADIUS = 350;
 
 export class Shops {
@@ -30,12 +30,14 @@ export class Shops {
 		const bbox = [ c.lat - d, c.lon - e, c.lat + d, c.lon + e ].map( ( v ) => v.toFixed( 5 ) ).join( ',' );
 		const q = `[out:json][timeout:25];(nwr["shop"](${ bbox });nwr["amenity"~"^(cafe|restaurant|fast_food|bar|pub|pharmacy|ice_cream)$"](${ bbox }););out center tags;`;
 		try {
-			const els = this.geo.fake ? this.geo.fake() : ( await ( await fetch( OVERPASS, { method: 'POST', body: 'data=' + encodeURIComponent( q ) } ) ).json() ).elements || [];
+			const els = this.geo.fake ? this.geo.fake() : await osmArea( c.lat, c.lon );
 			const P = new this.geo.Vector3();
 			this.list = [];
 			for ( const el of els ) {
-				const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
-				if ( lat == null || ! el.tags ) continue;
+				if ( ! el.tags || ( ! el.tags.shop && ! /^(cafe|restaurant|fast_food|bar|pub|pharmacy|ice_cream)$/.test( el.tags.amenity || '' ) ) ) continue;
+				// centre d'un commerce dessiné comme une surface
+				const gm = el.geometry, lat = el.lat ?? el.center?.lat ?? ( gm && gm.reduce( ( n, g ) => n + g.lat, 0 ) / gm.length ), lon = el.lon ?? el.center?.lon ?? ( gm && gm.reduce( ( n, g ) => n + g.lon, 0 ) / gm.length );
+				if ( lat == null || isNaN( lat ) ) continue;
 				if ( el.tags.shop === 'vacant' ) continue;
 				this.geo.toLocal( lat, lon, P );
 				const kind = shopKind( el.tags );
