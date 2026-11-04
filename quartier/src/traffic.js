@@ -3,6 +3,7 @@
 // Ce ne sont pas les vrais véhicules (pas de données en direct), mais tout roule au bon endroit :
 // voitures à droite de la chaussée, trams sur les rails, piétons sur les trottoirs.
 import * as THREE from 'three';
+import { makeCar, makeTram, allCarMaterials } from './cars.js';
 
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
 const RADIUS = 450;       // m de réseau chargés autour du joueur
@@ -42,46 +43,10 @@ function merge( geos ) {
 	return out;
 }
 
-const CAR_COLORS = [ 0xf2f2f0, 0x1c1d20, 0x8a8f95, 0xbfc3c7, 0x2b4a7a, 0x8c1c1c, 0x30343a, 0xe9e4d6, 0x355e3b, 0x5a6470 ];
 const SHIRTS = [ 0x2d3e50, 0x8e2b2b, 0x3c6e47, 0xd8d2c4, 0x1e1e22, 0x6b4f3a, 0x4a5a8c, 0xb5651d, 0x777777, 0x2f5d73 ];
 const PANTS = [ 0x1f2633, 0x2b2b2b, 0x3b4a5e, 0x5a4a3a, 0x222b3a ];
 const SKIN = [ 0xf1c7a5, 0xd9a57f, 0xa86f4b, 0x6e4430, 0xe8b996 ];
 const pick = ( a ) => a[ Math.floor( Math.random() * a.length ) ];
-
-// silhouette de voiture vue de côté (capot, pare-brise incliné, toit, lunette, coffre), extrudée
-function profileGeo( pts, width, bevel, hex ) {
-	const shape = new THREE.Shape( pts.map( ( [ z, y ] ) => new THREE.Vector2( z, y ) ) );
-	const g = new THREE.ExtrudeGeometry( shape, { depth: width - bevel * 2, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 4 } );
-	g.translate( 0, 0, - ( width - bevel * 2 ) / 2 );
-	g.rotateY( Math.PI / 2 ); // la longueur suit l'axe z du véhicule
-	return shaded( g, hex );
-}
-
-function carGeometry() {
-	const c = pick( CAR_COLORS ), L = 4.0 + Math.random() * 0.8, h = L / 2;
-	const suv = Math.random() < 0.25, roof = suv ? 1.62 : 1.42;
-	// profil de l'avant (z = -h) vers l'arrière (z = +h)
-	const body = [ [ - h, 0.32 ], [ - h, 0.78 ], [ - h + 0.25, 0.86 ], [ - h + 1.0, 0.93 ], [ - h + 1.55, roof - 0.04 ], [ - h + 1.75, roof ],
-		[ h - 1.05, roof ], [ h - 0.45, 0.98 ], [ h, 0.9 ], [ h, 0.32 ] ];
-	const glass = [ [ - h + 1.06, 0.95 ], [ - h + 1.56, roof - 0.07 ], [ - h + 1.76, roof - 0.04 ], [ h - 1.08, roof - 0.04 ], [ h - 0.52, 0.98 ] ];
-	// (la forme est dessinée dans le plan (u, y) puis tournée : u devient -z, d'où le signe)
-	const parts = [ profileGeo( body.map( ( [ z, y ] ) => [ - z, y ] ).reverse(), 1.78, 0.06, c ), profileGeo( glass.map( ( [ z, y ] ) => [ - z, y ] ).reverse(), 1.82, 0, 0x1b232b ) ];
-	for ( const [ x, z ] of [ [ 0.82, 1 ], [ - 0.82, 1 ], [ 0.82, - 1 ], [ - 0.82, - 1 ] ] ) {
-		parts.push( shaded( new THREE.CylinderGeometry( 0.33, 0.33, 0.24, 14 ).rotateZ( Math.PI / 2 ).translate( x, 0.33, z * ( h - 0.78 ) ), 0x121212 ) );
-	}
-	return merge( parts );
-}
-
-function tramGeometry() {
-	const len = 31;
-	return merge( [
-		box( 2.3, 1.2, len, 0, 0.9, 0, 0xcfd2d6 ),
-		box( 2.32, 1.15, len * 0.97, 0, 2.05, 0, 0x26303a ),     // vitres
-		box( 2.3, 0.45, len, 0, 2.85, 0, 0xcfd2d6 ),
-		box( 2.34, 0.22, len * 1.002, 0, 1.5, 0, 0xb0272b ),     // bande rouge
-		box( 0.12, 0.8, 1.6, 0, 3.45, 0, 0x333333 ),             // pantographe
-	] );
-}
 
 // silhouette humaine arrondie : buste, bassin, cou, tête, cheveux ; jambes et bras articulés à part
 const cap = ( r, len, x, y, z, hex, sx = 1, sz = 1 ) => shaded( new THREE.CapsuleGeometry( r, len, 4, 10 ).scale( sx, 1, sz ).translate( x, y, z ), hex );
@@ -129,8 +94,9 @@ class Path {
 export class Traffic {
 
 	// geo = { here(), toLocal(lat, lon, target), groundAt(x, z) }
-	constructor( scene, geo, counts ) {
+	constructor( scene, geo, counts, renderer ) {
 		this.geo = geo;
+		this.renderer = renderer;
 		this.counts = counts; // { car, tram, foot }
 		this.group = new THREE.Group();
 		scene.add( this.group );
@@ -141,11 +107,23 @@ export class Traffic {
 		this.mat = new THREE.MeshBasicMaterial( { vertexColors: true } );
 		this.headMat = new THREE.MeshBasicMaterial( { color: 0xfff1d0, transparent: true, opacity: 0, toneMapped: false, depthWrite: false } );
 		this.tailMat = new THREE.MeshBasicMaterial( { color: 0xff2a1a, transparent: true, opacity: 0, toneMapped: false, depthWrite: false } );
-		this.lightGeo = new THREE.PlaneGeometry( 0.32, 0.16 );
+		this.lightGeo = new THREE.CircleGeometry( 0.11, 14 );
+		// lumière du jour pour les carrosseries brillantes (la ville, elle, est en photo)
+		this.hemi = new THREE.HemisphereLight( 0xdfe9f5, 0x5a5548, 1.2 );
+		this.sun = new THREE.DirectionalLight( 0xfff1dc, 1.6 );
+		this.sun.target = new THREE.Object3D();
+		this.group.add( this.hemi, this.sun, this.sun.target );
 		this.tmp = {};
 	}
 
 	setTint( c ) { this.mat.color.copy( c ); }
+	// soleil (direction dans la scène) et part du jour (0 nuit … 1 jour)
+	setLighting( sunDir, day ) {
+		this.sun.position.copy( sunDir ).multiplyScalar( 100 );
+		this.sun.intensity = 1.8 * Math.max( 0, sunDir.y > 0 ? day : 0 );
+		this.hemi.intensity = 0.15 + 1.1 * day;
+		for ( const m of allCarMaterials() ) m.envMapIntensity = 0.15 + 0.85 * day;
+	}
 	setNight( n ) { this.headMat.opacity = n; this.tailMat.opacity = n * 0.9; }
 
 	reset() {
@@ -246,8 +224,11 @@ export class Traffic {
 			a.lateral = ( Math.random() - 0.5 ) * 1.2;
 		} else {
 			const obj = new THREE.Group();
-			obj.add( new THREE.Mesh( kind === 'tram' ? tramGeometry() : carGeometry(), this.mat ) );
-			const half = kind === 'tram' ? 15.5 : 2.2, w = kind === 'tram' ? 0.85 : 0.62, y = kind === 'tram' ? 1.0 : 0.72;
+			const model = kind === 'tram' ? makeTram( this.renderer ) : makeCar( this.renderer );
+			obj.add( model );
+			a.wheels = model.userData.wheels || [];
+			a.R = model.userData.radius || 0.33;
+			const half = model.userData.half + 0.03, w = kind === 'tram' ? 0.85 : 0.6, y = kind === 'tram' ? 0.9 : 0.74;
 			for ( const x of [ - w, w ] ) {
 				const hl = new THREE.Mesh( this.lightGeo, this.headMat ); hl.position.set( x, y, - half - 0.02 ); hl.rotation.y = Math.PI; obj.add( hl );
 				const tl = new THREE.Mesh( this.lightGeo, this.tailMat ); tl.position.set( x, y, half + 0.02 ); obj.add( tl );
@@ -314,6 +295,7 @@ export class Traffic {
 			a.obj.rotation.y = a.yaw;
 			a.obj.visible = true;
 			a.placed = true;
+			if ( a.wheels?.length ) for ( const w of a.wheels ) w.rotation.x -= a.speed * dt / a.R; // les roues tournent
 			if ( a.kind === 'foot' ) {
 				a.phase += dt * a.speed * 3.6;
 				const sw = Math.sin( a.phase ) * 0.5;
