@@ -9,6 +9,8 @@ Promenade à pied (ou en drone) dans Woluwe-Saint-Lambert et le parc Georges-Hen
 - Lieux : parc Georges-Henri, Cinquantenaire, rue Vergote, Hof ten Berg, Andromède, Docks Bruxsel, Woluwe Shopping, Court-Saint-Étienne, + n'importe quelle adresse et ses propres favoris (gardés dans le navigateur).
 - Commandes : ZQSD / WASD, Maj pour courir, Espace pour sauter, 1-4 ou V vitesse ×1/×2/×5/×10, F drone, T lieux, H ma rue, P le parc. Sur téléphone : joystick à gauche, glisser à droite.
 - Boutons du haut : Lieux, vitesse (une tape = plus vite : ×2, ×5, ×10… ×1 million, puis ×1), Drone / Marcher. Mini-carte : une tape ouvre la carte. Collisions jusqu'à ×100 à pied ; au-delà on survole les toits. Le monde se recentre tous les 3 km pour suivre la courbure de la Terre.
+- **Boussole sombre** : mini-carte ronde foncée qui tourne avec le regard, flèche fixe, N rouge sur le cadran.
+- **Exploration** : sur la grande carte, tout est dans le brouillard sauf là où tu es passé ; trace lumineuse, km parcourus, surface découverte, messages tous les km (bouton 🌫️, 🗑️ pour effacer). Gardé dans le navigateur.
 - **Carte GPS** (`src/map.js`, Leaflet) : mini-carte ronde, grande carte (M) en plan ou satellite Google (Map Tiles API 2D, même clé) avec trafic Google en option, repli OpenStreetMap ; toucher la carte = s'y téléporter.
 - Collisions à pied et en drone (petits pas + glissement le long des murs) : on ne traverse pas les bâtiments, même à ×10.
 - Test sans clé Google : `/quartier/?tileset=/quartier/test-scene/tileset.json` (sol, immeuble, bordure, muret).
