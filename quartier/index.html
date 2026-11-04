@@ -5,6 +5,7 @@
 <script>if (!location.pathname.endsWith("/") && !location.pathname.endsWith(".html")) location.replace(location.pathname + "/" + location.search);</script>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Balade 3D à Woluwe</title>
+<link rel="stylesheet" href="leaflet.css">
 <meta name="description" content="Se promener à pied dans Woluwe-Saint-Lambert et le parc Georges-Henri, en 3D photoréaliste.">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0d1117">
@@ -79,6 +80,24 @@
   body.touch #bar { bottom: max(8px, env(safe-area-inset-bottom)); }
   @media (max-width: 700px) { .seg button { padding: 8px 8px; font-size: 12px; } }
   #lockhint { position: absolute; left: 50%; bottom: 62px; transform: translateX(-50%); font-size: 12px; opacity: .85; }
+  #speeds { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); z-index: 35; display: grid; grid-template-columns: repeat(4, auto); gap: 6px; background: #161b22f2; border: 1px solid var(--line); border-radius: 14px; padding: 8px; }
+  #speeds[hidden] { display: none !important; }
+  #speeds button { padding: 9px 10px; font-size: 13px; background: #ffffff12; border: 1px solid var(--line); white-space: nowrap; }
+  #speeds button.on { background: var(--acc); }
+  #minimap { position: fixed; right: max(10px, env(safe-area-inset-right)); top: 58px; width: 170px; height: 170px; border-radius: 50%; overflow: hidden; border: 3px solid #ffffffcc; box-shadow: 0 4px 16px #0008; z-index: 20; cursor: pointer; background: #ddd; display: none; }
+  body.playing #minimap { display: block; }
+  body.touch #minimap { width: 120px; height: 120px; top: 54px; }
+  #mapview { position: fixed; inset: 0; z-index: 45; background: #0d1117; }
+  #mapview[hidden] { display: none !important; }
+  #bigmap { position: absolute; inset: 0; }
+  .mapbar { position: absolute; top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); z-index: 1000; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .mapbar button { padding: 9px 12px; font-size: 14px; background: #161b22e6; border: 1px solid var(--line); }
+  .mapbar button.on { background: var(--acc); }
+  .maphint { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 1000; pointer-events: none; font-size: 13px; white-space: nowrap; }
+  .leaflet-top.leaflet-left { top: 56px; }
+  .me-icon { background: none; border: 0; }
+  .me-dot { position: relative; width: 22px; height: 22px; border-radius: 50%; background: #4f9dff; border: 3px solid #fff; box-shadow: 0 0 0 6px #4f9dff44, 0 2px 6px #0007; box-sizing: border-box; }
+  .me-cone { position: absolute; left: 50%; top: 50%; width: 0; height: 0; margin: -30px 0 0 -9px; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 22px solid #4f9dffaa; transform-origin: 9px 30px; }
   #rotate { position: fixed; inset: 0; z-index: 50; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; text-align: center; background: #0d1117; }
   body.playing #rotate { display: none; }
   @media (orientation: portrait) and (pointer: coarse) { body.playing #rotate { display: flex; } }
@@ -183,12 +202,25 @@
     <button id="mode-drone" title="Drone (F)">🚁 Drone</button>
   </div>
   <div class="seg">
-    <button id="speed-1" class="on" title="Touche 1">×1</button>
-    <button id="speed-2" title="Touche 2">×2</button>
-    <button id="speed-5" title="Touche 3">×5</button>
-    <button id="speed-10" title="Touche 4">×10</button>
+    <button id="speed-down" title="Moins vite (touche -)">−</button>
+    <button id="speed-val" title="Choisir la vitesse">×1</button>
+    <button id="speed-up" title="Plus vite (touche +)">+</button>
   </div>
+  <div class="seg"><button id="map-btn" title="Carte GPS (M)">🗺️ Carte</button></div>
   <div class="seg"><button id="stib-btn" title="Trams et bus STIB en direct">🚋 STIB</button></div>
+</div>
+<div id="speeds" hidden></div>
+<div id="minimap" title="Ouvrir la carte (M)"></div>
+<div id="mapview" hidden>
+  <div id="bigmap"></div>
+  <div class="mapbar">
+    <button id="map-close">✕ Fermer</button>
+    <button id="map-me">📍 Moi</button>
+    <button id="map-type">🛰️ Satellite</button>
+    <button id="map-traffic">🚦 Trafic</button>
+    <span id="map-msg" class="small"></span>
+  </div>
+  <div class="maphint chip">Touche la carte pour t'y téléporter · pince ou molette pour zoomer</div>
 </div>
 <div id="places" hidden>
   <div class="panel">
