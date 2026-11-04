@@ -9,6 +9,7 @@ import { NightCity, nightUniforms, NIGHT_HEAD, NIGHT_CODE, NIGHT_VERTEX } from '
 import { StreetView, svUniforms, SV_HEAD, SV_CODE } from './streetview.js';
 import { OsmWalls } from './osmwalls.js';
 import { Footsteps } from './footsteps.js';
+import { Traffic } from './traffic.js';
 
 // Rayons (sol, murs) accélérés : chaque morceau de ville reçoit un index spatial au chargement.
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -152,7 +153,7 @@ function goLandscape() {
 // --------------------------------------------------------------------------------------------
 // Scène
 // --------------------------------------------------------------------------------------------
-let renderer, scene, camera, tiles, raycaster, weather, reorient, gps, nightCity, streetView, walls, steps;
+let renderer, scene, camera, tiles, raycaster, weather, reorient, gps, nightCity, streetView, walls, steps, traffic;
 // Réglages par qualité : détail au loin (errorTarget, plus petit = plus net), rayon autour du joueur
 // chargé au détail maximal de Google, résolution max de l'écran.
 // far = distance de vue à pied (au-delà : brouillard) ; au loin on ne charge donc plus rien d'inutile.
@@ -229,7 +230,15 @@ function start( key, place, quality ) {
 	tiles.addEventListener( 'dispose-model', ( { scene: model } ) => {
 		model.traverse( ( o ) => { if ( o.isMesh && o.geometry.boundsTree ) o.geometry.disposeBoundsTree(); } );
 	} );
-	weather.onTint( ( tint ) => grade.uTint.value.copy( tint ) );
+	weather.onTint( ( tint ) => {
+		grade.uTint.value.copy( tint );
+		grade.uSunDir.value.copy( weather.sunDir );
+		grade.uSunLow.value = weather.sunLow;
+	} );
+	weather.axes = () => ( {
+		north: new THREE.Vector3( - Math.sin( northYaw ), 0, - Math.cos( northYaw ) ),
+		east: new THREE.Vector3( Math.cos( northYaw ), 0, - Math.sin( northYaw ) ),
+	} );
 	grade.uTint.value.copy( weather.tint );
 	tiles.setCamera( camera );
 	tiles.setResolutionFromRenderer( camera, renderer );
@@ -269,7 +278,7 @@ function start( key, place, quality ) {
 			east: new THREE.Vector3( Math.cos( northYaw ), 0, - Math.sin( northYaw ) ),
 		} ),
 		hideForDepth: ( hide, prev ) => {
-			const objs = [ weather.rain, weather.snow, weather.stars, nightCity.group ];
+			const objs = [ weather.rain, weather.snow, weather.stars, weather.skyDome, nightCity.group, traffic.group ];
 			if ( hide ) { const was = objs.map( ( o ) => o.visible ); objs.forEach( ( o ) => { o.visible = false; } ); return was; }
 			objs.forEach( ( o, i ) => { o.visible = prev[ i ]; } );
 		},
@@ -290,6 +299,26 @@ function start( key, place, quality ) {
 			...Array.from( { length: 10 }, ( _, i ) => ( { type: 'node', lat: 24 / 111320, lon: ( -100 + i * 22 ) / 111320 } ) ),
 		] : null,
 	} );
+
+	// fausse circulation sur les vraies rues : voitures, trams, passants
+	const lifeGeo = {
+		// (scène d'essai : 1 « degré » = 111 320 m, pour que les distances restent justes)
+		here: () => TEST_TILESET ? { lat: player.pos.z / 111320, lon: player.pos.x / 111320 } : localToLatLon( player.pos ),
+		toLocal: TEST_TILESET ? ( lat, lon, t ) => t.set( lon * 111320, 0, lat * 111320 ) : ( lat, lon, t ) => latLonToLocal( lat, lon, 0, t ),
+		groundAt: ( x, z ) => { const h = upwardHits( x, z, player.pos.y + 150, 800 ); return h.length ? h[ h.length - 1 ].point.y : null; },
+		roofAt: ( x, z ) => { const h = upwardHits( x, z, player.pos.y + 300, 900 ); return h.length ? h[ 0 ].point.y : null; },
+		fake: TEST_TILESET ? () => [
+			{ type: 'way', id: 2, tags: { railway: 'tram' }, geometry: [ { lat: 45 / 111320, lon: -150 / 111320 }, { lat: 45 / 111320, lon: 150 / 111320 } ] },
+			{ type: 'way', id: 3, tags: { highway: 'residential' }, geometry: [ { lat: -100 / 111320, lon: 40 / 111320 }, { lat: 120 / 111320, lon: 40 / 111320 } ] },
+			{ type: 'way', id: 12345, tags: { building: 'yes' }, geometry: [ [ -12, -10 ], [ -12, 10 ], [ -30, 10 ], [ -30, -10 ], [ -12, -10 ] ].map( ( [ z, x ] ) => ( { lat: z / 111320, lon: x / 111320 } ) ) },
+			{ type: 'way', id: 1, tags: { highway: 'primary' }, geometry: [ { lat: 30 / 111320, lon: -150 / 111320 }, { lat: 30 / 111320, lon: 150 / 111320 } ] },
+			...Array.from( { length: 10 }, ( _, i ) => ( { type: 'node', lat: 24 / 111320, lon: ( -100 + i * 22 ) / 111320 } ) ),
+		] : null,
+	};
+	const counts = { normale: { car: 10, tram: 2, foot: 18 }, haute: { car: 18, tram: 3, foot: 32 }, ultra: { car: 28, tram: 4, foot: 48 } }[ quality ] || { car: 18, tram: 3, foot: 32 };
+	traffic = new Traffic( scene, lifeGeo, counts );
+	weather.onTint( ( t ) => traffic.setTint( t ) );
+	traffic.setTint( weather.tint );
 	if ( TEST_TILESET ) { window.__gps = gps; window.__player = player; window.__sv = () => streetView; window.__THREE = THREE; window.__night = () => nightCity; } // pour les essais automatiques
 
 	addEventListener( 'resize', onResize );
@@ -298,18 +327,26 @@ function start( key, place, quality ) {
 	renderer.setAnimationLoop( frame );
 }
 
-const grade = { uTint: { value: new THREE.Color( 1, 1, 1 ) } };
+const grade = { uTint: { value: new THREE.Color( 1, 1, 1 ) }, uSunDir: { value: new THREE.Vector3( 0, 1, 0 ) }, uSunLow: { value: 0 } };
 function gradeShader( sh ) {
 	sh.uniforms.uTint = grade.uTint;
+	sh.uniforms.uSunDir = grade.uSunDir;
+	sh.uniforms.uSunLow = grade.uSunLow;
 	Object.assign( sh.uniforms, nightUniforms, svUniforms );
 	sh.vertexShader = NIGHT_VERTEX[ 0 ] + '\n' + sh.vertexShader.replace( '#include <project_vertex>', NIGHT_VERTEX[ 1 ] );
-	sh.fragmentShader = 'uniform vec3 uTint;\n' + NIGHT_HEAD + SV_HEAD + sh.fragmentShader.replace( '#include <map_fragment>', `#include <map_fragment>
+	sh.fragmentShader = 'uniform vec3 uTint; uniform vec3 uSunDir; uniform float uSunLow;\n' + NIGHT_HEAD + SV_HEAD + sh.fragmentShader.replace( '#include <map_fragment>', `#include <map_fragment>
 	${ SV_CODE }
 	{
 		vec3 c = diffuseColor.rgb;
 		float l = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
 		c = mix( vec3( l ), c, 1.12 );                       // couleurs un peu plus vives
 		c = 0.18 * pow( max( c, 0.0 ) / 0.18, vec3( 1.06 ) ); // un peu plus de contraste
+		// soleil bas (lever, coucher, hiver) : les façades face au soleil s'allument, les autres s'assombrissent
+		if ( uSunLow > 0.01 ) {
+			vec3 sn = normalize( cross( dFdx( vWPos ), dFdy( vWPos ) ) );
+			float sd = dot( sn, uSunDir );
+			c *= 1.0 + uSunLow * ( 0.45 * max( sd, 0.0 ) * vec3( 1.0, 0.85, 0.65 ) - 0.22 * max( - sd, 0.0 ) );
+		}
 		diffuseColor.rgb = c * uTint;
 		${ NIGHT_CODE }
 	}` );
@@ -362,9 +399,11 @@ function teleport( place ) {
 	// direction du nord dans la scène (pour la boussole)
 	const north = TEST_TILESET ? new THREE.Vector3( 0, 0, -1 ) : latLonToLocal( place.lat + 0.001, place.lon, 0, new THREE.Vector3() ).sub( latLonToLocal( place.lat, place.lon, 0, _v ) );
 	northYaw = Math.atan2( - north.x, - north.z );
+	weather.apply(); // le soleil dépend de l'orientation du nouveau repère
 	nightCity?.reset();
 	walls?.reset();
 	streetView?.reset();
+	traffic?.reset();
 	player.vel.set( 0, 0, 0 );
 	player.grounded = false; // pas de gravité tant qu'on n'a pas trouvé le sol
 	spawn.time = 0; spawn.quiet = 0;
@@ -422,12 +461,13 @@ function setupInput() {
 	};
 	tap( 'speed', cycleSpeed );
 	tap( 'fly', toggleFly );
+	// bouton heure : Maintenant → 5h → Lever → 10h → 12h → 16h → Coucher → 18h → 22h → Minuit → …
 	tap( 'night', () => {
-		const on = ! weather.forcedNight;
-		weather.setForcedNight( on );
-		$( 'night' ).textContent = on ? '☀️' : '🌙';
-		$( 'night' ).classList.toggle( 'on', on );
-		toast( on ? 'La ville de nuit' : 'Retour à l\'heure réelle' );
+		const m = weather.nextTime();
+		$( 'night' ).textContent = m.label;
+		$( 'night' ).classList.toggle( 'on', m.id !== 'now' );
+		const hhmm = weather.simDate().toLocaleTimeString( 'fr-BE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Brussels' } );
+		toast( m.id === 'now' ? 'Heure réelle' : m.label.replace( /^\S+ /, '' ) + ' · ' + hhmm );
 	} );
 	$( 'goto-form' ).onsubmit = async ( e ) => {
 		e.preventDefault();
@@ -837,6 +877,7 @@ function recenterIfFar() {
 	nightCity?.reset();
 	walls?.reset();
 	streetView?.reset();
+	traffic?.reset();
 	weather.setLocation( lat / DEG, lon / DEG );
 }
 
@@ -913,6 +954,8 @@ function frame() {
 		streetView.update( dt, player.pos, svActive );
 	}
 	steps.update( dt, player.onGround && ! player.fly && speedMult <= 5 ? Math.hypot( _walkVel.x, _walkVel.z ) : 0 );
+	traffic.setNight( THREE.MathUtils.smoothstep( weather.night, 0.3, 0.8 ) );
+	traffic.update( dt, player.pos, speedMult > 100 || ( player.fly && player.pos.y - ( player.groundY ?? player.pos.y ) > 250 ) );
 	nightCity.update( dt, player.pos, weather.night, renderer.toneMappingExposure, player.groundY ?? player.pos.y - EYE );
 	renderer.render( scene, camera );
 

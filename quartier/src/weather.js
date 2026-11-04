@@ -15,6 +15,33 @@ const CODES = {
 	95: [ 'Orage', '⛈️' ], 96: [ 'Orage et grêle', '⛈️' ], 99: [ 'Orage et grêle', '⛈️' ],
 };
 
+// Bouton heure : chaque tape passe à la suivante. Heures du jour d'aujourd'hui à Bruxelles,
+// lever / coucher calculés pour la date du jour (en novembre : vers 7 h 55 et 16 h 50).
+export const TIME_MODES = [
+	{ id: 'now', label: '🕒 Maintenant' },
+	{ id: '5', h: 5, label: '🌌 5h' },
+	{ id: 'sunrise', label: '🌅 Lever' },
+	{ id: '10', h: 10, label: '🕙 10h' },
+	{ id: '12', h: 12, label: '☀️ 12h' },
+	{ id: '16', h: 16, label: '🌤️ 16h' },
+	{ id: 'sunset', label: '🌇 Coucher' },
+	{ id: '18', h: 18, label: '🌆 18h' },
+	{ id: '22', h: 22, label: '🌙 22h' },
+	{ id: '0', h: 0, label: '🌑 Minuit' },
+];
+
+// minutes de décalage entre Bruxelles et UTC à cet instant (heure d'été / d'hiver comprises)
+function brusselsOffset( d ) {
+	const f = ( tz ) => new Date( d.toLocaleString( 'en-US', { timeZone: tz } ) );
+	return ( f( 'Europe/Brussels' ) - f( 'UTC' ) ) / 60000;
+}
+// instant correspondant à aujourd'hui h:m à Bruxelles
+function brussels( h, m = 0, base = new Date() ) {
+	const p = new Intl.DateTimeFormat( 'en-CA', { timeZone: 'Europe/Brussels', year: 'numeric', month: '2-digit', day: '2-digit' } ).format( base ).split( '-' ).map( Number );
+	const utc = Date.UTC( p[ 0 ], p[ 1 ] - 1, p[ 2 ], h, m );
+	return new Date( utc - brusselsOffset( new Date( utc ) ) * 60000 );
+}
+
 // Pour tester sans attendre la pluie : ?meteo=pluie|neige|brouillard|nuit|soleil
 const FORCED = new URLSearchParams( location.search ).get( 'meteo' );
 
@@ -31,14 +58,39 @@ export class Weather {
 		this.now = { code: 1, cloud: 0.2, rain: 0, snow: 0, temp: null, wind: 5, visibility: 20000 };
 		this.tint = new THREE.Color( 1, 1, 1 );
 		this.sunElev = 30;
+		this.sunAz = 180;
+		this.sunDir = new THREE.Vector3( 0, 1, 0 ); // direction du soleil dans la scène
+		this.sunLow = 0;                           // 1 quand le soleil est bas (lumière rasante)
 		this.listeners = [];
+		this.timeMode = 0;
+		this.axes = null; // () => { north, east } : fourni par le jeu
 
-		this.skyCanvas = document.createElement( 'canvas' );
-		this.skyCanvas.width = 2; this.skyCanvas.height = 256;
-		this.sky = new THREE.CanvasTexture( this.skyCanvas );
-		this.sky.colorSpace = THREE.SRGBColorSpace;
-		scene.background = this.sky;
+		// ciel : une coupole qui suit la caméra, avec dégradé, lueur du côté du soleil et disque solaire
+		scene.background = new THREE.Color( 0x9cc0e6 );
 		scene.fog = new THREE.Fog( 0xc9dcef, 900, 4000 );
+		this.skyMat = new THREE.ShaderMaterial( {
+			uniforms: {
+				uTop: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() }, uGround: { value: new THREE.Color() },
+				uSun: { value: new THREE.Vector3( 0, 1, 0 ) }, uSunCol: { value: new THREE.Color() }, uGlow: { value: 0 }, uDisc: { value: 0 },
+			},
+			vertexShader: `varying vec3 vDir; void main() { vDir = normalize( position ); vec4 p = modelViewMatrix * vec4( position, 1.0 ); gl_Position = projectionMatrix * p; gl_Position.z = gl_Position.w * 0.9999; }`,
+			fragmentShader: `
+				uniform vec3 uTop, uHorizon, uGround, uSun, uSunCol; uniform float uGlow, uDisc; varying vec3 vDir;
+				void main() {
+					vec3 d = normalize( vDir );
+					float t = d.y;
+					vec3 col = t > 0.0 ? mix( uHorizon, uTop, pow( t, 0.55 ) ) : mix( uHorizon, uGround, pow( min( - t * 4.0, 1.0 ), 0.7 ) );
+					float c = max( dot( d, uSun ), 0.0 );
+					col += uSunCol * ( pow( c, 6.0 ) * 0.35 + pow( c, 64.0 ) * 0.6 ) * uGlow;        // halo
+					col += uSunCol * smoothstep( 0.99965, 0.9999, c ) * 4.0 * uDisc;                 // disque
+					gl_FragColor = vec4( col, 1.0 );
+				}`,
+			depthWrite: false, depthTest: false, side: THREE.BackSide, fog: false, toneMapped: true,
+		} );
+		this.skyDome = new THREE.Mesh( new THREE.SphereGeometry( 500, 32, 16 ), this.skyMat );
+		this.skyDome.renderOrder = - 10;
+		this.skyDome.frustumCulled = false;
+		scene.add( this.skyDome );
 
 		renderer.toneMapping = THREE.LinearToneMapping;
 		renderer.toneMappingExposure = 1;
@@ -56,8 +108,31 @@ export class Weather {
 
 	onTint( fn ) { this.listeners.push( fn ); }
 
-	// bouton 🌙 : voir la ville de nuit tout de suite
-	setForcedNight( on ) { this.forcedNight = on; this.apply(); }
+	// bouton heure : mode suivant
+	nextTime() {
+		this.timeMode = ( this.timeMode + 1 ) % TIME_MODES.length;
+		this.apply();
+		return TIME_MODES[ this.timeMode ];
+	}
+
+	// date simulée selon le mode choisi
+	simDate() {
+		const m = TIME_MODES[ this.timeMode ];
+		if ( m.id === 'now' ) return new Date();
+		if ( m.h !== undefined ) return brussels( m.h );
+		// lever / coucher : on cherche quand le soleil passe l'horizon aujourd'hui (pas de 2 min)
+		const rising = m.id === 'sunrise';
+		let prev = null;
+		for ( let min = 0; min <= 1440; min += 2 ) {
+			const d = brussels( 0, min );
+			const e = sunPosition( d, this.lat, this.lon ).elev;
+			if ( prev !== null && ( rising ? prev < - 0.83 && e >= - 0.83 : prev >= - 0.83 && e < - 0.83 ) ) {
+				return new Date( d.getTime() + ( rising ? 10 : - 12 ) * 60000 ); // soleil juste au-dessus de l'horizon
+			}
+			prev = e;
+		}
+		return new Date();
+	}
 
 	// nouveau lieu : on ne redemande la météo que s'il est loin (> 5 km)
 	setLocation( lat, lon ) {
@@ -103,7 +178,8 @@ export class Weather {
 
 	apply() {
 		const n = this.now;
-		this.sunElev = this.forcedNight ? -20 : sunElevation( new Date(), this.lat, this.lon );
+		const sp = this.forcedNight ? { elev: - 20, az: 0 } : sunPosition( this.simDate(), this.lat, this.lon );
+		this.sunElev = sp.elev; this.sunAz = sp.az;
 		const day = THREE.MathUtils.smoothstep( this.sunElev, -7, 6 );          // 0 nuit, 1 jour
 		this.night = 1 - day;
 		const dusk = Math.max( 0, 1 - Math.abs( this.sunElev - 1 ) / 8 );      // lever / coucher
@@ -113,15 +189,23 @@ export class Weather {
 		const top = mix3( mix3( '#0a1330', '#5d93d6', day ), '#7f8994', grey * day );
 		let bottom = mix3( mix3( '#1d2846', '#e3edf6', day ), '#c3c9d0', grey * day );
 		bottom = mix3( bottom, '#f3a66a', dusk * ( 1 - grey ) * 0.8 );
-		const mid = mix3( top, bottom, 0.55 );
-		const g = this.skyCanvas.getContext( '2d' );
-		const grad = g.createLinearGradient( 0, 0, 0, 256 );
-		grad.addColorStop( 0, top.getStyle() );
-		grad.addColorStop( 0.55, mid.getStyle() );
-		grad.addColorStop( 1, bottom.getStyle() );
-		g.fillStyle = grad;
-		g.fillRect( 0, 0, 2, 256 );
-		this.sky.needsUpdate = true;
+		const u = this.skyMat.uniforms;
+		u.uTop.value.copy( top ); u.uHorizon.value.copy( bottom ); u.uGround.value.copy( bottom ).multiplyScalar( 0.8 );
+		this.scene.background.copy( bottom );
+		// direction du soleil dans la scène (cap depuis le nord, sens horaire)
+		const el = this.sunElev * DEG, az = this.sunAz * DEG;
+		if ( this.axes ) {
+			const { north, east } = this.axes();
+			this.sunDir.set( 0, 0, 0 ).addScaledVector( north, Math.cos( el ) * Math.cos( az ) ).addScaledVector( east, Math.cos( el ) * Math.sin( az ) );
+			this.sunDir.y = Math.sin( el );
+			this.sunDir.normalize();
+		}
+		u.uSun.value.copy( this.sunDir );
+		const low = Math.max( 0, 1 - Math.max( this.sunElev, 0 ) / 25 ) * THREE.MathUtils.smoothstep( this.sunElev, - 4, 1 );
+		this.sunLow = low * ( 1 - grey );
+		u.uSunCol.value.copy( mix3( '#fff3dd', '#ff9a4a', low ) );
+		u.uGlow.value = THREE.MathUtils.smoothstep( this.sunElev, - 6, 2 ) * ( 1 - grey * 0.85 );
+		u.uDisc.value = THREE.MathUtils.smoothstep( this.sunElev, - 1, 1 ) * ( 1 - THREE.MathUtils.smoothstep( n.cloud, 0.55, 0.9 ) ) * ( n.rain || n.snow ? 0 : 1 );
 
 		// brouillard selon la visibilité réelle
 		const fogged = [ 45, 48 ].includes( n.code );
@@ -153,7 +237,7 @@ export class Weather {
 		if ( this.sunElev < -6 && this.now.code <= 2 ) icon = '🌙';
 		const temp = this.now.temp == null ? '' : Math.round( this.now.temp ) + ' °C · ';
 		const night = this.sunElev < -6 ? 'nuit · ' : '';
-		const time = new Date().toLocaleTimeString( 'fr-BE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Brussels' } );
+		const time = this.simDate().toLocaleTimeString( 'fr-BE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Brussels' } );
 		return icon + ' ' + temp + night + txt + ' · ' + time;
 	}
 
@@ -168,12 +252,13 @@ export class Weather {
 			u.uDrift.value = drift;
 		}
 		this.stars.position.copy( camPos );
+		this.skyDome.position.copy( camPos );
 	}
 
 }
 
 // Position du soleil (approximation NOAA, précise à ~1°)
-function sunElevation( date, lat, lon ) {
+function sunPosition( date, lat, lon ) {
 	const d = ( date.getTime() / 86400000 ) - 10957.5; // jours depuis J2000
 	const g = ( 357.529 + 0.98560028 * d ) * DEG;
 	const q = 280.459 + 0.98564736 * d;
@@ -184,7 +269,9 @@ function sunElevation( date, lat, lon ) {
 	const gmst = ( 18.697374558 + 24.06570982441908 * d ) % 24;
 	const ha = ( gmst * 15 + lon ) * DEG - ra;
 	const el = Math.asin( Math.sin( lat * DEG ) * Math.sin( dec ) + Math.cos( lat * DEG ) * Math.cos( dec ) * Math.cos( ha ) );
-	return el / DEG;
+	// azimut depuis le nord, sens horaire
+	const az = Math.atan2( Math.sin( ha ), Math.cos( ha ) * Math.sin( lat * DEG ) - Math.tan( dec ) * Math.cos( lat * DEG ) ) / DEG + 180;
+	return { elev: el / DEG, az: ( az + 360 ) % 360 };
 }
 
 function mix3( a, b, t ) {
