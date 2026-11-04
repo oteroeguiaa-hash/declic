@@ -30,32 +30,22 @@ float nHash( vec2 p ) { return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43
 // à insérer dans le bloc d'étalonnage, où « c » est la couleur de la photo
 export const NIGHT_CODE = `
 	if ( uNight > 0.01 ) {
+		// lampadaires : flaques de lumière orangée sur la chaussée et le bas des façades
+		// (jamais en hauteur : les arbres et les toits restent dans le noir)
 		vec3 nrm = normalize( cross( dFdx( vWPos ), dFdy( vWPos ) ) );
-		float h = vWPos.y - uGround;
-		vec3 emit = vec3( 0.0 );
-		// fenêtres : une grille d'étages sur chaque façade, environ une sur trois allumée
-		if ( abs( nrm.y ) < 0.35 && h > 2.6 && h < 90.0 ) {
-			vec2 tg = normalize( vec2( - nrm.z, nrm.x ) + 1e-5 );
-			vec2 g = vec2( dot( vWPos.xz, tg ) / 3.4, ( h - 0.4 ) / 3.0 );
-			vec2 cell = floor( g ), f = fract( g );
-			float win = step( 0.22, f.x ) * step( f.x, 0.78 ) * step( 0.3, f.y ) * step( f.y, 0.82 );
-			float side = floor( atan( nrm.z, nrm.x ) * 1.27 );
-			float lit = step( nHash( cell + side * 17.0 ), 0.4 );
-			vec3 col = mix( vec3( 1.0, 0.7, 0.36 ), vec3( 0.85, 0.92, 1.0 ), step( 0.85, nHash( cell.yx + 3.1 ) ) );
-			emit += win * lit * col * ( 0.6 + 0.4 * nHash( cell + 9.7 ) ) * 1.2;
+		float low = 1.0 - smoothstep( 2.0, 4.0, vWPos.y - uGround );
+		if ( low > 0.0 ) {
+			float lamp = 0.0;
+			for ( int i = 0; i < ${ MAX_LAMPS }; i ++ ) {
+				vec4 L = uLamps[ i ];
+				if ( L.w <= 0.0 ) continue;
+				vec3 d = vWPos - L.xyz;
+				float d2 = dot( d, d );
+				lamp += L.w * 14.0 / ( 1.0 + d2 ) * smoothstep( 700.0, 80.0, d2 );
+			}
+			float facing = 0.25 + 0.75 * clamp( nrm.y, 0.0, 1.0 );
+			diffuseColor.rgb += c * min( lamp, 1.6 ) * facing * low * vec3( 1.0, 0.74, 0.45 ) * 1.4 * uEmit;
 		}
-		// lampadaires : lumière orangée qui retombe sur la rue et les façades proches
-		vec3 lamp = vec3( 0.0 );
-		for ( int i = 0; i < ${ MAX_LAMPS }; i ++ ) {
-			vec4 L = uLamps[ i ];
-			if ( L.w <= 0.0 ) continue;
-			vec3 d = vWPos - L.xyz;
-			float d2 = dot( d, d );
-			lamp += L.w * 16.0 / ( 1.0 + d2 ) * smoothstep( 1100.0, 120.0, d2 );
-		}
-		float facing = 0.35 + 0.65 * clamp( nrm.y, 0.0, 1.0 );
-		emit += c * lamp * facing * vec3( 1.0, 0.78, 0.5 ) * 1.6;
-		diffuseColor.rgb += emit * uEmit;
 	}
 `;
 
@@ -93,6 +83,30 @@ function trailMaterial() {
 	} );
 }
 
+// fenêtre éclairée vue de la rue : lumière plus forte au centre, croisillon, rideau sur un côté
+function windowTexture() {
+	const c = document.createElement( 'canvas' );
+	c.width = 64; c.height = 96;
+	const g = c.getContext( '2d' );
+	const r = g.createRadialGradient( 32, 52, 4, 32, 52, 48 );
+	r.addColorStop( 0, 'rgba(255,255,255,1)' );
+	r.addColorStop( 1, 'rgba(255,255,255,0.55)' );
+	g.fillStyle = r;
+	g.fillRect( 4, 4, 56, 88 );
+	g.fillStyle = 'rgba(0,0,0,0.75)';
+	g.fillRect( 30, 4, 4, 88 );   // montant
+	g.fillRect( 4, 34, 56, 3 );   // traverse
+	g.fillStyle = 'rgba(0,0,0,0.3)';
+	g.fillRect( 4, 4, 12, 88 );   // rideau
+	const t = new THREE.CanvasTexture( c );
+	t.colorSpace = THREE.SRGBColorSpace;
+	return t;
+}
+
+const WIN_COLORS = [ 0xffcf86, 0xffc070, 0xffdcaa, 0xffe9c8, 0xffb860, 0xffd49a, 0xffe2b8, 0xffc98a, 0xc8dcff ];
+const MAX_WINDOWS = 30000;
+const BUILD_RADIUS = 420;
+
 function bulbTexture() {
 	const c = document.createElement( 'canvas' );
 	c.width = c.height = 64;
@@ -128,6 +142,19 @@ export class NightCity {
 		this.bulbs = new THREE.Points( new THREE.BufferGeometry(), this.bulbMat );
 		this.bulbs.frustumCulled = false;
 		this.group.add( this.bulbs );
+
+		// fenêtres allumées : de petits rectangles posés sur les façades des vrais bâtiments (OSM)
+		this.buildings = [];
+		this.winMesh = new THREE.InstancedMesh(
+			new THREE.PlaneGeometry( 1, 1 ),
+			new THREE.MeshBasicMaterial( { map: windowTexture(), transparent: true, depthWrite: false, toneMapped: false, fog: true } ),
+			MAX_WINDOWS,
+		);
+		this.winMesh.count = 0;
+		this.winMesh.frustumCulled = false;
+		this.winMesh.instanceColor = new THREE.InstancedBufferAttribute( new Float32Array( MAX_WINDOWS * 3 ), 3 );
+		this.group.add( this.winMesh );
+		this.winDirty = false;
 		this.timer = 0;
 		this.cursor = 0;
 		this.bulbCount = -1;
@@ -137,6 +164,7 @@ export class NightCity {
 	reset() {
 		for ( const ch of this.chunks ) if ( ch.mesh ) { this.group.remove( ch.mesh ); ch.mesh.geometry.dispose(); }
 		this.lamps = []; this.chunks = []; this.center = null; this.bulbCount = -1;
+		this.buildings = []; this.winMesh.count = 0; this.shared = null;
 		this.bulbs.geometry.dispose();
 		this.bulbs.geometry = new THREE.BufferGeometry();
 		for ( const v of nightUniforms.uLamps.value ) v.set( 0, 0, 0, 0 );
@@ -147,7 +175,9 @@ export class NightCity {
 		this.center = c;
 		const d = RADIUS / 111320, e = d / Math.cos( c.lat * Math.PI / 180 );
 		const bbox = [ c.lat - d, c.lon - e, c.lat + d, c.lon + e ].map( ( v ) => v.toFixed( 5 ) ).join( ',' );
-		const q = `[out:json][timeout:25];(node["highway"="street_lamp"](${ bbox });way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street)(_link)?$"](${ bbox }););out geom;`;
+		const db = BUILD_RADIUS / 111320, eb = db / Math.cos( c.lat * Math.PI / 180 );
+		const bboxB = [ c.lat - db, c.lon - eb, c.lat + db, c.lon + eb ].map( ( v ) => v.toFixed( 5 ) ).join( ',' );
+		const q = `[out:json][timeout:25];(way["building"](${ bboxB });node["highway"="street_lamp"](${ bbox });way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street)(_link)?$"](${ bbox }););out geom;`;
 		try {
 			if ( this.geo.fake ) { this.build( this.geo.fake() ); this.loading = false; return; } // essais hors ligne
 			const res = await fetch( OVERPASS, { method: 'POST', body: 'data=' + encodeURIComponent( q ) } );
@@ -163,6 +193,7 @@ export class NightCity {
 		const ways = [];
 		for ( const el of elements ) {
 			if ( el.type === 'node' ) lampsLL.push( { lat: el.lat, lon: el.lon } );
+			else if ( el.type === 'way' && el.tags?.building && el.geometry?.length > 3 ) this.addBuilding( el );
 			else if ( el.type === 'way' && el.geometry && STREET.test( el.tags?.highway || '' ) ) ways.push( el );
 		}
 		const toXZ = ( p ) => { const v = this.geo.toLocal( p.lat, p.lon, new THREE.Vector3() ); return { x: v.x, z: v.z }; };
@@ -208,6 +239,99 @@ export class NightCity {
 				const cx = part.reduce( ( s, p ) => s + p.x, 0 ) / part.length, cz = part.reduce( ( s, p ) => s + p.z, 0 ) / part.length;
 				this.chunks.push( { pts: part, cx, cz, s0: i * 5, oneway, seed, mesh: null } );
 			}
+		}
+	}
+
+	addBuilding( el ) {
+		const P = new THREE.Vector3();
+		const pts = el.geometry.map( ( g ) => { this.geo.toLocal( g.lat, g.lon, P ); return { x: P.x, z: P.z }; } );
+		let area = 0, cx = 0, cz = 0;
+		for ( let i = 0; i < pts.length - 1; i ++ ) {
+			area += pts[ i ].x * pts[ i + 1 ].z - pts[ i + 1 ].x * pts[ i ].z;
+			cx += pts[ i ].x; cz += pts[ i ].z;
+		}
+		cx /= pts.length - 1; cz /= pts.length - 1;
+		const t = el.tags;
+		let h = parseFloat( t.height ) || ( parseFloat( t[ 'building:levels' ] ) ? parseFloat( t[ 'building:levels' ] ) * 3 + 1.5 : 0 );
+		if ( /^(garage|garages|shed|roof|carport|hut|kiosk|greenhouse|service|transformer_tower)$/.test( t.building ) ) return;
+		this.buildings.push( { id: el.id, pts, ccw: area > 0, cx, cz, h, ground: null, done: false } );
+	}
+
+	// murs mitoyens (communs à deux maisons) : pas de fenêtres dessus
+	sharedEdges() {
+		if ( this.shared ) return this.shared;
+		const key = ( a, b ) => {
+			const k1 = Math.round( a.x * 2 ) + ',' + Math.round( a.z * 2 ), k2 = Math.round( b.x * 2 ) + ',' + Math.round( b.z * 2 );
+			return k1 < k2 ? k1 + '|' + k2 : k2 + '|' + k1;
+		};
+		const count = new Map();
+		for ( const b of this.buildings ) for ( let i = 0; i < b.pts.length - 1; i ++ ) {
+			const k = key( b.pts[ i ], b.pts[ i + 1 ] );
+			count.set( k, ( count.get( k ) || 0 ) + 1 );
+		}
+		this.shared = { count, key };
+		return this.shared;
+	}
+
+	buildWindows( b ) {
+		const { count, key } = this.sharedEdges();
+		const m = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
+		const up = new THREE.Vector3( 0, 1, 0 );
+		const floors = Math.max( 1, Math.min( 25, Math.floor( ( b.h - 0.5 ) / 3 ) ) );
+		let seed = ( ( b.id * 2654435761 ) % 2147483646 ) + 1;
+		const rnd = () => ( seed = ( seed * 16807 ) % 2147483647 ) / 2147483647;
+		for ( let i = 0; i < 4; i ++ ) rnd(); // on mélange un peu avant de tirer
+		const dark = rnd() < 0.25; // certains immeubles sont entièrement éteints
+		for ( let i = 0; i < b.pts.length - 1; i ++ ) {
+			const a = b.pts[ i ], c = b.pts[ i + 1 ];
+			if ( count.get( key( a, c ) ) > 1 ) continue;
+			const len = Math.hypot( c.x - a.x, c.z - a.z );
+			if ( len < 2.5 ) continue;
+			const dx = ( c.x - a.x ) / len, dz = ( c.z - a.z ) / len;
+			// normale extérieure selon le sens de parcours du contour
+			const nx = b.ccw ? dz : - dz, nz = b.ccw ? - dx : dx;
+			const cols = Math.max( 1, Math.floor( len / 3.2 ) );
+			const step = len / cols;
+			q.setFromAxisAngle( up, Math.atan2( nx, nz ) );
+			for ( let f = 0; f < floors; f ++ ) {
+				const y = b.ground + 1.7 + f * 3;
+				for ( let k = 0; k < cols; k ++ ) {
+					const p = rnd() < ( dark ? 0.03 : f === 0 ? 0.12 : 0.3 );
+					const hue = rnd(), level = rnd();
+					if ( ! p || this.winMesh.count >= MAX_WINDOWS ) continue;
+					const t = ( k + 0.5 ) * step;
+					m.compose( new THREE.Vector3( a.x + dx * t + nx * 0.35, y, a.z + dz * t + nz * 0.35 ), q, new THREE.Vector3( 1.1, 1.5, 1 ) );
+					this.winMesh.setMatrixAt( this.winMesh.count, m );
+					col.setHex( WIN_COLORS[ Math.floor( hue * WIN_COLORS.length ) ] ).multiplyScalar( 0.55 + level * 0.45 );
+					this.winMesh.setColorAt( this.winMesh.count, col );
+					this.winMesh.count ++;
+				}
+			}
+		}
+		this.winDirty = true;
+	}
+
+	resolveBuildings( pos, budget ) {
+		let used = 0;
+		for ( const b of this.buildings ) {
+			if ( b.done || used >= budget ) continue;
+			if ( Math.hypot( b.cx - pos.x, b.cz - pos.z ) > BUILD_RADIUS ) continue;
+			// sol : juste devant la première façade ; hauteur : OSM, sinon le toit vu par un rayon
+			if ( b.ground === null ) {
+				const a = b.pts[ 0 ], c = b.pts[ 1 ];
+				const mx = ( a.x + c.x ) / 2, mz = ( a.z + c.z ) / 2;
+				const ox = ( c.z - a.z ), oz = - ( c.x - a.x ), ol = Math.hypot( ox, oz ) || 1, s = b.ccw ? 1 : - 1;
+				const g = this.geo.groundAt( mx + s * ox / ol * 3, mz + s * oz / ol * 3 ); used ++;
+				if ( g === null ) continue;
+				b.ground = g;
+			}
+			if ( ! b.h ) {
+				const roof = this.geo.roofAt( b.cx, b.cz ); used ++;
+				if ( roof === null ) continue;
+				b.h = Math.max( 3, Math.min( 80, roof - b.ground ) );
+			}
+			b.done = true;
+			if ( b.h >= 3 ) this.buildWindows( b );
 		}
 	}
 
@@ -286,6 +410,12 @@ export class NightCity {
 			this.load( here );
 		}
 		this.resolve( pos, 30 );
+		this.resolveBuildings( pos, 40 );
+		if ( this.winDirty ) {
+			this.winDirty = false;
+			this.winMesh.instanceMatrix.needsUpdate = true;
+			this.winMesh.instanceColor.needsUpdate = true;
+		}
 
 		this.timer -= dt;
 		if ( this.timer > 0 ) return;
