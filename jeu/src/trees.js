@@ -530,14 +530,14 @@ function skeleton(kind, seed) {
     ramify(lead, 1, 3, o);
   } else if (kind === "beech" || kind === "young") {
     const yg = kind === "young";
-    const H = yg ? 2.2 + rand() * 1.2 : 11 + rand() * 4, R = yg ? 0.09 + rand() * 0.04 : 0.42 + rand() * 0.12;
+    const H = yg ? 2.2 + rand() * 1.2 : 8 + rand() * 3.5, R = yg ? 0.09 + rand() * 0.04 : 0.42 + rand() * 0.12;
     const tr = trunk(H, R, R * 0.75, yg ? 0.5 : 0.25, 0.2);
     if (!yg) roots(4, R, 1.4);
     const o = { kids: [0, 4, 4, 0], start: [0, 0.25, 0.3], angle: [0, 0.6, 0.75], lenK: [0, 0.5, 0.5], lift: [0, 0.15, 0.12], bend: [0, 0.35, 0.3], leavesPer: yg ? 2 : 3, taper: 0.45 };
-    const limbs = yg ? 4 : 5 + Math.floor(rand() * 2);
+    const limbs = yg ? 4 : 7 + Math.floor(rand() * 3);
     for (let i = 0; i < limbs; i++) {
       const a = (i / limbs) * 6.283 + rand() * 0.7;
-      const { p, r } = at(tr, 0.75 + rand() * 0.25);
+      const { p, r } = at(tr, (yg ? 0.75 : 0.5) + rand() * (yg ? 0.25 : 0.5));
       const d = V(Math.cos(a) * 0.6, 1, Math.sin(a) * 0.6);
       const L = (yg ? 2.8 : 10) * (0.75 + rand() * 0.4);
       ramify(branch(p, d, L, r * 0.7, r * 0.15, 1, { bend: 0.2, wob: 0.2 }), 1, yg ? 2 : 3, yg ? { ...o, kids: [0, 5, 0], leavesPer: 3 } : o);
@@ -549,9 +549,9 @@ function skeleton(kind, seed) {
     const H = pop ? 22 + rand() * 5 : 14 + rand() * 4, R = pop ? 0.4 : 0.2 + rand() * 0.05;
     const tr = trunk(H, R, 0.04, pop ? 0.15 : 0.6, pop ? 0.05 : 0.5);
     if (pop) roots(4, R, 1.2);
-    const n = pop ? 26 : 18;
+    const n = pop ? 30 : 24;
     for (let i = 0; i < n; i++) {
-      const t = (pop ? 0.18 : 0.35) + (i / n) * (pop ? 0.8 : 0.62);
+      const t = (pop ? 0.1 : 0.2) + (i / n) * (pop ? 0.88 : 0.77);
       const { p, r } = at(tr, t);
       const a = i * 2.39996 + rand() * 0.4;
       const d = pop ? V(Math.cos(a) * 0.25, 1, Math.sin(a) * 0.25) : V(Math.cos(a), 0.7 + rand() * 0.4, Math.sin(a));
@@ -580,64 +580,79 @@ function skeleton(kind, seed) {
       }
     }
   } else if (kind === "scots") {
-    const H = 18 + rand() * 6, R = 0.38 + rand() * 0.1;
-    const tr = trunk(H, R, 0.08, 0.35, 0.45);
+    // Pin sylvestre : fût orangé, houppier irrégulier en plateaux, branches tortueuses dès la moitié du tronc
+    const H = 17 + rand() * 6, R = 0.38 + rand() * 0.1;
+    const tr = trunk(H, R, 0.08, 0.55, 0.8);
     tr.pineColor = true;
     roots(4, R, 1.1);
-    const n = 9;
+    for (let k = 0; k < 4; k++) { const { p, r } = at(tr, 0.25 + rand() * 0.25), a = rand() * 6.283; branch(p, V(Math.cos(a), -0.1, Math.sin(a)), 0.5 + rand() * 0.6, r * 0.25, 0.02, 1, { wob: 0.2 }); }   // chicots secs
+    const n = 15;
     for (let i = 0; i < n; i++) {
-      const t = 0.62 + (i / n) * 0.36;
-      const { p, r } = at(tr, t);
-      const a = i * 2.39996 + rand() * 0.5;
-      const d = V(Math.cos(a), 0.35 + rand() * 0.5, Math.sin(a));
-      const L = 3.2 * (1.2 - t * 0.5) * (0.7 + rand() * 0.5);
-      const b = branch(p, d, L, Math.max(0.05, r * 0.45), 0.03, 1, { bend: 0.35, wob: 0.3 });
-      // « nuages » d'aiguilles au bout des branches
+      const t = 0.48 + (i / n) * 0.5 + rand() * 0.03;
+      const { p, r } = at(tr, Math.min(0.99, t));
+      const a = i * 2.39996 + rand() * 0.7;
+      const d = V(Math.cos(a), 0.15 + rand() * 0.55, Math.sin(a));
+      const L = 4.8 * (1.25 - t * 0.7) * (0.6 + rand() * 0.6);
+      const b = branch(p, d, L, Math.max(0.05, r * 0.5), 0.03, 1, { bend: 0.45, wob: 0.45 });
+      // rameaux et « nuages » d'aiguilles le long de la branche (plateaux irréguliers)
       for (let k = 0; k < 3; k++) {
-        const q = at(b, 0.55 + k * 0.2);
-        for (let s = 0; s < 5; s++) leafAt(q.p.clone().add(V((rand() - 0.5) * 0.7, (rand() - 0.5) * 0.3, (rand() - 0.5) * 0.4)), V(q.d.x + (rand() - 0.5), 0.6 + rand() * 0.5, q.d.z + (rand() - 0.5)), sp.leafSize * (0.8 + rand() * 0.4));
+        const q = at(b, 0.4 + k * 0.25 + rand() * 0.08);
+        const sd = rot(q.d, perp(q.d, rand), 0.8);
+        const sub = branch(q.p, V(sd.x, Math.abs(sd.y) * 0.4 + 0.15, sd.z), L * 0.35 * (0.6 + rand() * 0.6), q.r * 0.6, 0.015, 2, { bend: 0.3, wob: 0.4 });
+        const e = at(sub, 1);
+        for (let s = 0; s < 4; s++) leafAt(e.p.clone().add(V((rand() - 0.5) * 0.9, (rand() - 0.3) * 0.4, (rand() - 0.5) * 0.9)), V(e.d.x + (rand() - 0.5) * 1.2, 0.5 + rand() * 0.6, e.d.z + (rand() - 0.5) * 1.2), sp.leafSize * (0.8 + rand() * 0.45));
       }
+      const e = at(b, 1);
+      for (let s = 0; s < 4; s++) leafAt(e.p.clone().add(V((rand() - 0.5) * 0.8, (rand() - 0.3) * 0.4, (rand() - 0.5) * 0.8)), V(e.d.x + (rand() - 0.5), 0.6 + rand() * 0.5, e.d.z + (rand() - 0.5)), sp.leafSize * (0.85 + rand() * 0.4));
     }
     const top = at(tr, 1);
-    for (let s = 0; s < 5; s++) leafAt(top.p.clone().add(V((rand() - 0.5) * 0.6, -0.4 + rand() * 0.5, (rand() - 0.5) * 0.6)), V(rand() - 0.5, 1, rand() - 0.5), sp.leafSize);
+    for (let s = 0; s < 6; s++) leafAt(top.p.clone().add(V((rand() - 0.5) * 0.9, -0.6 + rand() * 0.6, (rand() - 0.5) * 0.9)), V(rand() - 0.5, 1, rand() - 0.5), sp.leafSize);
   } else if (kind === "pine" || kind === "fir") {
-    // Conifères : tronc jusqu'à la cime, verticilles de branches (pendantes pour l'épicéa, à plat pour le sapin)
+    // Conifères : tronc jusqu'à la cime, verticilles serrés + branches intermédiaires ; épicéa : rameaux pendants,
+    // sapin : étages plus plats. Branches de longueur irrégulière, quelques manques : silhouette conique pleine.
     const fir = kind === "fir";
     const H = (fir ? 22 : 24) + rand() * 7, R = 0.36 + rand() * 0.1;
-    const tr = trunk(H, R, 0.03, 0.2, 0.1);
+    const tr = trunk(H, R, 0.03, 0.35, 0.25);
     roots(4, R, 1.0);
-    const base = 2.2 + rand() * 1.5;
-    let y = base;
-    while (y < H - 0.4) {
+    const base = 1.6 + rand() * 1.2;
+    let y = base, whorl = 0;
+    while (y < H - 0.3) {
       const t = (y - base) / (H - base);
-      const reach = (fir ? 4.2 : 4.6) * Math.pow(1 - t, 0.95) + 0.4;
-      const n = 5 + Math.floor(rand() * 2);
+      const reach = (fir ? 4.0 : 4.4) * Math.pow(1 - t, 0.9) + 0.35;
+      const main = whorl % 2 === 0;                     // verticille complet / branches intermédiaires
+      const n = main ? 5 + Math.floor(rand() * 3) : 2 + Math.floor(rand() * 2);
       const a0 = rand() * 6.283;
       const { p, r } = at(tr, (y + 0.4) / (H + 0.4));
       for (let i = 0; i < n; i++) {
-        const a = a0 + (i / n) * 6.283 + (rand() - 0.5) * 0.4;
-        const droop = fir ? -0.02 + rand() * 0.08 : -0.28 + t * 0.35 + rand() * 0.1;
+        if (rand() < 0.1) continue;
+        const a = a0 + (i / n) * 6.283 + (rand() - 0.5) * 0.7;
+        const droop = fir ? -0.05 + rand() * 0.12 : -0.35 + t * 0.4 + rand() * 0.15;
         const d = V(Math.cos(a), droop, Math.sin(a));
-        const b = branch(p, d, reach * (0.8 + rand() * 0.35), Math.max(0.025, r * 0.35), 0.012, 1, { bend: fir ? 0.04 : 0.25 + t * 0.2, wob: 0.08 });
-        // rameaux aplatis le long de la branche
-        const cnt = Math.max(1, Math.round(b.len / 0.9));
+        const len = reach * (main ? 0.75 + rand() * 0.5 : 0.45 + rand() * 0.35);
+        const b = branch(p, d, len, Math.max(0.025, r * 0.35), 0.012, 1, { bend: fir ? 0.06 : 0.3 + t * 0.2, wob: 0.14 });
+        const cnt = Math.max(1, Math.round(b.len / 0.75));
         for (let k = 0; k < cnt; k++) {
           const q = at(b, (k + 0.6) / cnt);
           const side = V(-q.d.z, 0, q.d.x).normalize();
-          for (const s of [-1, 1]) leafAt(q.p, q.d.clone().addScaledVector(side, s * 0.9).add(V(0, fir ? 0.02 : -0.1, 0)), sp.leafSize * (1 - t * 0.35) * (0.8 + rand() * 0.35), { flat: true });
+          const s = k % 2 ? 1 : -1;
+          // rameaux légèrement inclinés au hasard (pas des disques horizontaux)
+          const tilt = (rand() - 0.5) * 0.9 + (fir ? 0.05 : -0.15);
+          leafAt(q.p, q.d.clone().addScaledVector(side, s * 0.85).add(V(0, tilt, 0)), sp.leafSize * (1 - t * 0.3) * (0.8 + rand() * 0.4), { flat: true });
+          if (!fir && rand() < 0.45) leafAt(q.p, V(q.d.x * 0.3, -1, q.d.z * 0.3), sp.leafSize * (0.7 + rand() * 0.4) * (1 - t * 0.4), { hang: true });
         }
-        leafAt(at(b, 1).p, b.pts[b.pts.length - 1].clone().sub(b.pts[b.pts.length - 2]), sp.leafSize * (1 - t * 0.4), { flat: true });
+        leafAt(at(b, 1).p, b.pts[b.pts.length - 1].clone().sub(b.pts[b.pts.length - 2]).add(V(0, 0.15, 0)), sp.leafSize * (1 - t * 0.4), { flat: true });
       }
-      y += (fir ? 0.75 : 0.62) * (0.85 + rand() * 0.3);
+      y += (fir ? 0.36 : 0.32) * (0.8 + rand() * 0.4);
+      whorl++;
     }
     const tip = at(tr, 1);
-    for (let i = 0; i < 4; i++) leafAt(tip.p.clone().add(V(0, -0.7, 0)), V(Math.cos(i * 1.57) * 0.3, 1, Math.sin(i * 1.57) * 0.3), sp.leafSize * 0.7);
+    for (let i = 0; i < 5; i++) leafAt(tip.p.clone().add(V(0, -1.0 + i * 0.15, 0)), V(Math.cos(i * 1.26) * 0.4, 1, Math.sin(i * 1.26) * 0.4), sp.leafSize * 0.75);
   } else if (kind === "dead") {
     const H = 7 + rand() * 7, R = 0.32 + rand() * 0.15;
     const tr = trunk(H, R, R * 0.45, 0.5, 0.3);
     roots(4, R, 1.2);
-    for (let i = 0; i < 6; i++) {
-      const t = 0.4 + rand() * 0.55;
+    for (let i = 0; i < 12; i++) {
+      const t = 0.3 + rand() * 0.68;
       const { p, r } = at(tr, t);
       const a = rand() * 6.283;
       const b = branch(p, V(Math.cos(a), 0.3 + rand() * 0.6, Math.sin(a)), 1.5 + rand() * 3.5, r * 0.4, 0.02, 1, { bend: 0.2, wob: 0.35 });
@@ -685,8 +700,9 @@ function buildFromSkeleton(S, lod) {
   const leafUV = UV[sp.leaf];
   const leafC = tint(sp.leafTint);
   const crown = S.crown;
+  const conifer = S.kind === "pine" || S.kind === "fir";
   const step = lod === 0 ? 1 : lod === 1 ? 3 : 4;
-  const grow = lod === 0 ? 1 : lod === 1 ? 1.62 : 1.9;
+  const grow = lod === 0 ? 1 : lod === 1 ? (conifer ? 1.5 : 1.62) : 1.9;
   const up = V(0, 1, 0);
   S.leaves.forEach((l, idx) => {
     if (idx % step !== 0) return;
@@ -703,9 +719,10 @@ function buildFromSkeleton(S, lod) {
     const center = l.p.clone().addScaledVector(d, size * 0.45);
     const ref = l.flat ? V(l.p.x * 0.3 + crown.x * 0.7, l.p.y - 0.8, l.p.z * 0.3 + crown.z * 0.7) : l.hang ? V(crown.x, l.p.y + 1.5, crown.z) : crown;
     if (l.hang) { b.card(center, right, d, size * 0.45, size, leafUV, c, ref, 0.2, flex); if (lod === 0) b.card(center, rot(right, d, 1.57), d, size * 0.45, size, leafUV, c, ref, 0.2, flex); return; }
+    right.applyAxisAngle(d, l.flat ? (rand() - 0.5) * 1.2 : 0);
     b.card(center, right, d, size, size, leafUV, c, ref, l.flat ? 0.5 : 0.25, flex);
-    if (lod === 0) {
-      // seconde carte croisée pour le volume
+    if (lod === 0 || (lod === 1 && l.flat)) {
+      // seconde carte croisée pour le volume (et pour que les conifères ne soient pas des « disques » de loin)
       const n2 = new THREE.Vector3().crossVectors(right, d).normalize();
       b.card(center, n2, d, size * (l.flat ? 0.55 : 0.9), size * 0.95, leafUV, c.clone().multiplyScalar(0.92), ref, l.flat ? 0.5 : 0.25, flex);
     }
