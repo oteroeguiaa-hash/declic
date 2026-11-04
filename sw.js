@@ -26,6 +26,7 @@ self.addEventListener("fetch", (e) => {
   if (url.origin !== self.location.origin) return;          // Supabase, Stripe, polices… : réseau direct
   if (url.pathname.startsWith("/api/")) return;             // données toujours fraîches
   if (url.pathname === "/jeu" || url.pathname.startsWith("/jeu/")) return; // le jeu a son propre service worker
+  if (url.pathname === "/quartier" || url.pathname.startsWith("/quartier/")) return; // balade 3D : tuiles Google en direct
 
   // Pages : réseau d'abord (toujours la dernière version), cache si hors connexion
   if (req.mode === "navigate") {

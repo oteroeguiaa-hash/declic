@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Balade 3D à Woluwe</title>
+<meta name="description" content="Se promener à pied dans Woluwe-Saint-Lambert et le parc Georges-Henri, en 3D photoréaliste.">
+<meta name="robots" content="noindex">
+<style>
+  :root { --bg: #0d1117; --card: #161b22cc; --fg: #f0f3f6; --mute: #9aa4af; --acc: #4f9dff; --line: #ffffff22; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  canvas { display: block; touch-action: none; }
+  [hidden] { display: none !important; }
+
+  #menu { position: fixed; inset: 0; overflow: auto; padding: 24px 16px; background: radial-gradient(120% 90% at 50% 0%, #1d3557 0%, #0d1117 70%); }
+  .box { max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 30px; margin: 8px 0 4px; letter-spacing: -.5px; }
+  .sub { color: var(--mute); margin: 0 0 22px; }
+  label { display: block; font-weight: 600; margin: 16px 0 6px; }
+  input, select { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: #0b0f14; color: var(--fg); font: inherit; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 22px; }
+  button { cursor: pointer; font: inherit; font-weight: 700; border: 0; border-radius: 12px; padding: 14px; background: var(--acc); color: #fff; }
+  button.alt { background: #2ea043; }
+  #msg { min-height: 22px; color: #ffb4a8; margin-top: 12px; }
+  details { margin-top: 18px; background: #ffffff0a; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  summary { cursor: pointer; font-weight: 600; }
+  ol { padding-left: 20px; margin: 10px 0 4px; } li { margin: 6px 0; }
+  a { color: #8cc4ff; }
+  .small { color: var(--mute); font-size: 13px; }
+
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  .top { position: absolute; top: max(10px, env(safe-area-inset-top)); left: 10px; right: 10px; display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+  .chip { background: var(--card); backdrop-filter: blur(8px); border: 1px solid var(--line); border-radius: 10px; padding: 7px 11px; font-size: 13px; }
+  #place { font-weight: 700; }
+  #compass { font-weight: 800; min-width: 38px; text-align: center; }
+  .btns { margin-left: auto; display: flex; gap: 6px; pointer-events: auto; flex-wrap: wrap; justify-content: flex-end; }
+  .btns button { padding: 8px 12px; font-size: 13px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); backdrop-filter: blur(8px); }
+  .btns button.on { background: var(--acc); }
+  #hint { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); text-align: center; }
+  #toast { position: absolute; left: 50%; top: 30%; transform: translateX(-50%); font-size: 16px; font-weight: 600; }
+  #loading { position: absolute; right: 10px; bottom: 34px; }
+  #attrib { position: absolute; left: 10px; bottom: max(8px, env(safe-area-inset-bottom)); font-size: 11px; color: #fff; text-shadow: 0 1px 2px #000; max-width: 80%; }
+  #error { position: absolute; left: 50%; top: 80px; transform: translateX(-50%); background: #8b1d1dee; max-width: 90%; pointer-events: auto; }
+  #pad { position: fixed; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 2px solid #ffffff55; background: #00000022; pointer-events: none; }
+  #knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; border-radius: 50%; background: #ffffffaa; transform: translate(-50%,-50%); }
+  #jump { display: none; }
+  body.touch #jump { display: block; }
+  body.touch .keys, body.touch #hint { display: none !important; }
+  .crosshair { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; border-radius: 50%; background: #fff; box-shadow: 0 0 2px #000; }
+</style>
+</head>
+<body>
+
+<div id="menu">
+  <div class="box">
+    <h1>Balade 3D à Woluwe</h1>
+    <p class="sub">Promène-toi à pied dans ta rue, les rues d'à côté et le parc Georges-Henri, sur les vraies images 3D de Google Maps.</p>
+
+    <label for="home">Ton adresse (point de départ « Ma rue »)</label>
+    <input id="home" autocomplete="street-address" placeholder="ex. Rue …, 1200 Woluwe-Saint-Lambert">
+    <div class="small">Elle reste uniquement dans ton navigateur.</div>
+
+    <label for="key">Clé Google « Map Tiles API »</label>
+    <input id="key" autocomplete="off" spellcheck="false" placeholder="AIza…">
+
+    <label for="quality">Qualité</label>
+    <select id="quality">
+      <option value="normale">Normale (téléphone)</option>
+      <option value="haute">Haute (ordinateur)</option>
+      <option value="ultra">Ultra (gros ordinateur, le plus net)</option>
+    </select>
+
+    <div class="row">
+      <button data-start="home">Partir de ma rue</button>
+      <button data-start="parc" class="alt">Parc Georges-Henri</button>
+    </div>
+    <div id="msg" role="status"></div>
+
+    <details>
+      <summary>Comment avoir la clé Google (5 min, gratuit pour un usage perso)</summary>
+      <ol>
+        <li>Va sur <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a> et crée un projet.</li>
+        <li>Menu « API et services » → « Bibliothèque » → cherche <b>Map Tiles API</b> → <b>Activer</b>.</li>
+        <li>Google demande d'ajouter un moyen de paiement (compte de facturation). Le quota gratuit mensuel couvre largement des balades perso.</li>
+        <li>« API et services » → « Identifiants » → « Créer des identifiants » → <b>Clé API</b>. Copie-la ici.</li>
+        <li>Conseillé : restreins la clé à « Map Tiles API » et à l'adresse de ton site.</li>
+      </ol>
+    </details>
+
+    <details class="keys">
+      <summary>Commandes</summary>
+      <ol>
+        <li><b>Clic</b> dans l'image pour tourner la tête à la souris (Échap pour sortir).</li>
+        <li><b>ZQSD</b> / WASD / flèches : marcher. <b>Maj</b> : courir. <b>Espace</b> : sauter.</li>
+        <li><b>F</b> : mode drone (Espace monte, C descend). <b>H</b> : ma rue. <b>P</b> : le parc.</li>
+      </ol>
+    </details>
+    <p class="small">Sur téléphone : pouce gauche pour marcher, glisse à droite pour regarder.</p>
+  </div>
+</div>
+
+<div id="hud" hidden>
+  <div class="crosshair"></div>
+  <div class="top">
+    <div class="chip"><span id="place"></span><br><span id="coords" class="small"></span></div>
+    <div class="chip" id="compass">N</div>
+    <div class="btns">
+      <button id="go-home">Ma rue</button>
+      <button id="go-parc">Parc</button>
+      <button id="fly">Drone</button>
+      <button id="jump">Saut</button>
+    </div>
+  </div>
+  <div class="chip" id="hint">Clique dans l'image pour regarder autour à la souris · ZQSD pour marcher · F drone</div>
+  <div class="chip" id="toast" hidden></div>
+  <div class="chip" id="loading" hidden>Chargement des images…</div>
+  <div class="chip" id="error" hidden></div>
+  <div id="attrib">Google</div>
+</div>
+<div id="pad" hidden><div id="knob"></div></div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
