@@ -40,9 +40,9 @@ export const NIGHT_CODE = `
 			vec2 cell = floor( g ), f = fract( g );
 			float win = step( 0.22, f.x ) * step( f.x, 0.78 ) * step( 0.3, f.y ) * step( f.y, 0.82 );
 			float side = floor( atan( nrm.z, nrm.x ) * 1.27 );
-			float lit = step( nHash( cell + side * 17.0 ), 0.3 );
+			float lit = step( nHash( cell + side * 17.0 ), 0.4 );
 			vec3 col = mix( vec3( 1.0, 0.7, 0.36 ), vec3( 0.85, 0.92, 1.0 ), step( 0.85, nHash( cell.yx + 3.1 ) ) );
-			emit += win * lit * col * ( 0.55 + 0.45 * nHash( cell + 9.7 ) ) * 0.9;
+			emit += win * lit * col * ( 0.6 + 0.4 * nHash( cell + 9.7 ) ) * 1.2;
 		}
 		// lampadaires : lumière orangée qui retombe sur la rue et les façades proches
 		vec3 lamp = vec3( 0.0 );
@@ -122,7 +122,7 @@ export class NightCity {
 		this.loading = false;
 		this.trailMat = trailMaterial();
 		this.bulbMat = new THREE.PointsMaterial( {
-			map: bulbTexture(), size: 2.6, sizeAttenuation: true, transparent: true, depthWrite: false,
+			map: bulbTexture(), size: 1.3, sizeAttenuation: true, transparent: true, depthWrite: false,
 			blending: THREE.AdditiveBlending, toneMapped: false, fog: false,
 		} );
 		this.bulbs = new THREE.Points( new THREE.BufferGeometry(), this.bulbMat );

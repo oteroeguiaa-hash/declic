@@ -877,9 +877,9 @@ function frame() {
 		$( 'attrib' ).textContent = attr ? 'Google · ' + attr : 'Google';
 		$( 'weather' ).textContent = weather.label();
 		$( 'fps' ).textContent = Math.round( perf.fps ) + ' FPS';
-		// la boussole se place toujours juste sous les boutons du haut (même s'ils passent sur 2 lignes)
-		const btnBottom = document.querySelector( '.btns' ).getBoundingClientRect().bottom;
-		$( 'minimap' ).style.top = Math.round( btnBottom + 10 ) + 'px';
+		// la boussole se place à gauche, juste sous le nom du lieu (loin des boutons)
+		const placeBottom = $( 'place' ).parentElement.getBoundingClientRect().bottom;
+		$( 'minimap' ).style.top = Math.round( placeBottom + 8 ) + 'px';
 		if ( ! TEST_TILESET ) {
 			gps.update( lat, lon, northYaw - player.yaw );
 			gps.setMiniZoom( Math.max( 5, Math.min( 17, Math.round( 17 - Math.log10( speedMult ) * 1.8 - ( player.fly ? 1 : 0 ) ) ) ) );
