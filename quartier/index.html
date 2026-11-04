@@ -54,7 +54,17 @@
   #pad { position: fixed; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 2px solid #ffffff55; background: #00000022; pointer-events: none; }
   #knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; border-radius: 50%; background: #ffffffaa; transform: translate(-50%,-50%); }
   #jump { display: none; }
-  body.touch #jump { display: block; }
+  /* Téléphone à l'horizontale : gros bouton saut sous le pouce droit, marges pour l'encoche */
+  body.touch #jump { display: block; position: fixed; right: max(22px, env(safe-area-inset-right)); bottom: max(22px, env(safe-area-inset-bottom)); width: 70px; height: 70px; border-radius: 50%; padding: 0; background: #161b22aa; font-size: 14px; }
+  body.touch .top { left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); }
+  body.touch #attrib { left: max(10px, env(safe-area-inset-left)); }
+  #rotate { position: fixed; inset: 0; z-index: 50; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; text-align: center; background: #0d1117; }
+  body.playing #rotate { display: none; }
+  @media (orientation: portrait) and (pointer: coarse) { body.playing #rotate { display: flex; } }
+  #rotate .phone { width: 60px; height: 100px; border: 3px solid var(--fg); border-radius: 14px; animation: turn 2.4s ease-in-out infinite; }
+  @keyframes turn { 0%, 20% { transform: rotate(0); } 55%, 80% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
+  #rotate h2 { margin: 0; font-size: 22px; }
+  #rotate p { margin: 0; color: var(--mute); max-width: 300px; }
   body.touch .keys, body.touch #hint { display: none !important; }
   .crosshair { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; border-radius: 50%; background: #fff; box-shadow: 0 0 2px #000; }
 </style>
@@ -105,7 +115,7 @@
         <li><b>F</b> : mode drone (Espace monte, C descend). <b>H</b> : ma rue. <b>P</b> : le parc.</li>
       </ol>
     </details>
-    <p class="small">Sur téléphone : pouce gauche pour marcher, glisse à droite pour regarder.</p>
+    <p class="small">Sur téléphone : tiens-le à l'horizontale. Pouce gauche pour marcher, glisse à droite pour regarder, rond en bas à droite pour sauter.</p>
   </div>
 </div>
 
@@ -128,6 +138,11 @@
   <div id="attrib">Google</div>
 </div>
 <div id="pad" hidden><div id="knob"></div></div>
+<div id="rotate">
+  <div class="phone"></div>
+  <h2>Tourne ton téléphone</h2>
+  <p>La balade se joue à l'horizontale. Sur iPhone, pense à désactiver le verrouillage de l'orientation (Centre de contrôle).</p>
+</div>
 
 <script type="module" src="./app.js"></script>
 <script>if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(() => {}));</script>
