@@ -14,8 +14,9 @@
     "build:quartier": "esbuild quartier/src/main.js --bundle --format=esm --minify --target=es2020 --outfile=quartier/app.js"
   },
   "devDependencies": {
-    "three": "0.180.0",
     "3d-tiles-renderer": "0.5.4",
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "three": "0.180.0",
+    "three-mesh-bvh": "^0.9.18"
   }
 }
