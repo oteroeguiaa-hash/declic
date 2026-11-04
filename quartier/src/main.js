@@ -23,7 +23,7 @@ const PARC = { name: 'Parc Georges-Henri', lat: 50.8418, lon: 4.4093, query: 'Pa
 const DEG = Math.PI / 180;
 
 const EYE = 1.7; // hauteur des yeux (m)
-const WALK = 4.2, RUN = 9, FLY = 25, FLY_FAST = 80;
+const WALK = 1.5, RUN = 4.5, FLY = 25, FLY_FAST = 80; // marche tranquille (vitesse d'un vrai piéton)
 const GRAVITY = 22, JUMP = 7;
 
 // --------------------------------------------------------------------------------------------
@@ -409,7 +409,7 @@ function worldNormal( hit ) {
 // --------------------------------------------------------------------------------------------
 // Boucle
 // --------------------------------------------------------------------------------------------
-let northYaw = 0;
+let northYaw = 0, lastX = 0, lastZ = 0, bobPhase = 0, bobAmp = 0;
 const clock = new THREE.Clock();
 let hudTimer = 0;
 
@@ -417,7 +417,15 @@ function frame() {
 	const dt = Math.min( clock.getDelta(), 0.05 );
 	update( dt );
 
+	// léger balancement de la tête quand on marche, comme un vrai pas
+	const moved = Math.hypot( player.pos.x - lastX, player.pos.z - lastZ ) / Math.max( dt, 1e-4 );
+	lastX = player.pos.x; lastZ = player.pos.z;
+	const walking = ! player.fly && player.onGround && moved > 0.3 && moved < 10;
+	bobAmp = THREE.MathUtils.damp( bobAmp, walking ? 1 : 0, 6, dt );
+	if ( walking ) bobPhase += dt * moved * 2.6;
 	camera.position.copy( player.pos );
+	camera.position.y += Math.sin( bobPhase * 2 ) * 0.025 * bobAmp;
+	camera.position.addScaledVector( _right.set( Math.cos( player.yaw ), 0, - Math.sin( player.yaw ) ), Math.sin( bobPhase ) * 0.015 * bobAmp );
 	camera.rotation.set( player.pitch, player.yaw, 0, 'YXZ' );
 	camera.updateMatrixWorld();
 
