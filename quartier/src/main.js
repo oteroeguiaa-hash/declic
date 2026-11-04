@@ -2,6 +2,13 @@
 // Source de ce fichier ; le navigateur charge app.js, produit par : npm run build:quartier
 import * as THREE from 'three';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+import { Weather } from './weather.js';
+
+// Rayons (sol, murs) accélérés : chaque morceau de ville reçoit un index spatial au chargement.
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 import { TilesRenderer } from '3d-tiles-renderer';
 import {
 	GoogleCloudAuthPlugin,
@@ -10,7 +17,6 @@ import {
 	SphereRegion,
 	RayRegion,
 	ReorientationPlugin,
-	TileCompressionPlugin,
 	TilesFadePlugin,
 	UnloadTilesPlugin,
 } from '3d-tiles-renderer/plugins';
@@ -96,7 +102,16 @@ function goLandscape() {
 // --------------------------------------------------------------------------------------------
 // Scène
 // --------------------------------------------------------------------------------------------
-let renderer, scene, camera, tiles, raycaster;
+let renderer, scene, camera, tiles, raycaster, weather;
+// Réglages par qualité : détail au loin (errorTarget, plus petit = plus net), rayon autour du joueur
+// chargé au détail maximal de Google, résolution max de l'écran.
+const QUALITY = {
+	normale: { error: 14, radius: 35, maxPR: 1.25, minPR: 0.6, cache: 700, fade: false },
+	haute: { error: 7, radius: 60, maxPR: 1.75, minPR: 0.75, cache: 1100, fade: false },
+	ultra: { error: 3.5, radius: 90, maxPR: 2, minPR: 0.9, cache: 1800, fade: true },
+};
+let Q = QUALITY.haute;
+let pixelRatio = 1;
 const player = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), yaw: 0, pitch: 0, onGround: false, fly: false, grounded: false };
 // Zones chargées au maximum de détail même hors de l'écran : autour des pieds, et la colonne
 // verticale sous le joueur. Sinon, le sol sous nos pieds (hors champ) reste en basse résolution,
@@ -106,15 +121,16 @@ const footRay = new RayRegion( { errorTarget: 0.5 } );
 const spawn = { time: 0, quiet: 0 };
 
 function start( key, place, quality ) {
-	renderer = new THREE.WebGLRenderer( { antialias: true, logarithmicDepthBuffer: false } );
-	renderer.setPixelRatio( Math.min( devicePixelRatio, quality === 'ultra' ? 2 : 1.5 ) );
+	Q = QUALITY[ quality ] || QUALITY.haute;
+	renderer = new THREE.WebGLRenderer( { antialias: true, powerPreference: 'high-performance' } );
+	pixelRatio = Math.min( devicePixelRatio, Q.maxPR );
+	renderer.setPixelRatio( pixelRatio );
 	renderer.setSize( innerWidth, innerHeight );
 	renderer.outputColorSpace = THREE.SRGBColorSpace;
 	document.body.prepend( renderer.domElement );
 
 	scene = new THREE.Scene();
-	scene.background = skyTexture();
-	scene.fog = new THREE.Fog( 0xc9dcef, 900, 4000 );
+	weather = new Weather( scene, renderer, place.lat, place.lon );
 	scene.add( new THREE.HemisphereLight( 0xffffff, 0x8a8f80, 2.2 ) );
 	const sun = new THREE.DirectionalLight( 0xfff3e0, 1.2 );
 	sun.position.set( 300, 600, 200 );
@@ -126,16 +142,35 @@ function start( key, place, quality ) {
 	tiles.registerPlugin( new GoogleCloudAuthPlugin( { apiToken: key, autoRefreshToken: true, useRecommendedSettings: false } ) );
 	const draco = new DRACOLoader().setDecoderPath( './draco/' );
 	tiles.registerPlugin( new GLTFExtensionsPlugin( { dracoLoader: draco } ) );
-	tiles.registerPlugin( new TileCompressionPlugin() );
 	tiles.registerPlugin( new UnloadTilesPlugin() );
-	tiles.registerPlugin( new TilesFadePlugin() );
+	if ( Q.fade ) tiles.registerPlugin( new TilesFadePlugin() ); // joli mais coûte des FPS
 	tiles.registerPlugin( new LoadRegionPlugin( { regions: [ footSphere, footRay ] } ) );
 	// Le point de départ devient l'origine, avec Y vers le ciel : on peut marcher en mètres.
 	tiles.registerPlugin( new ReorientationPlugin( { lat: place.lat * DEG, lon: place.lon * DEG, height: 0, recenter: true } ) );
 	// Plus le chiffre est petit, plus c'est détaillé (et lourd).
-	tiles.errorTarget = { normale: 12, haute: 6, ultra: 3 }[ quality ] ?? 6;
-	tiles.lruCache.maxSize = quality === 'ultra' ? 1600 : 1000;
-	tiles.lruCache.minSize = 600;
+	tiles.errorTarget = Q.error;
+	tiles.lruCache.maxSize = Q.cache;
+	tiles.lruCache.minSize = Math.round( Q.cache * 0.6 );
+	tiles.downloadQueue.maxJobs = 12;
+	tiles.parseQueue.maxJobs = 2;
+
+	// À chaque morceau de ville reçu : textures nettes même au ras du sol (filtrage anisotrope),
+	// teinte de la météo / de l'heure, index spatial pour les collisions.
+	const maxAniso = renderer.capabilities.getMaxAnisotropy();
+	tiles.addEventListener( 'load-model', ( { scene: model } ) => {
+		model.traverse( ( o ) => {
+			if ( ! o.isMesh ) return;
+			const m = o.material;
+			if ( Array.isArray( m ) || ! m.color ) return;
+			if ( m.map ) { m.map.anisotropy = maxAniso; m.map.needsUpdate = true; }
+			m.color.copy( weather.tint );
+			try { o.geometry.computeBoundsTree(); } catch { /* rayon classique */ }
+		} );
+	} );
+	tiles.addEventListener( 'dispose-model', ( { scene: model } ) => {
+		model.traverse( ( o ) => { if ( o.isMesh && o.geometry.boundsTree ) o.geometry.disposeBoundsTree(); } );
+	} );
+	weather.onTint( ( tint ) => tiles.group.traverse( ( o ) => { if ( o.isMesh && o.material.color ) o.material.color.copy( tint ); } ) );
 	tiles.setCamera( camera );
 	tiles.setResolutionFromRenderer( camera, renderer );
 	scene.add( tiles.group );
@@ -154,21 +189,6 @@ function start( key, place, quality ) {
 	setupInput();
 	teleport( place );
 	renderer.setAnimationLoop( frame );
-}
-
-function skyTexture() {
-	const c = document.createElement( 'canvas' );
-	c.width = 2; c.height = 256;
-	const g = c.getContext( '2d' );
-	const grad = g.createLinearGradient( 0, 0, 0, 256 );
-	grad.addColorStop( 0, '#5d93d6' );
-	grad.addColorStop( 0.55, '#a9c9ec' );
-	grad.addColorStop( 1, '#e3edf6' );
-	g.fillStyle = grad;
-	g.fillRect( 0, 0, 2, 256 );
-	const t = new THREE.CanvasTexture( c );
-	t.colorSpace = THREE.SRGBColorSpace;
-	return t;
 }
 
 function onResize() {
@@ -346,7 +366,7 @@ function updateRegions() {
 	tiles.group.updateMatrixWorld( true );
 	_inv.copy( tiles.group.matrixWorld ).invert();
 	footSphere.sphere.center.copy( player.pos ).applyMatrix4( _inv );
-	footSphere.sphere.radius = player.grounded ? 45 : 25;
+	footSphere.sphere.radius = player.grounded ? Q.radius : 25;
 	_ray.origin.set( player.pos.x, player.pos.y + 200, player.pos.z ).applyMatrix4( _inv );
 	_ray.direction.copy( DOWN ).transformDirection( _inv );
 	footRay.ray.copy( _ray );
@@ -474,8 +494,34 @@ let northYaw = 0, lastX = 0, lastZ = 0, bobPhase = 0, bobAmp = 0;
 const clock = new THREE.Clock();
 let hudTimer = 0;
 
+// Résolution dynamique : si les FPS baissent, on baisse un peu la résolution (puis le détail
+// au loin) ; quand ça va mieux, on remonte. Le détail autour du joueur ne change jamais.
+const perf = { frames: 0, time: 0, fps: 60 };
+function adaptPerformance( rawDt ) {
+	perf.frames ++; perf.time += rawDt;
+	if ( perf.time < 1 ) return;
+	perf.fps = perf.frames / perf.time;
+	perf.frames = 0; perf.time = 0;
+	const maxPR = Math.min( devicePixelRatio, Q.maxPR );
+	let changed = false;
+	if ( perf.fps < 48 ) {
+		if ( pixelRatio > Q.minPR + 0.01 ) { pixelRatio = Math.max( Q.minPR, pixelRatio - 0.15 ); changed = true; }
+		else if ( tiles.errorTarget < Q.error * 2 ) tiles.errorTarget *= 1.2;
+	} else if ( perf.fps > 57 ) {
+		if ( tiles.errorTarget > Q.error ) tiles.errorTarget = Math.max( Q.error, tiles.errorTarget / 1.2 );
+		else if ( pixelRatio < maxPR - 0.01 ) { pixelRatio = Math.min( maxPR, pixelRatio + 0.05 ); changed = true; }
+	}
+	if ( changed ) {
+		renderer.setPixelRatio( pixelRatio );
+		renderer.setSize( innerWidth, innerHeight );
+		tiles.setResolutionFromRenderer( camera, renderer );
+	}
+}
+
 function frame() {
-	const dt = Math.min( clock.getDelta(), 0.05 );
+	const rawDt = clock.getDelta();
+	const dt = Math.min( rawDt, 0.05 );
+	adaptPerformance( rawDt );
 	update( dt );
 
 	// léger balancement de la tête quand on marche, comme un vrai pas
@@ -492,6 +538,7 @@ function frame() {
 
 	updateRegions();
 	tiles.update();
+	weather.update( dt, camera.position );
 	renderer.render( scene, camera );
 
 	hudTimer -= dt;
@@ -505,6 +552,8 @@ function frame() {
 		$( 'loading' ).hidden = loading === 0;
 		const attr = tiles.getAttributions().filter( ( a ) => a.type === 'string' ).map( ( a ) => a.value ).join( ' ' );
 		$( 'attrib' ).textContent = attr ? 'Google · ' + attr : 'Google';
+		$( 'weather' ).textContent = weather.label();
+		$( 'fps' ).textContent = Math.round( perf.fps ) + ' FPS';
 	}
 }
 
