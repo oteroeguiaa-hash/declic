@@ -4,6 +4,40 @@
 // citadine, compacte, berline, break, SUV, mini, et de temps en temps une supercar.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+
+// --- vrais modèles 3D (facultatif) ----------------------------------------------------------------------
+// Dépose des fichiers .glb dans quartier/models/cars/ et liste-les dans quartier/models/cars/list.json :
+// [ { "file": "clio.glb", "length": 4.05, "rotate": 0, "weight": 3 }, … ]
+// length = longueur réelle en mètres ; rotate = degrés pour que l'avant regarde vers -z.
+export const customCars = [];
+export async function loadCustomCars() {
+	try {
+		const res = await fetch( 'models/cars/list.json' );
+		if ( ! res.ok ) return;
+		const list = await res.json();
+		const loader = new GLTFLoader();
+		for ( const e of list ) {
+			try {
+				const gltf = await loader.loadAsync( 'models/cars/' + e.file );
+				const root = gltf.scene;
+				root.rotation.y = ( e.rotate || 0 ) * Math.PI / 180;
+				root.updateMatrixWorld( true );
+				const box = new THREE.Box3().setFromObject( root ), size = box.getSize( new THREE.Vector3() );
+				const k = ( e.length || 4.3 ) / Math.max( size.x, size.z );
+				root.scale.multiplyScalar( k );
+				root.updateMatrixWorld( true );
+				box.setFromObject( root );
+				const c = box.getCenter( new THREE.Vector3() );
+				const holder = new THREE.Group();
+				root.position.sub( new THREE.Vector3( c.x, box.min.y, c.z ) );
+				holder.add( root );
+				holder.userData.half = ( box.max.z - box.min.z ) / 2;
+				for ( let i = 0; i < ( e.weight || 1 ); i ++ ) customCars.push( holder );
+			} catch { /* fichier illisible : ignoré */ }
+		}
+	} catch { /* pas de liste : voitures fabriquées seulement */ }
+}
 
 // --- silhouettes ----------------------------------------------------------------------------------
 // L longueur, W largeur, H hauteur du toit, belt ligne de caisse, hood hauteur du capot à l'avant,
@@ -99,6 +133,12 @@ export const allCarMaterials = () => [ ...paints.values(), rubber, alloy ].filte
 
 // --- voiture -----------------------------------------------------------------------------------------
 export function makeCar( renderer, typeName = randomType() ) {
+	if ( customCars.length && Math.random() < 0.8 ) {
+		const g = customCars[ Math.floor( Math.random() * customCars.length ) ].clone( true );
+		g.userData.half = g.userData.half || 2.2;
+		g.userData.radius = 0.33;
+		return g;
+	}
 	const T = TYPES[ typeName ];
 	const L = T.L * ( 0.97 + Math.random() * 0.06 ), W = T.W, hl = L / 2, hw = W / 2;
 	const color = T.colors[ Math.floor( Math.random() * T.colors.length ) ];
