@@ -2,10 +2,19 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
+<script>if (!location.pathname.endsWith("/") && !location.pathname.endsWith(".html")) location.replace(location.pathname + "/" + location.search);</script>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Balade 3D à Woluwe</title>
 <meta name="description" content="Se promener à pied dans Woluwe-Saint-Lambert et le parc Georges-Henri, en 3D photoréaliste.">
 <meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Balade 3D">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <style>
   :root { --bg: #0d1117; --card: #161b22cc; --fg: #f0f3f6; --mute: #9aa4af; --acc: #4f9dff; --line: #ffffff22; }
   * { box-sizing: border-box; }
@@ -121,5 +130,6 @@
 <div id="pad" hidden><div id="knob"></div></div>
 
 <script type="module" src="./app.js"></script>
+<script>if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(() => {}));</script>
 </body>
 </html>
