@@ -10,6 +10,7 @@ import { StreetView, svUniforms, SV_HEAD, SV_CODE } from './streetview.js';
 import { OsmWalls } from './osmwalls.js';
 import { Footsteps } from './footsteps.js';
 import { Traffic } from './traffic.js';
+import { makeCar, makeTram, TYPES } from './cars.js';
 
 // Rayons (sol, murs) accélérés : chaque morceau de ville reçoit un index spatial au chargement.
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -316,10 +317,10 @@ function start( key, place, quality ) {
 		] : null,
 	};
 	const counts = { normale: { car: 10, tram: 2, foot: 18 }, haute: { car: 18, tram: 3, foot: 32 }, ultra: { car: 28, tram: 4, foot: 48 } }[ quality ] || { car: 18, tram: 3, foot: 32 };
-	traffic = new Traffic( scene, lifeGeo, counts );
+	traffic = new Traffic( scene, lifeGeo, counts, renderer );
 	weather.onTint( ( t ) => traffic.setTint( t ) );
 	traffic.setTint( weather.tint );
-	if ( TEST_TILESET ) { window.__gps = gps; window.__player = player; window.__sv = () => streetView; window.__THREE = THREE; window.__night = () => nightCity; } // pour les essais automatiques
+	if ( TEST_TILESET ) { window.__gps = gps; window.__player = player; window.__sv = () => streetView; window.__THREE = THREE; window.__night = () => nightCity; window.__show = () => ( { makeCar, makeTram, TYPES, renderer, scene, traffic } ); } // pour les essais automatiques
 
 	addEventListener( 'resize', onResize );
 	setupInput();
@@ -955,6 +956,7 @@ function frame() {
 	}
 	steps.update( dt, player.onGround && ! player.fly && speedMult <= 5 ? Math.hypot( _walkVel.x, _walkVel.z ) : 0 );
 	traffic.setNight( THREE.MathUtils.smoothstep( weather.night, 0.3, 0.8 ) );
+	traffic.setLighting( weather.sunDir, 1 - weather.night );
 	traffic.update( dt, player.pos, speedMult > 100 || ( player.fly && player.pos.y - ( player.groundY ?? player.pos.y ) > 250 ) );
 	nightCity.update( dt, player.pos, weather.night, renderer.toneMappingExposure, player.groundY ?? player.pos.y - EYE );
 	renderer.render( scene, camera );
