@@ -72,19 +72,8 @@
   #goto-form button { padding: 10px 14px; white-space: nowrap; }
   #save-here { width: 100%; margin-top: 10px; padding: 10px; }
   @media (max-width: 420px) { #places-list { grid-template-columns: 1fr; } }
-  #bar { position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 8px; z-index: 30; flex-wrap: nowrap; }
-  .seg { display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; backdrop-filter: blur(8px); }
-  .seg button { background: transparent; border-radius: 0; padding: 9px 11px; font-size: 13px; white-space: nowrap; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
-  .seg button + button { border-left: 1px solid var(--line); }
-  .seg button.on { background: var(--acc); }
-  body.touch #bar { bottom: max(8px, env(safe-area-inset-bottom)); }
-  @media (max-width: 700px) { .seg button { padding: 8px 8px; font-size: 12px; } }
   #lockhint { position: absolute; left: 50%; bottom: 62px; transform: translateX(-50%); font-size: 12px; opacity: .85; }
-  #speeds { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); z-index: 35; display: grid; grid-template-columns: repeat(4, auto); gap: 6px; background: #161b22f2; border: 1px solid var(--line); border-radius: 14px; padding: 8px; }
-  #speeds[hidden] { display: none !important; }
-  #speeds button { padding: 9px 10px; font-size: 13px; background: #ffffff12; border: 1px solid var(--line); white-space: nowrap; }
-  #speeds button.on { background: var(--acc); }
-  #minimap { position: fixed; right: max(10px, env(safe-area-inset-right)); top: 58px; width: 170px; height: 170px; border-radius: 50%; overflow: hidden; border: 3px solid #ffffffcc; box-shadow: 0 4px 16px #0008; z-index: 20; cursor: pointer; background: #ddd; display: none; }
+  #minimap { position: fixed; right: max(10px, env(safe-area-inset-right)); top: 60px; width: 170px; height: 170px; border-radius: 50%; overflow: hidden; border: 3px solid #ffffffcc; box-shadow: 0 4px 16px #0008; z-index: 20; cursor: pointer; background: #ddd; display: none; }
   body.playing #minimap { display: block; }
   body.touch #minimap { width: 120px; height: 120px; top: 54px; }
   #mapview { position: fixed; inset: 0; z-index: 45; background: #0d1117; }
@@ -123,9 +112,6 @@
     <label for="key">Clé Google « Map Tiles API »</label>
     <input id="key" autocomplete="off" spellcheck="false" placeholder="AIza…">
 
-    <label for="stib-key">Clé STIB (gratuite, pour voir les trams et bus en direct)</label>
-    <input id="stib-key" autocomplete="off" spellcheck="false" placeholder="facultatif">
-
     <label for="quality">Qualité</label>
     <select id="quality">
       <option value="normale">Normale (téléphone)</option>
@@ -153,23 +139,13 @@
       </ol>
     </details>
 
-    <details>
-      <summary>Trams et bus STIB en direct : avoir la clé (2 min)</summary>
-      <ol>
-        <li>Va sur <a href="https://data.stib-mivb.brussels/" target="_blank" rel="noopener">data.stib-mivb.brussels</a> et crée un compte (gratuit).</li>
-        <li>Clique sur ton nom en haut → <b>Clés d'API</b> (API keys) → <b>Générer une nouvelle clé</b>.</li>
-        <li>Copie-la dans la case « Clé STIB ». Dans le jeu, le bouton <b>🚋 STIB</b> en bas les affiche ou les cache.</li>
-      </ol>
-      <p class="small">Position mise à jour toutes les 20 secondes environ, trams et bus dans un rayon de 3 km. Le métro roule sous terre, il n'est pas affiché. Données : STIB-MIVB (CC BY 4.0) et OpenStreetMap pour le tracé des lignes.</p>
-    </details>
-
     <details class="keys">
       <summary>Commandes</summary>
       <ol>
         <li><b>Clic</b> dans l'image pour tourner la tête à la souris (Échap pour sortir).</li>
         <li><b>ZQSD</b> / WASD / flèches : marcher. <b>Maj</b> : courir. <b>Espace</b> : sauter.</li>
-        <li><b>1 2 3 4</b> (ou <b>V</b>) : vitesse ×1, ×2, ×5, ×10. On ne traverse pas les bâtiments, même vite.</li>
-        <li><b>F</b> : mode drone (Espace monte, C descend). <b>T</b> : les lieux. <b>H</b> : ma rue. <b>P</b> : parc Georges-Henri.</li>
+        <li>Bouton <b>×1</b> (ou <b>+</b> / <b>−</b>) : ×2, ×5, ×10… jusqu'à ×1 million, puis retour à ×1. Jusqu'à ×100, on ne traverse pas les bâtiments.</li>
+        <li><b>F</b> : mode drone (Espace monte, C descend). <b>T</b> : les lieux. <b>M</b> : la carte. <b>H</b> : ma rue. <b>P</b> : parc Georges-Henri.</li>
       </ol>
     </details>
     <p class="small">La météo et l'heure sont celles de Woluwe en ce moment : pluie, neige, brouillard, nuit…</p>
@@ -186,6 +162,8 @@
     <div class="chip small" id="fps"></div>
     <div class="btns">
       <button id="places-btn">📍 Lieux</button>
+      <button id="speed" title="Vitesse : touche pour accélérer (touches + et -)">×1</button>
+      <button id="fly" title="Drone / marche (F)">🚁 Drone</button>
       <button id="jump">Saut</button>
     </div>
   </div>
@@ -196,20 +174,6 @@
   <div class="chip" id="error" hidden></div>
   <div id="attrib">Google</div>
 </div>
-<div id="bar" hidden>
-  <div class="seg">
-    <button id="mode-walk" class="on" title="Marcher (F)">🚶 Marcher</button>
-    <button id="mode-drone" title="Drone (F)">🚁 Drone</button>
-  </div>
-  <div class="seg">
-    <button id="speed-down" title="Moins vite (touche -)">−</button>
-    <button id="speed-val" title="Choisir la vitesse">×1</button>
-    <button id="speed-up" title="Plus vite (touche +)">+</button>
-  </div>
-  <div class="seg"><button id="map-btn" title="Carte GPS (M)">🗺️ Carte</button></div>
-  <div class="seg"><button id="stib-btn" title="Trams et bus STIB en direct">🚋 STIB</button></div>
-</div>
-<div id="speeds" hidden></div>
 <div id="minimap" title="Ouvrir la carte (M)"></div>
 <div id="mapview" hidden>
   <div id="bigmap"></div>
