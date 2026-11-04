@@ -5,6 +5,7 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import { Weather } from './weather.js';
 import { Stib } from './stib.js';
+import { GpsMap } from './map.js';
 
 // Rayons (sol, murs) accélérés : chaque morceau de ville reçoit un index spatial au chargement.
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -53,7 +54,10 @@ const TEST_TILESET = new URLSearchParams( location.search ).get( 'tileset' );
 
 const EYE = 1.7; // hauteur des yeux (m)
 const WALK = 1.5, DRONE = 8; // vitesse ×1 : un piéton tranquille, un drone qui se promène
-const SPEEDS = [ 1, 2, 5, 10 ];
+const SPEEDS = [ 1, 2, 5, 10, 50, 100, 500, 1000, 10000, 100000, 1000000 ];
+// Au-delà de cette vitesse à pied, on ne peut plus tester chaque mur (et la ville n'a pas le temps
+// de se charger devant nous) : on file au ras des toits.
+const COLLIDE_MAX = 100;
 let speedMult = 1;
 const GRAVITY = 22, JUMP = 7;
 
@@ -148,7 +152,7 @@ function goLandscape() {
 // --------------------------------------------------------------------------------------------
 // Scène
 // --------------------------------------------------------------------------------------------
-let renderer, scene, camera, tiles, raycaster, weather, reorient, stib;
+let renderer, scene, camera, tiles, raycaster, weather, reorient, stib, gps;
 // Réglages par qualité : détail au loin (errorTarget, plus petit = plus net), rayon autour du joueur
 // chargé au détail maximal de Google, résolution max de l'écran.
 // far = distance de vue à pied (au-delà : brouillard) ; au loin on ne charge donc plus rien d'inutile.
@@ -249,6 +253,13 @@ function start( key, place, quality ) {
 		headingToYaw: ( h ) => northYaw - h,
 	}, ( msg ) => { if ( msg ) toast( msg ); } );
 
+	// carte GPS (même clé Google), une tape = téléportation
+	gps = new GpsMap( {
+		key: TEST_TILESET ? '' : key,
+		onTeleport: ( lat, lon ) => teleportTo( lat, lon ),
+		onOpen: () => { document.exitPointerLock?.(); keys.clear(); stick.x = stick.y = 0; },
+	} );
+
 	addEventListener( 'resize', onResize );
 	setupInput();
 	if ( ! TEST_TILESET && store.get( 'quartier.stibOn' ) !== '0' ) toggleStib( true );
@@ -336,6 +347,8 @@ function setupInput() {
 	const canvas = renderer.domElement;
 	addEventListener( 'keydown', ( e ) => {
 		if ( e.target.tagName === 'INPUT' ) return;
+		if ( e.code === 'KeyM' || ( e.code === 'Escape' && gps?.isOpen ) ) { gps.toggle(); return; }
+		if ( gps?.isOpen ) return; // la carte est ouverte : les touches sont pour elle
 		keys.add( e.code );
 		if ( e.code === 'KeyF' ) toggleFly();
 		if ( e.code === 'KeyH' && places.home ) teleport( places.home );
@@ -344,6 +357,8 @@ function setupInput() {
 		if ( e.code === 'KeyV' ) cycleSpeed();
 		const n = [ 'Digit1', 'Digit2', 'Digit3', 'Digit4' ].indexOf( e.code );
 		if ( n >= 0 ) setSpeed( SPEEDS[ n ] );
+		if ( [ 'Equal', 'NumpadAdd', 'BracketRight' ].includes( e.code ) ) stepSpeed( 1 );
+		if ( [ 'Minus', 'NumpadSubtract', 'Digit6', 'BracketLeft' ].includes( e.code ) ) stepSpeed( - 1 );
 		if ( e.code === 'Space' ) e.preventDefault();
 	} );
 	addEventListener( 'keyup', ( e ) => keys.delete( e.code ) );
@@ -370,7 +385,17 @@ function setupInput() {
 	};
 	tap( 'mode-walk', () => setFly( false ) );
 	tap( 'mode-drone', () => setFly( true ) );
-	for ( const m of SPEEDS ) tap( 'speed-' + m, () => setSpeed( m ) );
+	tap( 'speed-down', () => stepSpeed( - 1 ) );
+	tap( 'speed-up', () => stepSpeed( 1 ) );
+	tap( 'speed-val', () => { $( 'speeds' ).hidden = ! $( 'speeds' ).hidden; } );
+	for ( const m of SPEEDS ) {
+		const b = document.createElement( 'button' );
+		b.textContent = speedLabel( m );
+		b.dataset.m = m;
+		b.addEventListener( 'pointerdown', ( e ) => { e.preventDefault(); e.stopPropagation(); setSpeed( m ); $( 'speeds' ).hidden = true; } );
+		$( 'speeds' ).append( b );
+	}
+	tap( 'map-btn', () => gps.toggle() );
 	tap( 'stib-btn', () => toggleStib() );
 	$( 'goto-form' ).onsubmit = async ( e ) => {
 		e.preventDefault();
@@ -447,12 +472,37 @@ function setupTouch( canvas ) {
 }
 
 // --- vitesse -----------------------------------------------------------------------------------
+const fmt = ( n ) => n.toLocaleString( 'fr-BE' );
+function speedLabel( m ) { return '×' + ( m >= 1e6 ? '1 million' : fmt( m ) ); }
+function kmh( m ) {
+	const v = ( player.fly ? DRONE : WALK ) * m * 3.6;
+	return v < 10 ? v.toFixed( 1 ).replace( '.', ',' ) + ' km/h' : fmt( Math.round( v ) ) + ' km/h';
+}
 function setSpeed( m ) {
 	speedMult = m;
-	for ( const s of SPEEDS ) $( 'speed-' + s ).classList.toggle( 'on', s === m );
-	toast( 'Vitesse ×' + m + ( m === 1 ? ' (marche tranquille)' : '' ) );
+	$( 'speed-val' ).textContent = speedLabel( m );
+	$( 'speed-val' ).classList.toggle( 'on', m > 1 );
+	for ( const b of $( 'speeds' ).children ) b.classList.toggle( 'on', + b.dataset.m === m );
+	let note = m === 1 ? ' (marche tranquille)' : '';
+	if ( ! player.fly && m > COLLIDE_MAX ) note = ' — trop vite pour les murs : on survole les toits';
+	toast( speedLabel( m ) + ' · ' + kmh( m ) + note );
+}
+function stepSpeed( d ) {
+	const i = Math.max( 0, Math.min( SPEEDS.length - 1, SPEEDS.indexOf( speedMult ) + d ) );
+	setSpeed( SPEEDS[ i ] );
 }
 function cycleSpeed() { setSpeed( SPEEDS[ ( SPEEDS.indexOf( speedMult ) + 1 ) % SPEEDS.length ] ); }
+
+// Téléportation vers un point de la carte ; le nom de la rue arrive ensuite (OpenStreetMap).
+async function teleportTo( lat, lon ) {
+	teleport( { lat, lon, name: 'Point choisi sur la carte' } );
+	try {
+		const res = await fetch( `https://nominatim.openstreetmap.org/reverse?format=json&zoom=17&lat=${ lat }&lon=${ lon }`, { headers: { 'Accept-Language': 'fr' } } );
+		const a = ( await res.json() ).address || {};
+		const name = [ a.road || a.pedestrian || a.park || a.neighbourhood, a.city || a.town || a.village || a.municipality ].filter( Boolean ).join( ', ' );
+		if ( name ) $( 'place' ).textContent = name;
+	} catch { /* on garde « Point choisi » */ }
+}
 
 // --- panneau des lieux -------------------------------------------------------------------------
 function renderPlaces() {
@@ -646,14 +696,17 @@ function update( dt ) {
 		if ( k( 'KeyC' ) || k( 'ControlLeft' ) ) _total.y -= 1;
 		if ( _total.lengthSq() > 1 ) _total.normalize();
 		_total.multiplyScalar( speed * dt );
-		// le drone ne traverse pas les bâtiments : petits pas, et on glisse sur les murs
+		// le drone ne traverse pas les bâtiments : petits pas, et on glisse sur les murs.
+		// À très grande vitesse (plus de 40 pas par image), on vole simplement au-dessus.
 		const n = Math.ceil( _total.length() / 1.5 );
-		if ( n > 0 ) {
+		if ( n > 40 ) player.pos.add( _total );
+		else if ( n > 0 ) {
 			_sub.copy( _total ).divideScalar( n );
 			for ( let i = 0; i < n; i ++ ) if ( ! slideMove( player.pos, _sub, 1.2 ) ) break;
 		}
 		const g = groundAt( player.pos.x, player.pos.z, player.pos.y + 1, 600 );
 		if ( g !== null && player.pos.y < g + EYE ) player.pos.y = g + EYE;
+		recenterIfFar();
 		return;
 	}
 
@@ -684,6 +737,16 @@ function update( dt ) {
 	const speed = WALK * speedMult * ( fast ? 3 : 1 );
 	_total.copy( _move ).multiplyScalar( speed * dt );
 	const dist = _total.length();
+	if ( dist > 0 && speedMult > COLLIDE_MAX ) {
+		// très grande vitesse : on file au ras des toits, sans tester les murs
+		player.pos.add( _total );
+		const g = groundAt( player.pos.x, player.pos.z, player.pos.y + 400, 3000 );
+		if ( g !== null ) player.pos.y = THREE.MathUtils.damp( player.pos.y, g + EYE, 8, dt );
+		player.vel.y = 0;
+		player.onGround = true;
+		recenterIfFar();
+		return;
+	}
 	if ( dist > 0 ) {
 		const n = Math.ceil( dist / 0.35 );
 		_sub.copy( _total ).divideScalar( n );
@@ -716,6 +779,25 @@ function update( dt ) {
 	} else {
 		player.onGround = false;
 	}
+}
+
+// Quand on s'éloigne de plus de 3 km du centre du monde, le point où l'on est devient le nouveau
+// centre : on reste collé à la Terre (elle est ronde !) et la précision reste au centimètre,
+// même en traversant le pays à ×1 million.
+function recenterIfFar() {
+	if ( TEST_TILESET || Math.hypot( player.pos.x, player.pos.z ) < 3000 ) return;
+	tiles.group.updateMatrixWorld( true );
+	_inv.copy( tiles.group.matrixWorld ).invert();
+	_v.copy( player.pos ).applyMatrix4( _inv );
+	tiles.ellipsoid.getPositionToCartographic( _v, _carto );
+	const lat = _carto.lat, lon = _carto.lon, h = _carto.height;
+	reorient.lat = lat; reorient.lon = lon;
+	reorient.transformLatLonHeightToOrigin( lat, lon, 0 );
+	tiles.group.updateMatrixWorld( true );
+	latLonToLocal( lat / DEG, lon / DEG, h, player.pos );
+	player.vel.set( 0, 0, 0 );
+	stib?.reset();
+	weather.setLocation( lat / DEG, lon / DEG );
 }
 
 const _n = new THREE.Vector3(), _nm = new THREE.Matrix3();
@@ -790,7 +872,7 @@ function frame() {
 
 	hudTimer -= dt;
 	if ( hudTimer <= 0 ) {
-		hudTimer = 0.5;
+		hudTimer = 0.25;
 		const { lat, lon } = localToLatLon( player.pos );
 		$( 'coords' ).textContent = TEST_TILESET
 			? player.pos.toArray().map( ( v ) => v.toFixed( 1 ) ).join( ' ' )
@@ -803,6 +885,10 @@ function frame() {
 		$( 'attrib' ).textContent = attr ? 'Google · ' + attr : 'Google';
 		$( 'weather' ).textContent = weather.label();
 		$( 'fps' ).textContent = Math.round( perf.fps ) + ' FPS';
+		if ( ! TEST_TILESET ) {
+			gps.update( lat, lon, northYaw - player.yaw );
+			gps.setMiniZoom( Math.max( 5, Math.min( 17, Math.round( 17 - Math.log10( speedMult ) * 1.8 - ( player.fly ? 1 : 0 ) ) ) ) );
+		}
 		$( 'stib-btn' ).textContent = stib.enabled && stib.count() ? '🚋 STIB · ' + stib.count() : '🚋 STIB';
 	}
 }
