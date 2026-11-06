@@ -1,0 +1,282 @@
+// Ciel physique sous l'équateur (journées de 12 h, soleil au zénith), air humide et brumeux, cumulus,
+// averses tropicales l'après-midi avec orages, soleil/lune, étoiles, brouillard et éclairage d'ambiance.
+import * as THREE from "three";
+import { Sky } from "../vendor/addons/Sky.js";
+import { smoothstep, clamp, mulberry32 } from "./noise.js";
+import { vegUniforms } from "./trees.js";
+
+const C = (r, g, b) => new THREE.Color(r, g, b);
+const FOG_NIGHT = C(0.018, 0.026, 0.05);
+const FOG_DUSK = C(0.62, 0.42, 0.32);
+const FOG_DAY = C(0.66, 0.72, 0.73);    // air saturé d'humidité : perspective aérienne laiteuse
+const FOG_RAIN = C(0.42, 0.46, 0.5);
+const SUN_LOW = C(1.0, 0.55, 0.3);
+const SUN_HIGH = C(1.0, 0.96, 0.9);
+const MOON = C(0.55, 0.65, 0.95);
+
+export class Environment {
+  constructor(scene, renderer, quality) {
+    this.scene = scene;
+    this.renderer = renderer;
+    this.quality = quality;
+
+    this.sky = new Sky();
+    this.sky.scale.setScalar(10000);
+    this.sky.frustumCulled = false;
+    const u = this.sky.material.uniforms;
+    // Air tropical humide : ciel un peu voilé, halo large autour du soleil
+    u.turbidity.value = 4.2;
+    u.rayleigh.value = 1.6;
+    u.mieCoefficient.value = 0.0045;
+    u.mieDirectionalG.value = 0.86;
+    // Nuit : le shader d'origine éclaircit les tons sombres (ciel gris). On le fond vers un vrai ciel nocturne.
+    u.uDay = { value: 1 };
+    u.uHaze = { value: new THREE.Color() };
+    u.uRain = { value: 0 };
+    this.sky.material.fragmentShader = this.sky.material.fragmentShader
+      .replace("uniform vec3 up;", "uniform vec3 up;\nuniform float uDay;\nuniform vec3 uHaze;\nuniform float uRain;")
+      .replace("gl_FragColor = vec4( retColor, 1.0 );", `
+      vec3 nightSky = mix(vec3(0.010, 0.016, 0.035), vec3(0.0015, 0.003, 0.011), smoothstep(0.0, 0.6, direction.y));
+      // Journée : bleu plus profond vers le zénith, horizon clair mais pas laiteux
+      retColor = mix(retColor, retColor * vec3(0.62, 0.86, 1.32), uDay * smoothstep(-0.02, 0.45, direction.y));
+      // Horizon : se fond dans la brume de la perspective aérienne (pas de bande entre ciel et relief lointain)
+      retColor = mix(retColor, uHaze, (1.0 - smoothstep(-0.02, 0.1, direction.y)) * 0.55 * uDay);
+      // Averse : ciel bas et gris
+      retColor = mix(retColor, uHaze * 0.95, uRain * 0.88 * uDay);
+      gl_FragColor = vec4( mix(nightSky, retColor, uDay), 1.0 );`);
+    this.sky.material.needsUpdate = true;
+    scene.add(this.sky);
+
+    // Copie du ciel pour la carte d'environnement (reflets de l'eau, lumière ambiante).
+    this.envScene = new THREE.Scene();
+    const envSky = new THREE.Mesh(this.sky.geometry, this.sky.material);
+    envSky.scale.setScalar(50);
+    this.envScene.add(envSky);
+    this.pmrem = new THREE.PMREMGenerator(renderer);
+    this.envRT = null;
+    this.envTimer = 999;
+
+    this.sun = new THREE.DirectionalLight(0xffffff, 3);
+    this.sun.castShadow = quality.shadows;
+    if (quality.shadows) {
+      const s = quality.shadowSize;
+      this.sun.shadow.mapSize.set(s, s);
+      const r = quality.shadowRange;
+      Object.assign(this.sun.shadow.camera, { left: -r, right: r, top: r, bottom: -r, near: 1, far: 500 });
+      this.sun.shadow.bias = -0.0003;
+      this.sun.shadow.normalBias = 0.05;
+      this.sun.shadow.radius = quality.shadowSoft ?? 2;   // bords d'ombre adoucis
+      this.shadowTexel = (2 * r) / s;
+    }
+    scene.add(this.sun, this.sun.target);
+
+    this.hemi = new THREE.HemisphereLight(0xbfd8ff, 0x4a4030, 0.5);
+    scene.add(this.hemi);
+
+    // Brouillard calculé en post-traitement (perspective aérienne selon l'altitude) : pas de brouillard par matériau
+    scene.fog = null;
+    this.fogColor = FOG_DAY.clone();
+    this.fog = { color: this.fogColor, sun: new THREE.Color(), dens: 2.2e-4, fall: 1 / 380 };
+
+    this.buildStars();
+    this.buildMoon();
+    this.buildClouds();
+
+    this.sunDir = new THREE.Vector3();
+    this.lightDir = new THREE.Vector3();
+    this.dayFactor = 1;  // 1 = plein jour, 0 = nuit noire
+    this._m = new THREE.Matrix4();
+    this._mi = new THREE.Matrix4();
+    this._v = new THREE.Vector3();
+  }
+
+  buildStars() {
+    const rand = mulberry32(4242);
+    const n = 2600;
+    const pos = new Float32Array(n * 3);
+    const col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const u = rand() * 2 - 1, t = rand() * Math.PI * 2;
+      const s = Math.sqrt(1 - u * u);
+      pos[i * 3] = s * Math.cos(t) * 4000;
+      pos[i * 3 + 1] = Math.abs(u) * 4000 - 200;
+      pos[i * 3 + 2] = s * Math.sin(t) * 4000;
+      const b = 0.4 + rand() * 0.6;
+      const warm = rand();
+      col[i * 3] = b * (0.85 + warm * 0.15); col[i * 3 + 1] = b * 0.9; col[i * 3 + 2] = b * (1.0 - warm * 0.15);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    this.starMat = new THREE.PointsMaterial({ size: 1.6, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0, fog: false, depthWrite: false });
+    this.stars = new THREE.Points(g, this.starMat);
+    this.stars.frustumCulled = false;
+    this.stars.renderOrder = -1;
+    this.scene.add(this.stars);
+  }
+
+  buildMoon() {
+    const g = new THREE.CircleGeometry(90, 32);
+    this.moonMat = new THREE.MeshBasicMaterial({ color: 0xdfe6ff, fog: false, transparent: true, depthWrite: false });
+    this.moon = new THREE.Mesh(g, this.moonMat);
+    this.moon.frustumCulled = false;
+    this.scene.add(this.moon);
+  }
+
+  buildClouds() {
+    const g = new THREE.PlaneGeometry(9000, 9000, 1, 1);
+    g.rotateX(Math.PI / 2); // face vers le bas
+    this.cloudUniforms = { uTime: { value: 0 }, uLight: { value: new THREE.Color() }, uShade: { value: new THREE.Color() }, uCover: { value: 0.6 } };   // cumulus nombreux, qui s'épaississent avant l'averse
+    const mat = new THREE.ShaderMaterial({
+      uniforms: this.cloudUniforms,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
+      vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: `
+        uniform float uTime; uniform vec3 uLight; uniform vec3 uShade; uniform float uCover; varying vec3 vW;
+        float hash(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
+        float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+          return mix(mix(hash(i),hash(i+vec2(1,0)),f.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x), f.y); }
+        float fbm(vec2 p){ float s=0.0, a=0.5; for(int i=0;i<5;i++){ s+=a*vnoise(p); p*=2.03; a*=0.5; } return s; }
+        void main(){
+          vec2 p = vW.xz * 0.0011 + vec2(uTime * 0.004, uTime * 0.0015);
+          float n = fbm(p);
+          float d = smoothstep(uCover, uCover + 0.28, n);
+          float dist = length(vW.xz - cameraPosition.xz);
+          float fade = 1.0 - smoothstep(1200.0, 4200.0, dist);
+          float shade = smoothstep(uCover, uCover + 0.5, fbm(p + 0.03));
+          vec3 col = mix(uLight, uShade, shade * 0.75);
+          gl_FragColor = vec4(col, d * fade * 0.92);
+          #include <colorspace_fragment>
+        }`,
+    });
+    this.clouds = new THREE.Mesh(g, mat);
+    this.clouds.position.y = 700;
+    this.clouds.frustumCulled = false;
+    this.clouds.renderOrder = 1;
+    this.scene.add(this.clouds);
+  }
+
+  // Météo : averses tropicales, surtout l'après-midi ; orages par moments. this.rain : 0 (sec) à 1 (déluge).
+  updateWeather(hours, dt, gameDtHours) {
+    this.rain = this.rain ?? 0;
+    this.rainTarget = this.rainTarget ?? 0;
+    this.weatherT = (this.weatherT ?? 0.3) - gameDtHours;
+    if (this.weatherT <= 0) {
+      const afternoon = hours > 12.5 && hours < 18.5 ? 0.45 : hours > 2 && hours < 6 ? 0.15 : 0.1;
+      if (this.rainTarget > 0) { this.rainTarget = 0; this.weatherT = 1.5 + Math.random() * 4; }
+      else if (Math.random() < afternoon) { this.rainTarget = 0.35 + Math.random() * 0.65; this.weatherT = 0.4 + Math.random() * 1.4; }
+      else this.weatherT = 0.5 + Math.random() * 1.5;
+    }
+    if (this.forceRain != null) this.rainTarget = this.forceRain;
+    this.rain += (this.rainTarget - this.rain) * Math.min(1, dt * 0.08);
+    // éclairs pendant les grosses averses
+    this.flash = Math.max(0, (this.flash ?? 0) - dt * 4);
+    if (this.rain > 0.65 && Math.random() < dt * 0.05 * this.rain) { this.flash = 1; this.thunder = 1.2 + Math.random() * 3; }
+  }
+
+  // hours : 0..24
+  update(hours, dt, camPos, focus, gameDtHours = 0) {
+    this.updateWeather(hours, dt, gameDtHours);
+    const rain = this.rain;
+    // Équateur : jour de 6 h à 18 h, soleil presque au zénith à midi ; nuit de 18 h à 6 h.
+    const a = hours >= 6 && hours < 18 ? ((hours - 6) / 12) * Math.PI : Math.PI + (((hours - 18 + 24) % 24) / 12) * Math.PI;
+    const az = a;
+    const elev = Math.sin(a) * THREE.MathUtils.degToRad(a <= Math.PI ? 80 : 50);
+    this.sunDir.set(Math.cos(elev) * Math.cos(az), Math.sin(elev), Math.cos(elev) * Math.sin(az) * 0.6 + 0.12).normalize();
+    const sunY = this.sunDir.y;
+    const dayK = smoothstep(-0.12, 0.18, sunY);
+    this.dayFactor = dayK * (1 - rain * 0.35);
+    const duskK = (1 - smoothstep(0.02, 0.3, Math.abs(sunY))) * smoothstep(-0.18, 0.0, sunY) * (1 - rain * 0.7);
+
+    const u = this.sky.material.uniforms;
+    u.sunPosition.value.copy(this.sunDir);
+    u.rayleigh.value = 1.5 + duskK * 1.3;
+    u.uDay.value = smoothstep(-0.16, 0.04, sunY);
+    u.uRain.value = rain;
+
+    // Lumière principale : soleil le jour, lune la nuit.
+    const moonDir = this._v.copy(this.sunDir).negate();
+    moonDir.y = Math.abs(moonDir.y) * 0.8 + 0.25; moonDir.normalize();
+    const sunK = smoothstep(-0.02, 0.12, sunY);
+    if (sunK > 0.01) {
+      this.lightDir.copy(this.sunDir);
+      this.sun.color.copy(SUN_LOW).lerp(SUN_HIGH, smoothstep(0.05, 0.45, sunY));
+      this.sun.intensity = 3.9 * sunK * (1 - rain * 0.82);
+    } else {
+      this.lightDir.copy(moonDir);
+      this.sun.color.copy(MOON);
+      this.sun.intensity = 0.45 * (1 - smoothstep(-0.12, -0.02, sunY));
+    }
+
+    // Infos pour les rayons de soleil et la translucidité des feuilles
+    this.sunInfo = this.sunInfo || { dir: this.sunDir, color: new THREE.Color(), strength: 0, warm: 0 };
+    this.sunInfo.color.copy(SUN_LOW).lerp(SUN_HIGH, smoothstep(0.05, 0.5, sunY));
+    this.sunInfo.strength = sunK * (0.35 + duskK * 1.0) * (1 - rain * 0.9);
+    this.sunInfo.warm = duskK;
+    // Brume du matin dans les vallées (forte à l'aube, disparaît vers 10 h), un peu le soir et la nuit
+    // Brume dense sur la forêt et le fleuve à l'aube, après la pluie et la nuit (air saturé)
+    const morning = smoothstep(4.5, 6.0, hours) * (1 - smoothstep(8.0, 10.5, hours));
+    const evening = smoothstep(17.5, 19.5, hours) * 0.45;
+    const night = (hours < 4.5 || hours > 19.5) ? 0.45 : 0;
+    this.sunInfo.mist = Math.max(morning * 1.0, evening, night, rain * 0.8);
+    this.sunInfo.mistColor = this.sunInfo.mistColor || new THREE.Color();
+    this.sunInfo.mistColor.copy(this.fogColor).multiplyScalar(1.15).lerp(this.sunInfo.color, 0.12 * sunK);
+    this.sunInfo.fog = this.fog;
+    vegUniforms.uSunDir.value.copy(this.lightDir);
+    vegUniforms.uSunCol.value.copy(this.sun.color).multiplyScalar(this.sun.intensity * 0.3);
+
+    // Lumière du ciel bleutée dans les ombres, rebond chaud du sol
+    this.hemi.intensity = (0.14 + 0.62 * dayK) * (1 - rain * 0.3) + (this.flash ?? 0) * 2.5;
+    // lumière du ciel filtrée par le feuillage : verdâtre et douce ; rebond brun-vert du sol
+    this.hemi.color.setRGB(0.25 + 0.45 * dayK, 0.3 + 0.52 * dayK, 0.3 + 0.34 * dayK);
+    this.hemi.groundColor.setRGB(0.06 + 0.2 * dayK, 0.07 + 0.22 * dayK, 0.05 + 0.08 * dayK);
+
+    const fc = this.fogColor;
+    fc.copy(FOG_NIGHT).lerp(FOG_DAY, dayK).lerp(FOG_DUSK, duskK * 0.7).lerp(FOG_RAIN.clone().multiplyScalar(0.15 + 0.85 * dayK), rain * 0.85);
+    u.uHaze.value.copy(fc).multiplyScalar(1.05);
+    // lumière diffusée vers le soleil (halo chaud dans la brume)
+    this.fog.sun.copy(fc).lerp(this.sunInfo.color, 0.55 * sunK).multiplyScalar(1 + 0.6 * sunK);
+    this.fog.dens = (2.0e-4 + 1.2e-4 * duskK + 1.0e-4 * (1 - dayK) + 9e-4 * rain) * (this.fogScale ?? 1);
+    this.renderer.toneMappingExposure = 0.62 + (1 - dayK) * 0.14;
+
+    this.starMat.opacity = 1 - smoothstep(-0.2, 0.02, sunY);
+    this.stars.position.copy(camPos);
+    this.stars.rotation.y = hours * 0.02;
+    this.moon.position.copy(camPos).addScaledVector(moonDir, 3500);
+    this.moon.lookAt(camPos);
+    this.moonMat.opacity = 1 - smoothstep(-0.05, 0.15, sunY);
+
+    const cu = this.cloudUniforms;
+    cu.uTime.value += dt;
+    cu.uLight.value.setRGB(0.08, 0.09, 0.13).lerp(C(1, 1, 1), dayK).lerp(C(1.0, 0.62, 0.45), duskK * 0.8).multiplyScalar(1 - rain * 0.55);
+    cu.uShade.value.copy(cu.uLight.value).multiplyScalar(0.55 - rain * 0.2);
+    cu.uCover.value = 0.6 - rain * 0.42;
+    this.clouds.position.x = camPos.x; this.clouds.position.z = camPos.z;
+
+    // Ombres : la caméra d'ombre suit le joueur, alignée sur les texels pour éviter le scintillement.
+    const center = this._v.copy(focus);
+    if (this.quality.shadows) {
+      this._m.lookAt(new THREE.Vector3(), this.lightDir.clone().negate(), new THREE.Vector3(0, 1, 0));
+      this._mi.copy(this._m).invert();
+      center.applyMatrix4(this._mi);
+      center.x = Math.round(center.x / this.shadowTexel) * this.shadowTexel;
+      center.y = Math.round(center.y / this.shadowTexel) * this.shadowTexel;
+      center.applyMatrix4(this._m);
+    }
+    this.sun.target.position.copy(center);
+    this.sun.position.copy(center).addScaledVector(this.lightDir, 250);
+
+    // Carte d'environnement recalculée de temps en temps (coûteux).
+    this.envTimer += dt;
+    if (this.envTimer > this.quality.envInterval) {
+      this.envTimer = 0;
+      const old = this.envRT;
+      this.envRT = this.pmrem.fromScene(this.envScene, 0, 0.1, 1000);
+      this.scene.environment = this.envRT.texture;
+      this.scene.environmentIntensity = 0.55;
+      if (old) old.dispose();
+    }
+  }
+
+  forceEnvUpdate() { this.envTimer = 1e9; }
+}

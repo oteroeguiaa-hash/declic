@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Selva : survie en Amazonie</title>
+<meta name="description" content="Jeu de survie en 3D au cœur de la forêt amazonienne : fleuve, igarapés, forêt inondée, sumaúmas géantes, jaguars, caïmans, pluies tropicales, fièvre et serpents venimeux.">
+<meta name="theme-color" content="#0b140c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<script>
+  // /amazonie → /amazonie/ pour que les chemins relatifs et le service worker fonctionnent.
+  if (location.pathname === "/amazonie") location.replace("/amazonie/" + location.search + location.hash);
+</script>
+<style>
+:root {
+  --ink: #f3efe6;
+  --muted: #b9b3a5;
+  --panel: rgba(16, 20, 17, 0.78);
+  --panel-solid: #121713;
+  --line: rgba(243, 239, 230, 0.14);
+  --accent: #e0a03a;
+  --health: #d9483b;
+  --food: #d98a3b;
+  --water: #3b9ad9;
+  --stamina: #e8d14a;
+  --warmth: #e86a4a;
+  --bg: #0b140c;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); font: 15px/1.4 "Segoe UI", system-ui, -apple-system, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
+canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+.hidden { display: none !important; }
+button { font: inherit; color: inherit; cursor: pointer; }
+
+/* Écrans */
+.screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 30; padding: 16px; }
+.screen.dim { background: radial-gradient(ellipse at center, rgba(8,12,9,0.55), rgba(8,12,9,0.92)); backdrop-filter: blur(3px); }
+.card { width: min(440px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 28px 24px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.5); max-height: calc(100vh - 32px); overflow: auto; }
+h1.logo { font: 600 56px/1 Georgia, "Times New Roman", serif; letter-spacing: 0.02em; margin: 0 0 6px; color: #f6efe0; text-shadow: 0 2px 20px rgba(233,162,59,0.35); }
+.tag { color: var(--muted); margin: 0 0 22px; }
+.btn { display: block; width: 100%; padding: 14px 18px; margin: 10px 0 0; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.06); font-weight: 600; font-size: 16px; transition: background .15s, transform .1s; }
+.btn:hover { background: rgba(255,255,255,0.12); }
+.btn:active { transform: scale(0.98); }
+.btn.primary { background: var(--accent); color: #1c1307; border-color: transparent; }
+.btn.primary:hover { background: #f2b456; }
+.btn.small { display: inline-block; width: auto; padding: 8px 14px; font-size: 14px; margin: 0; }
+.help { text-align: left; color: var(--muted); font-size: 13px; margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+.help kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 5px; background: rgba(255,255,255,0.1); border: 1px solid var(--line); color: var(--ink); font: 12px ui-monospace, monospace; text-align: center; }
+.help div { margin: 4px 0; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0; text-align: left; }
+.row select, .row input[type=range] { flex: 0 0 52%; }
+select { background: var(--panel-solid); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 7px; font: inherit; }
+.loadbar { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.1); overflow: hidden; margin-top: 18px; }
+.loadbar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+#loadText { color: var(--muted); font-size: 13px; margin-top: 10px; }
+
+/* Accueil */
+.home { position: fixed; inset: 0; z-index: 30; display: flex; align-items: stretch; background: linear-gradient(90deg, rgba(8,12,9,0.88) 0%, rgba(8,12,9,0.6) 38%, rgba(8,12,9,0) 70%); }
+.homepanel { width: min(420px, 100%); padding: max(28px, env(safe-area-inset-top)) 28px 24px max(32px, env(safe-area-inset-left)); display: flex; flex-direction: column; justify-content: center; }
+.homepanel h1.logo { font-size: 68px; text-align: left; }
+.homepanel .tag { text-align: left; }
+.homenav .btn { text-align: left; padding-left: 20px; }
+.homeinfo { margin-top: 18px; color: var(--muted); font-size: 13px; }
+.card.wide { width: min(620px, 100%); text-align: left; }
+.ptitle { margin: 0 0 14px; font: 600 26px Georgia, serif; }
+.diffs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 6px 0 12px; }
+.diff { text-align: left; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.04); }
+.diff b { display: block; margin-bottom: 4px; }
+.diff span { font-size: 12px; color: var(--muted); }
+.diff.sel { border-color: var(--accent); background: rgba(233,162,59,0.12); }
+input[type=text] { background: var(--panel-solid); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font: inherit; flex: 0 0 52%; min-width: 0; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.tabs button { padding: 8px 12px; border-radius: 99px; border: 1px solid var(--line); background: transparent; font-size: 14px; }
+.tabs button.sel { background: var(--accent); color: #1c1307; border-color: transparent; font-weight: 600; }
+.row small { color: var(--muted); }
+.row .val { min-width: 44px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+.row .ctl { flex: 0 0 52%; display: flex; align-items: center; gap: 8px; }
+.row .ctl select, .row .ctl input[type=range] { flex: 1; min-width: 0; }
+.toggle { position: relative; width: 46px; height: 26px; border-radius: 99px; border: 1px solid var(--line); background: rgba(255,255,255,0.1); flex: 0 0 46px; margin-left: auto; }
+.toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--ink); transition: transform .15s; }
+.toggle.on { background: var(--accent); }
+.toggle.on::after { transform: translateX(20px); background: #1c1307; }
+.reloadnote { margin-top: 10px; font-size: 13px; }
+.howto ol, .howto ul { padding-left: 20px; color: var(--ink); }
+.howto li { margin: 6px 0; }
+.howto h3 { margin: 16px 0 4px; font: 600 17px Georgia, serif; color: var(--accent); }
+.rgroup { margin: 14px 0 8px; font: 600 14px system-ui; color: var(--accent); text-transform: uppercase; letter-spacing: .05em; }
+.rgroup:first-child { margin-top: 0; }
+.recipe.done { opacity: 0.55; }
+.slot em { position: absolute; bottom: 1px; left: 0; right: 0; text-align: center; font: 600 9px system-ui; font-style: normal; text-transform: uppercase; }
+.slot em.tag-bois { color: #d9b07a; }
+.slot em.tag-pierre { color: #c9c9c9; }
+#hud { zoom: var(--ui, 1); }
+body.nocompass #compass, body.nocross #crosshair { display: none; }
+@media (max-width: 700px), (max-height: 500px) {
+  .homepanel h1.logo { font-size: 48px; }
+  .diffs { grid-template-columns: 1fr; }
+  .home { background: linear-gradient(90deg, rgba(8,12,9,0.9) 0%, rgba(8,12,9,0.65) 55%, rgba(8,12,9,0.1) 85%); }
+  .homepanel { padding-top: 16px; padding-bottom: 16px; overflow: auto; }
+  .homenav .btn { padding: 10px 16px; margin-top: 8px; }
+  .quick { margin-top: 10px; padding-top: 10px; gap: 6px; }
+  .seg button { padding: 5px 4px; }
+}
+
+/* HUD */
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+#crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(255,255,255,0.85); box-shadow: 0 0 0 1.5px rgba(0,0,0,0.35); transition: transform .1s; }
+#crosshair.active { transform: scale(1.8); background: var(--accent); }
+#target { position: absolute; left: 50%; top: calc(50% + 22px); transform: translateX(-50%); text-align: center; text-shadow: 0 1px 4px rgba(0,0,0,0.9); font-size: 14px; white-space: nowrap; }
+#target b { display: block; font-size: 15px; }
+#target small { color: #e8dcc0; }
+#target .hpbar { width: 90px; height: 4px; margin: 5px auto 0; background: rgba(0,0,0,0.5); border-radius: 2px; overflow: hidden; }
+#target .hpbar i { display: block; height: 100%; background: #e8dcc0; }
+#stats { position: absolute; left: max(16px, env(safe-area-inset-left)); bottom: max(16px, env(safe-area-inset-bottom)); display: grid; gap: 7px; width: 190px; }
+.stat { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.stat span { width: 20px; text-align: center; filter: drop-shadow(0 1px 2px rgba(0,0,0,.8)); }
+.stat .bar { flex: 1; height: 9px; border-radius: 5px; background: rgba(0,0,0,0.45); overflow: hidden; border: 1px solid rgba(255,255,255,0.12); }
+.stat .bar i { display: block; height: 100%; width: 100%; transition: width .3s; }
+.stat.low .bar { animation: pulse 1s infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 2px rgba(217,72,59,0.7); } }
+#clock { position: absolute; top: max(14px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line); border-radius: 99px; padding: 6px 16px; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#compass { position: absolute; top: calc(max(14px, env(safe-area-inset-top)) + 40px); left: 50%; transform: translateX(-50%); width: 260px; height: 20px; overflow: hidden; mask-image: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent); -webkit-mask-image: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent); font-size: 12px; color: var(--muted); }
+#compass div { position: absolute; top: 0; white-space: nowrap; }
+#hotbar { position: absolute; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); display: flex; gap: 6px; pointer-events: auto; }
+.slot { cursor: pointer; touch-action: manipulation; }
+.slot { width: 52px; height: 52px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); display: grid; place-items: center; font-size: 24px; position: relative; }
+.slot.sel { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(233,162,59,0.4); }
+.slot kbd { position: absolute; top: 2px; left: 5px; font-size: 10px; color: var(--muted); font-family: ui-monospace, monospace; }
+#toasts { position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: 90px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.toast { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; font-size: 14px; animation: tin .25s ease-out; }
+.toast.warn { border-color: rgba(217,72,59,0.6); }
+@keyframes tin { from { opacity: 0; transform: translateX(20px); } }
+#hurt { position: fixed; inset: 0; pointer-events: none; z-index: 9; background: radial-gradient(ellipse at center, transparent 45%, rgba(160,0,0,0.65)); opacity: 0; transition: opacity .15s; }
+#fps { position: absolute; top: 10px; right: 180px; font: 12px ui-monospace, monospace; color: var(--muted); }
+#hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); margin-top: -80px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 16px; font-size: 14px; max-width: min(90vw, 460px); text-align: center; transition: opacity .4s; }
+
+/* Sac */
+#bag { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(6,9,7,0.55); backdrop-filter: blur(2px); }
+#minimap { position: absolute; top: max(14px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); width: 150px; height: 150px; border-radius: 50%; box-shadow: 0 4px 16px rgba(0,0,0,0.45); }
+body.touch #minimap { top: calc(max(14px, env(safe-area-inset-top)) + 62px); width: 104px; height: 104px; }
+#btnMap { right: calc(max(16px, env(safe-area-inset-right)) + 180px); top: max(14px, env(safe-area-inset-top)); width: 50px; height: 50px; font-size: 22px; }
+#mapFull { position: fixed; inset: 0; z-index: 22; display: flex; align-items: center; justify-content: center; padding: 12px; background: rgba(6,9,7,0.7); }
+.mapbox { background: var(--panel-solid); border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px; max-height: calc(100vh - 24px); overflow: auto; }
+.mapbox h2 { margin: 0 0 10px; font: 600 20px Georgia, serif; }
+#mapCanvas { width: min(720px, 86vw, calc(100vh - 140px)); height: auto; aspect-ratio: 1; border-radius: 10px; display: block; }
+#storage { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(6,9,7,0.55); }
+#storage .wrap { width: min(760px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 18px; padding: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+#storage h2 { margin: 0 0 12px; font: 600 20px Georgia, serif; }
+#arcade { position: fixed; inset: 0; z-index: 25; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.75); padding: 16px; }
+.arcbox { background: #0a0f0b; border: 3px solid #2a2e30; border-radius: 18px; padding: 14px; text-align: center; box-shadow: 0 0 40px rgba(120,220,140,0.15); }
+#arcadeCanvas { width: min(400px, 80vw, 70vh); height: auto; aspect-ratio: 1; border-radius: 8px; display: block; margin: 0 auto 8px; touch-action: none; }
+#buildMenu { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(6,9,7,0.55); backdrop-filter: blur(2px); }
+#buildMenu .wrap { width: min(620px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
+#buildMenu h2 { margin: 0 0 8px; font: 600 20px Georgia, serif; }
+#bag .wrap { width: min(860px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 18px; padding: 18px; display: grid; grid-template-columns: 1fr 1.2fr; gap: 18px; }
+#bag h2 { margin: 0 0 12px; font: 600 20px Georgia, serif; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
+.item { background: rgba(255,255,255,0.05); border: 1px solid var(--line); border-radius: 12px; padding: 8px 4px; text-align: center; font-size: 12px; position: relative; }
+.item .ic { font-size: 26px; display: block; }
+.item .n { position: absolute; top: 4px; right: 7px; font-weight: 700; font-size: 12px; }
+.item.use { cursor: pointer; border-color: rgba(233,162,59,0.5); }
+.item.use:hover { background: rgba(233,162,59,0.12); }
+.empty { color: var(--muted); font-size: 14px; }
+.recipe { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; background: rgba(255,255,255,0.03); }
+.recipe .ic { font-size: 28px; width: 36px; text-align: center; }
+.recipe .info { flex: 1; min-width: 0; }
+.recipe .info b { display: block; }
+.recipe .needs { font-size: 12px; color: var(--muted); }
+.recipe .needs .ok { color: #9fd38a; }
+.recipe .needs .ko { color: #e58b80; }
+.recipe .desc { font-size: 12px; color: var(--muted); }
+.recipe button:disabled { opacity: 0.35; cursor: default; }
+.closebag { position: sticky; top: 0; float: right; }
+
+/* Tactile */
+#touchArea { position: fixed; inset: 0; z-index: 5; display: none; }
+#touchUI { position: fixed; inset: 0; z-index: 11; pointer-events: none; display: none; }
+body.touch.playing #touchArea, body.touch.playing #touchUI { display: block; }
+#stick { position: fixed; width: 130px; height: 130px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.25); background: rgba(0,0,0,0.15); left: 40px; bottom: 30px; opacity: 0.45; }
+#stick.on { opacity: 1; }
+#knob { position: absolute; left: 40px; top: 40px; width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,0.45); }
+.tbtn { position: fixed; pointer-events: auto; width: 64px; height: 64px; border-radius: 50%; background: rgba(16,20,17,0.6); border: 1.5px solid rgba(255,255,255,0.3); display: grid; place-items: center; font-size: 26px; }
+.tbtn.down { background: rgba(233,162,59,0.6); }
+#btnAttack { right: max(28px, env(safe-area-inset-right)); bottom: 110px; width: 82px; height: 82px; font-size: 32px; }
+#btnUse { right: calc(max(28px, env(safe-area-inset-right)) + 96px); bottom: 70px; }
+#btnJump { right: max(28px, env(safe-area-inset-right)); bottom: 24px; width: 58px; height: 58px; }
+#btnBag { right: max(16px, env(safe-area-inset-right)); top: max(14px, env(safe-area-inset-top)); width: 50px; height: 50px; font-size: 22px; }
+#btnBuild { right: calc(max(16px, env(safe-area-inset-right)) + 120px); top: max(14px, env(safe-area-inset-top)); width: 50px; height: 50px; font-size: 22px; }
+#btnTool { right: calc(max(16px, env(safe-area-inset-right)) + 60px); top: max(14px, env(safe-area-inset-top)); width: 50px; height: 50px; font-size: 22px; }
+#btnPause { left: max(16px, env(safe-area-inset-left)); top: max(14px, env(safe-area-inset-top)); width: 44px; height: 44px; font-size: 18px; }
+body.touch #stats { width: 150px; bottom: auto; top: calc(max(14px, env(safe-area-inset-top)) + 56px); }
+body.touch #hotbar { bottom: max(10px, env(safe-area-inset-bottom)); }
+body.touch .slot { width: 44px; height: 44px; font-size: 20px; }
+body.touch #toasts { bottom: auto; top: 76px; right: 132px; }
+body.touch #compass { display: none; }
+@media (max-width: 700px) {
+  #bag .wrap, #storage .wrap { grid-template-columns: 1fr; }
+  h1.logo { font-size: 44px; }
+}
+/* Écran « mettez votre téléphone en horizontal » : affiché avant tout, tant que le téléphone est vertical */
+@media (orientation: portrait) and (pointer: coarse) {
+  #rotate { display: flex !important; }
+}
+#rotate { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center; text-align: center; padding: 32px 24px; color: var(--ink); flex-direction: column; gap: 18px;
+  background: radial-gradient(ellipse at 50% 35%, rgba(233,162,59,0.16), transparent 60%), linear-gradient(180deg, #0f1a13, #070b08); }
+#rotate .phone { width: 64px; height: 108px; border: 3px solid var(--ink); border-radius: 14px; position: relative; animation: turn 2.4s ease-in-out infinite; box-shadow: 0 0 30px rgba(233,162,59,0.25); }
+#rotate .phone::after { content: ""; position: absolute; left: 50%; bottom: 7px; width: 14px; height: 3px; margin-left: -7px; border-radius: 2px; background: var(--ink); opacity: .6; }
+#rotate .phone::before { content: ""; position: absolute; inset: 9px 6px 16px; border-radius: 6px; background: linear-gradient(160deg, #5c8a3c, #2d5a2a 55%, #2b6a86); }
+@keyframes turn { 0%, 20% { transform: rotate(0); } 55%, 80% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
+#rotate h2 { margin: 6px 0 0; font: 600 26px/1.2 Georgia, serif; }
+#rotate p { margin: 0; color: var(--muted); font-size: 15px; max-width: 320px; }
+#rotate .logo { font: 600 20px Georgia, serif; color: var(--accent); letter-spacing: .08em; text-transform: uppercase; opacity: .9; }
+/* Réglages rapides sur l'accueil */
+.quick { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
+.quick .ql { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.seg { display: flex; gap: 4px; background: rgba(255,255,255,0.05); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+.seg button { flex: 1; padding: 7px 4px; border: 0; border-radius: 7px; background: transparent; font-size: 13px; }
+.seg button.sel { background: var(--accent); color: #1c1307; font-weight: 600; }
+.quick .qrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hurt"></div>
+
+<div id="hud" class="hidden">
+  <div id="crosshair"></div>
+  <div id="target"></div>
+  <div id="clock">Jour 1 · 08:00</div>
+  <div id="compass"><div id="compassStrip"></div></div>
+  <div id="stats">
+    <div class="stat" id="sHealth"><span>❤️</span><div class="bar"><i style="background:var(--health)"></i></div></div>
+    <div class="stat" id="sFood"><span>🍖</span><div class="bar"><i style="background:var(--food)"></i></div></div>
+    <div class="stat" id="sWater"><span>💧</span><div class="bar"><i style="background:var(--water)"></i></div></div>
+    <div class="stat" id="sStamina"><span>⚡</span><div class="bar"><i style="background:var(--stamina)"></i></div></div>
+    <div class="stat" id="sWarmth"><span>🌡️</span><div class="bar"><i style="background:var(--warmth)"></i></div></div>
+    <div class="stat" id="sAir" style="display:none"><span>🫧</span><div class="bar"><i style="background:#8fdcf0"></i></div></div>
+    <div class="stat" id="sWet" style="display:none" title="Mouillé"><span>🌧️</span><div class="bar"><i style="background:#6a9ac8"></i></div></div>
+    <div class="stat" id="sSick" style="display:none" title="Fièvre"><span>🤒</span><div class="bar"><i style="background:#b8c83a"></i></div></div>
+    <div class="stat" id="sVenom" style="display:none" title="Venin"><span>🐍</span><div class="bar"><i style="background:#9a4ad0"></i></div></div>
+  </div>
+  <div id="hotbar"></div>
+  <div id="toasts"></div>
+  <div id="hint" class="hidden"></div>
+  <div id="fps" class="hidden"></div>
+  <canvas id="minimap" width="160" height="160"></canvas>
+</div>
+
+<div id="touchArea"></div>
+<div id="touchUI">
+  <div id="stick"><div id="knob"></div></div>
+  <button class="tbtn" id="btnAttack" aria-label="Frapper">✊</button>
+  <button class="tbtn" id="btnUse" aria-label="Action">✋</button>
+  <button class="tbtn" id="btnJump" aria-label="Sauter">⤒</button>
+  <button class="tbtn" id="btnBag" aria-label="Sac">🎒</button>
+  <button class="tbtn" id="btnTool" aria-label="Changer d'outil">🔁</button>
+  <button class="tbtn" id="btnBuild" aria-label="Construire">🔨</button>
+  <button class="tbtn" id="btnMap" aria-label="Carte">🗺️</button>
+  <button class="tbtn" id="btnPause" aria-label="Pause">⏸</button>
+</div>
+
+<div id="mapFull" class="hidden">
+  <div class="mapbox">
+    <button class="btn small closebag" id="closeMap">Fermer</button>
+    <h2>Carte de l'île du fleuve</h2>
+    <canvas id="mapCanvas" width="720" height="720"></canvas>
+    <p class="empty">🔺 toi · 🔥 feux · ⬜ abris · 🟧 tes constructions · ▢ point de réapparition · quadrillage de 200 m</p>
+  </div>
+</div>
+
+<div id="buildMenu" class="hidden">
+  <div class="wrap one">
+    <div>
+      <button class="btn small closebag" id="closeBuild">Fermer</button>
+      <h2>Construire</h2>
+      <p class="empty" style="margin:0 0 10px">Les pièces s'accrochent automatiquement aux autres (fondations en grille de 3 m, murs sur les bords, étages sur les murs). Démonter rend toutes les ressources.</p>
+      <div id="buildList"></div>
+    </div>
+  </div>
+</div>
+
+<div id="storage" class="hidden">
+  <div class="wrap">
+    <div>
+      <h2>Ton sac</h2>
+      <div class="grid" id="storageBag"></div>
+      <label class="empty" style="display:block;margin-top:10px"><input type="checkbox" id="storageAll"> Déplacer toute la pile d'un coup</label>
+    </div>
+    <div>
+      <button class="btn small closebag" id="closeStorage">Fermer</button>
+      <h2 id="storageTitle">Rangement</h2>
+      <div class="grid" id="storageBox"></div>
+    </div>
+  </div>
+</div>
+
+<div id="arcade" class="hidden">
+  <div class="arcbox">
+    <canvas id="arcadeCanvas" width="400" height="400"></canvas>
+    <p class="empty">Flèches ou ZQSD (glisser sur téléphone) · Échap pour quitter</p>
+    <button class="btn small" id="arcadeClose">Éteindre la console</button>
+  </div>
+</div>
+
+<div id="bag" class="hidden">
+  <div class="wrap">
+    <div>
+      <h2>Sac</h2>
+      <div class="grid" id="bagItems"></div>
+      <p class="empty" style="margin-top:12px">Touche un aliment pour le manger.</p>
+    </div>
+    <div>
+      <button class="btn small closebag" id="closeBag">Fermer</button>
+      <h2>Fabriquer</h2>
+      <div id="recipes"></div>
+    </div>
+  </div>
+</div>
+
+<div id="loading" class="screen dim">
+  <div class="card">
+    <h1 class="logo">Selva</h1>
+    <p class="tag">L'Amazonie. Seul. Survis.</p>
+    <div class="loadbar"><i id="loadBar"></i></div>
+    <div id="loadText">Préparation…</div>
+  </div>
+</div>
+
+<div id="menu" class="home hidden">
+  <div class="homepanel">
+    <h1 class="logo">Selva</h1>
+    <p class="tag" id="menuTag">Perdu sur une île du fleuve Amazone, au cœur de la forêt. Survis.</p>
+    <nav class="homenav">
+      <button class="btn primary" id="btnPlay">Jouer</button>
+      <button class="btn" id="btnNew">Nouvelle partie</button>
+      <button class="btn" id="btnSettings">Réglages</button>
+      <button class="btn" id="btnHelp">Comment jouer</button>
+    </nav>
+    <div class="quick" id="quick">
+      <div class="ql">Graphismes</div>
+      <div class="seg" id="qQuality"><button data-v="auto">Auto</button><button data-v="low">Rapide</button><button data-v="medium">Équilibré</button><button data-v="high">Beau</button></div>
+      <div class="qrow"><span>Moment de la journée</span><div class="seg" id="qTime" style="flex:0 0 60%"><button data-v="6.3">Aube</button><button data-v="11">Jour</button><button data-v="17.4">Soir</button></div></div>
+      <div class="qrow"><span>Son</span><button class="toggle" id="qSound" aria-label="Son"></button></div>
+      <button class="btn primary hidden" id="qReload">Appliquer (redémarre le jeu)</button>
+    </div>
+    <div class="homeinfo" id="homeInfo"></div>
+  </div>
+</div>
+
+<div id="newgame" class="screen dim hidden">
+  <div class="card wide">
+    <h2 class="ptitle">Nouvelle partie</h2>
+    <p class="tag" id="newWarn"></p>
+    <div class="diffs" id="diffs">
+      <button class="diff" data-d="paisible"><b>🌿 Paisible</b><span>Pas de jaguar ni de caïman. Faim, soif et fièvre plus rares. Pour explorer.</span></button>
+      <button class="diff" data-d="normal"><b>🌴 Normal</b><span>L'expérience prévue : la forêt est dangereuse, surtout la nuit.</span></button>
+      <button class="diff" data-d="difficile"><b>🐆 Difficile</b><span>Plus de prédateurs, coups plus forts, faim et fièvre plus fréquentes.</span></button>
+    </div>
+    <div class="row"><label for="ngDay">Durée d'une journée</label>
+      <select id="ngDay"><option value="10">10 minutes</option><option value="16">16 minutes</option><option value="24">24 minutes</option><option value="40">40 minutes</option></select></div>
+    <div class="row"><label for="ngSeed">Graine de l'île <small>(vide = au hasard)</small></label><input id="ngSeed" type="text" inputmode="numeric" maxlength="9" placeholder="ex. 123456"></div>
+    <button class="btn primary" id="ngStart">Créer l'île</button>
+    <button class="btn" data-back>Retour</button>
+  </div>
+</div>
+
+<div id="settings" class="screen dim hidden">
+  <div class="card wide">
+    <h2 class="ptitle">Réglages</h2>
+    <div class="tabs" id="setTabs"></div>
+    <div id="setBody"></div>
+    <p class="tag reloadnote hidden" id="reloadNote">Certains changements s'appliquent au redémarrage du jeu.</p>
+    <button class="btn primary hidden" id="btnReload">Redémarrer maintenant</button>
+    <button class="btn" data-back>Retour</button>
+  </div>
+</div>
+
+<div id="howto" class="screen dim hidden">
+  <div class="card wide howto">
+    <h2 class="ptitle">Comment jouer</h2>
+    <h3>Les premiers pas</h3>
+    <ol>
+      <li><b>Ramasse</b> des branches 🥢 et des cailloux 🪨 au sol. Frapper un arbre à mains nues fait aussi tomber des branches.</li>
+      <li><b>Cueille</b> fougères, héliconias et camu-camu 🍒 pour la fibre 🌾 et les fruits. Les <b>palmiers açaí</b> donnent des baies 🫐, les <b>castanheiras</b> des noix du Brésil 🌰.</li>
+      <li>Ouvre le <b>sac</b> et fabrique une <b>hache, une pioche et une épée en bois</b>, puis une <b>machette</b> 🔪 en pierre.</li>
+      <li>Les rochers sont rares : cherche les affleurements de latérite sur les talus et au bord des igarapés.</li>
+      <li>Avant la nuit (elle tombe d'un coup vers 18 h) : un <b>feu de camp</b>. Il cuit la viande, fait bouillir l'eau, sèche, chasse les moustiques et tient le jaguar à distance.</li>
+      <li>Plus tard : <b>gourde</b>, <b>lance</b>, <b>pirogue</b>, <b>tapiri</b> (abri en palmes) pour dormir, <b>cape de pluie</b> en palmes tressées.</li>
+    </ol>
+    <h3>Survivre en Amazonie</h3>
+    <ul>
+      <li>💧 <b>L'eau du fleuve rend malade</b> (fièvre 🤒) : fais bouillir l'eau de la gourde près d'un feu, ou laisse la <b>pluie</b> la remplir (eau saine).</li>
+      <li>🥵 Il fait chaud et humide : tu as soif bien plus vite, surtout au soleil. La viande se gâte en une journée.</li>
+      <li>🌧️ Les <b>averses tropicales</b> arrivent surtout l'après-midi, parfois avec l'orage. Trempé la nuit, tu grelottes : sèche-toi au feu ou porte une cape de pluie.</li>
+      <li>🦟 Au crépuscule, près de l'eau, les <b>moustiques</b> peuvent donner la fièvre. Un feu ou une torche les éloigne.</li>
+      <li>🐍 Regarde où tu marches : la <b>jararaca</b>, le <b>surucucu</b> et le <b>serpent corail</b> sont venimeux. Avance accroupi dans le sous-bois. Une <b>tisane d'écorce</b> 🍵 soigne la fièvre et ralentit le venin.</li>
+    </ul>
+    <h3>La faune</h3>
+    <ul>
+      <li>🐆 <b>Jaguar</b> (parfois noir) : il traque à pas de loup puis bondit, surtout à l'aube, au crépuscule et la nuit. Il craint le feu. <b>Puma</b>, plus rare.</li>
+      <li>🐊 <b>Caïman noir</b> : immobile à la surface, il attaque si tu nages ou longes la berge de trop près.</li>
+      <li>🐗 <b>Pécaris à lèvres blanches</b> : grandes hardes qui chargent ensemble. <b>Pécari à collier</b> : se défend si on l'attaque.</li>
+      <li>🦛 <b>Tapir</b> : le plus grand animal de la forêt, paisible, mais redoutable s'il est blessé. 🐜 <b>Tamanoir</b> : ses griffes sont dangereuses.</li>
+      <li>🦫 <b>Capybaras</b> en groupes au bord de l'eau, <b>daguet rouge</b>, <b>agouti</b> (il cache des noix du Brésil), <b>paca</b> la nuit, <b>coatis</b> en bandes, <b>ocelot</b>.</li>
+      <li>🦜 <b>Oiseaux</b> : aras rouges et bleus qui survolent la canopée en couples, amazones, cassiques, toucans, hoazins, tyrans quiquivis, tangaras, colibris, hirondelles, martin-pêcheur, canard musqué, anhinga, grandes aigrettes, jabiru, onoré, harpie féroce, urubus et sarcoramphe roi ; la nuit, chouette à lunettes et ibijau.</li>
+      <li>🐟 <b>Poissons</b> : pirarucu (plus de 2 m), tambaqui, piranhas, tucunaré, aruanã, pacu, discus, néons cardinaux, jaraquis, surubim, gymnote électrique ; tortues de l'Amazone.</li>
+      <li>🐸 <b>Amphibiens et reptiles</b> : dendrobates bleus et rouges, rainettes, crapaud buffle, iguane vert, améiva, boa, anaconda dans l'eau.</li>
+      <li>🦋 <b>Insectes</b> : morphos bleus, papillons jaunes, héliconius, abeilles, libellules, lucioles. Et le chœur des cigales.</li>
+    </ul>
+    <h3>Grimper aux arbres</h3>
+    <ul>
+      <li>🐒 Face à un tronc, <b>avance en sautant</b> pour t'y agripper. Avancer = monter, reculer = descendre, gauche/droite = tourner autour du tronc, sauter = se lâcher. L'escalade fatigue (endurance).</li>
+      <li>Grimpe au sommet d'un <b>sumaúma</b> (plus de 40 m) pour voir la canopée à perte de vue. Attention aux chutes !</li>
+    </ul>
+    <h3>Le paysage</h3>
+    <ul>
+      <li>🌊 Tu es sur une <b>île du fleuve Amazone</b> : de l'eau limoneuse couleur café au lait à perte de vue, des plages de sable et des berges en <b>barrancos</b> de terre rouge.</li>
+      <li>🌳 La <b>terra firme</b> : forêt à plusieurs étages, sumaúmas et castanheiras émergents à 40–50 m, contreforts géants, figuiers étrangleurs, palmiers paxiúba sur échasses, embaúbas aux feuilles argentées.</li>
+      <li>🌴 La <b>várzea</b> et l'<b>igapó</b> : forêt les pieds dans l'eau, palmiers buriti et açaí, lacs aux eaux noires où flottent les <b>vitórias-régias</b> géantes.</li>
+      <li>💧 Les <b>igarapés</b> (ruisseaux couleur thé) serpentent dans la forêt ; les grands chenaux se descendent en <b>pirogue</b> 🛶.</li>
+      <li>🌫️ À l'aube et après la pluie, la <b>brume</b> monte de la forêt.</li>
+      <li>🤿 Dans l'eau profonde, <b>regarde vers le bas en avançant pour plonger</b> (saut pour remonter). L'eau est trouble : on n'y voit presque rien.</li>
+    </ul>
+    <h3>Construire sa maison</h3>
+    <ul>
+      <li>🔨 Ouvre le menu <b>Construire</b> (touche <b>B</b> ou bouton 🔨) : fondations, planchers, murs, portes, fenêtres, escaliers, toits, piquets, clôtures, portails.</li>
+      <li>Les pièces s'accrochent toutes seules : fondations en grille de 3 m, murs sur les bords, étage et toit sur les murs. <b>Vert</b> = possible, <b>rouge</b> = impossible (la raison s'affiche).</li>
+      <li>Meuble ta maison : cuisine (frigo qui garde la viande fraîche, four, évier, placards), salon (canapé, télé, console avec un jeu, bibliothèque, lampes, tapis), chambre (lit, armoire, commode, bureau), extérieur (barbecue, coffres, potager, mangeoire, lanternes, garage).</li>
+      <li>🔧 « Démonter ou déplacer » rend toutes les ressources. La viande s'abîme dans le sac : range-la au réfrigérateur.</li>
+    </ul>
+    <h3>Commandes</h3>
+    <div id="howKeys"></div>
+    <button class="btn" data-back>Retour</button>
+  </div>
+</div>
+
+<div id="death" class="screen dim hidden">
+  <div class="card">
+    <h1 class="logo" style="font-size:42px">Tu es mort</h1>
+    <p class="tag" id="deathText"></p>
+    <button class="btn primary" id="btnRespawn">Réapparaître</button>
+    <p class="tag" style="font-size:13px;margin:12px 0 0">Tu gardes tes outils mais tu perds tes ressources.</p>
+  </div>
+</div>
+
+<div id="rotate" role="dialog" aria-label="Mettez votre téléphone en horizontal">
+  <div class="logo">Selva</div>
+  <div class="phone" aria-hidden="true"></div>
+  <h2>Mettez votre téléphone<br>en horizontal</h2>
+  <p>Pour une expérience de jeu immersive, tournez votre téléphone en mode paysage. Le jeu se prépare pendant ce temps.</p>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
