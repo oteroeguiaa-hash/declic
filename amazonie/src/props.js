@@ -263,7 +263,7 @@ export class Props {
       if (h < 2.2 && !varzea) {
         if (rand() > 0.39) continue;
         const wl = WY[k] > -100 ? WY[k] : 0;
-        const calm = (VEG[k * 4 + 3] / 255) > 0.35 && Math.sqrt(x * x + z * z) < half * 0.82;
+        const calm = (VEG[k * 4 + 3] / 255) > 0.35 && Math.sqrt(x * x + z * z) < 1200;   // lacs d'eaux noires de l'intérieur, pas le fleuve
         if (h > -2.6 && h < -0.4 && wl - h > 0.4 && calm && rand() < 0.07 && !tooClose(x, z, 2.5)) this.add("lily", x, z, 0.7 + rand() * 0.6, rand);
         else if (h > -0.8 && h < 1.6 && rand() < 0.12) this.add("reed", x, z, 0.8 + rand() * 0.5, rand);
         else if (h < -1.0 && h > -8 && wl - h > 1.0 && rand() < 0.06) this.add("kelp", x, z, 0.7 + rand() * 0.7, rand);
@@ -490,6 +490,7 @@ vec3 rTN;`)
     for (let i = 0; i < this.list.length; i++) {
       const p = this.list[i];
       if (PROP_TYPES[p.t].kind !== "tree") continue;
+      if (p.t === "sousbois") continue;   // sous-étage caché sous la canopée : inutile au loin (allège beaucoup l'image)
       items.push({ x: p.x, y: p.y - 0.25, z: p.z, s: p.s, ry: p.ry, entry: this.entryIndex[p.t + p.v], tint: p.tint ? TINTS[p.tint] : null });
       p.imp = this.treeIds.length;
       this.treeIds.push(i);

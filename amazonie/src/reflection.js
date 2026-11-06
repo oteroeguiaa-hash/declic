@@ -20,7 +20,7 @@ export const REFL_APPLY = `
       vec2 ruv = rp.xy / rp.w + nxy * 0.035;
       vec3 refl = texture2D(tRefl, ruv).rgb;
       float cosV = max(dot(normalize(cameraPosition - vWPos), vec3(0.0, 1.0, 0.0)), 0.0);
-      float fres = 0.12 + 0.82 * pow(1.0 - cosV, 3.0);
+      float fres = 0.08 + 0.72 * pow(1.0 - cosV, 4.0);   // eau trouble : reflets un peu moins forts
       outgoingLight = mix(outgoingLight, refl, fres * on);
       diffuseColor.a = max(diffuseColor.a, fres * on * 0.95);
     }

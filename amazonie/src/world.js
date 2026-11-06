@@ -700,7 +700,7 @@ ${REFL_PARS}`)
     geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     geo.setIndex(idx);
     geo.computeVertexNormals();
-    const mat = new THREE.MeshStandardMaterial({ color: 0x0e3a46, roughness: 0.04, metalness: 0.0, side: THREE.DoubleSide });
+    const mat = new THREE.MeshStandardMaterial({ color: 0x0e3a46, roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide });   // eau limoneuse : reflets plus diffus
     const uniforms = this.waterUniforms;
     const waveGLSL = WAVES.map(([dx, dz, L, st, sp]) => `gw(p, vec2(${dx.toFixed(4)}, ${dz.toFixed(4)}), ${L.toFixed(2)}, ${st.toFixed(3)}, ${sp.toFixed(3)}, amp, disp, nrm);`).join("\n    ");
     mat.onBeforeCompile = (sh) => {
