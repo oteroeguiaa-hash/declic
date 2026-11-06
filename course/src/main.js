@@ -164,7 +164,7 @@ function statBlock(p, sp) {
     <div><span>Puissance de pointe</span><b>${d.power >= 1000 ? (d.power / 1000).toFixed(1) + " kW" : Math.round(d.power) + " W"}</b></div>
     <div><span>Puissance / kg</span><b>${Math.round(d.powerKg)} W/kg</b></div>
     <div><span>Réserve anaérobie</span><b>${Math.round(d.E0)} J/kg</b></div>
-    <div><span>Endurance (glycogène)</span><b>${fmtTime(d.endurance, true)}</b></div>
+    <div><span>Endurance (glycogène)</span><b>${fmtDur(d.endurance)}</b></div>
     <div><span>Masse</span><b>${d.mass >= 1 ? fmtNum(d.mass) + " kg" : fmtNum(d.mass * 1000) + " g"}</b></div>
     <div><span>Récupération</span><b>${Math.round(d.recov * 100)} %</b></div>
     <div><span>${biped ? "Longueur du pas" : p.mode === "fly" ? "Distance / battement" : p.mode === "swim" ? "Distance / cycle" : "Longueur de foulée"}</span><b>${d.strideL >= 1 ? d.strideL.toFixed(2) + " m" : (d.strideL * 100).toFixed(1) + " cm"}</b></div>
@@ -186,6 +186,13 @@ function renderFiche() {
   el.querySelector("h3").textContent = sp.name;
   el.querySelector("i").textContent = sp.latin || "";
   $("#ficheAdd").onclick = () => addEntry(sp);
+}
+
+function fmtDur(t) {
+  if (t < 90) return Math.round(t) + " s";
+  if (t < 5400) return Math.round(t / 60) + " min";
+  if (t < 72 * 3600) return (t / 3600).toFixed(1).replace(".", ",").replace(",0", "") + " h";
+  return Math.round(t / 86400) + " jours";
 }
 
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
@@ -425,7 +432,8 @@ function simulateStep(dt) {
   R.simT += dt;
   for (const en of R.entries) {
     const r = en.r;
-    if (en.dnf || r.finished) continue;
+    if (en.dnf) continue;
+    if (r.finished) { step(r, dt, D); continue; }
     if (R.simT < en.react) continue;
     const before = r.s;
     step(r, dt, D);
@@ -489,7 +497,7 @@ const tmpP = {};
 function placeRunners(dtAnim) {
   for (const en of R.entries) {
     const r = en.r;
-    const pos = R.course.pos(en.lane, r.s, tmpP);
+    const pos = R.course.pos(en.lane, r.s + (r.post || 0), tmpP);
     const root = en.cr.root;
     let y = 0;
     if ((en.p.modeUsed || en.p.mode) === "swim") {
@@ -543,21 +551,25 @@ function updateCamera(dt) {
     const near = R.entries.filter((o) => Math.abs(o.r.s - en.r.s) < Math.max(25, size * 8));
     let minS = Infinity, maxS = -Infinity, maxH = size;
     for (const o of near) { minS = Math.min(minS, o.r.s); maxS = Math.max(maxS, o.r.s); maxH = Math.max(maxH, Math.max(o.cr.dims.height, o.cr.dims.length * 0.6) * o.vscale); }
+    // Écran étroit (téléphone en portrait) : on cadre surtout le concurrent suivi.
+    const portrait = camera.aspect < 0.9;
+    if (portrait) { minS = maxS = en.r.s; }
     const mid = (minS + maxS) / 2;
-    const p = R.course.pos(en.lane, mid, {});
+    const p = R.course.pos(en.lane, mid + (en.r.post || 0), {});
     const lanesW = R.track.lanes * R.track.w;
-    const dist = Math.max(4, maxH * 3.2, (maxS - minS) * 0.75 + maxH * 2, lanesW * 0.9);
+    const narrow = 1 / Math.min(1, Math.max(0.7, camera.aspect * 1.25));
+    const dist = Math.max(4, maxH * 3.2, (maxS - minS) * 0.75 + maxH * 2, lanesW * 0.9) * narrow;
     const laneOff = (R.track.lanes - 1 - en.lane) * R.track.w;
     const c = V3(p.x, 0, p.z);
     // Ne pas entrer dans les tribunes : au-delà de 5 m hors piste, on prend de la hauteur.
     const room = laneOff + R.track.w * 0.5 + 5;
     let side = dist + laneOff, up = Math.max(1.2, maxH * 0.9) + (world.surfaceY || 0);
-    if (side > room) { up += (side - room) * 0.75; side = room; }
+    if (side > room) { up += (side - room) * 0.5; side = room; }
     let flyAlt = 0;
     for (const o of near) if (o.cr.dims.flyer) flyAlt = Math.max(flyAlt, o.cr.dims.height * 0.8);
     up += flyAlt;
-    want.copy(c).addScaledVector(V3(-p.hz, 0, p.hx), side).add(V3(0, up, 0)).addScaledVector(V3(p.hx, 0, p.hz), -dist * 0.12);
-    look.copy(c).addScaledVector(V3(-p.hz, 0, p.hx), -lanesW * 0.25 + laneOff * 0.5).add(V3(0, maxH * 0.45 + flyAlt * 0.8 + (world.surfaceY || 0), 0));
+    want.copy(c).addScaledVector(V3(-p.hz, 0, p.hx), side).add(V3(0, up, 0)).addScaledVector(V3(p.hx, 0, p.hz), portrait ? 0 : -dist * 0.12);
+    look.copy(c).addScaledVector(V3(-p.hz, 0, p.hx), -lanesW * 0.25 + laneOff * 0.5).add(V3(0, (portrait ? maxH * 0.4 - dist * 0.1 : maxH * 0.45) + flyAlt * 0.8 + (world.surfaceY || 0), 0));
   } else if (R.cam === "fpv") {
     en.cr.eye.getWorldPosition(want);
     want.addScaledVector(fwd, size * 0.05);
@@ -570,7 +582,7 @@ function updateCamera(dt) {
     R.camInit = true;
     return;
   } else if (R.cam === "aerial") {
-    const d = Math.max(12, size * 9);
+    const d = Math.max(12, size * 9) / Math.min(1, camera.aspect * 1.25);
     want.copy(fp).addScaledVector(fwd, -d * 0.7).addScaledVector(right, d * 0.35).add(V3(0, d * 1.1, 0));
     look.copy(fp).addScaledVector(fwd, d * 0.3);
   } else if (R.cam === "finish") {
@@ -585,12 +597,16 @@ function updateCamera(dt) {
     want.set(fp.x + Math.cos(o.yaw) * Math.cos(o.pitch) * o.dist, fp.y + Math.sin(o.pitch) * o.dist + size * 0.3, fp.z + Math.sin(o.yaw) * Math.cos(o.pitch) * o.dist);
     look.copy(fp).add(V3(0, size * 0.4, 0));
   }
-  if (!R.camInit) { R.camPos.copy(want); R.camLook.copy(look); R.camInit = true; }
-  R.camPos.lerp(want, R.cam === "orbit" ? 1 : k);
-  R.camLook.lerp(look, R.cam === "orbit" ? 1 : Math.min(1, k * 1.6));
-  camera.position.copy(R.camPos);
+  // Lissage des décalages relatifs au concurrent suivi (pas de retard sur les sprinteurs rapides).
+  const anchor = R.cam === "finish" ? new THREE.Vector3() : fp;
+  const offW = want.clone().sub(anchor), offL = look.clone().sub(anchor);
+  if (!R.camInit) { R.camPos.copy(offW); R.camLook.copy(offL); R.camInit = true; }
+  R.camPos.lerp(offW, R.cam === "orbit" ? 1 : k);
+  R.camLook.lerp(offL, R.cam === "orbit" ? 1 : Math.min(1, k * 1.6));
+  camera.position.copy(anchor).add(R.camPos);
+  const lookAt = anchor.clone().add(R.camLook);
   if (camera.position.y < 0.15 && R.env.terrain !== "eau") camera.position.y = 0.15;
-  camera.lookAt(R.camLook);
+  camera.lookAt(lookAt);
   const fov = R.cam === "finish" ? 40 : 50;
   if (camera.fov !== fov || camera.near !== 0.05) { camera.fov = fov; camera.near = 0.05; camera.updateProjectionMatrix(); }
 }
@@ -845,6 +861,9 @@ function frame() {
         let dt = PHYS_DT;
         if (n > maxSteps) { dt = simAdvance / maxSteps; n = maxSteps; }
         for (let i = 0; i < n && !R.over; i++) simulateStep(dt);
+      } else {
+        // Après la course : les concurrents ralentissent au-delà de la ligne.
+        for (const en of R.entries) if (en.r.finished) step(en.r, dtReal * Math.min(R.speed, 2), R.env.distance);
       }
     }
     const dtAnim = R.paused ? 0 : R.phase === "countdown" ? dtReal : Math.min(dtReal * R.speed, dtReal * 3);
@@ -965,4 +984,11 @@ function viewModel(ids, vfrac = 0.8, view = "side", phaseT = 0.3) {
   world.sun.target.position.set(0, 0, cz);
   previewMode = true;
 }
-window.__course = { S, get R() { return R; }, world, camera, startRace, SPECIES, viewModel };
+function advance(sec) {
+  if (!R) return;
+  if (R.phase === "countdown") { R.phase = "race"; R.t = 0; }
+  const n = Math.round(sec / PHYS_DT);
+  for (let i = 0; i < n && !R.over; i++) { simulateStep(PHYS_DT); if (i % 4 === 0) placeRunners(PHYS_DT * 4); }
+  R.camInit = false;
+}
+window.__course = { S, get R() { return R; }, world, camera, startRace, SPECIES, viewModel, advance };

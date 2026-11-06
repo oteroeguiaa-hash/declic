@@ -159,10 +159,10 @@ for (const [name, h] of HUMANS) {
 
 // ───────────────────────── FÉLINS ─────────────────────────
 add("felin", [
-  ["Guépard", "Acinonyx jubatus", 50, 104, 13, 15, 9, "H=0.8 L=1.15 c=#d9a548/#f6ead0 pat=spots tear legs=1.25 tail=long", { strideF: 2.6, note: "Pointe mesurée en chasse : 93 km/h (Wilson 2013) ; 104 km/h en sprint record." }],
-  ["Guépard d'Asie", "Acinonyx jubatus venaticus", 42, 96, 12.5, 14, 8.5, "H=0.75 L=1.1 c=#d8ac62/#f3e6cc pat=spots tear legs=1.25", { strideF: 2.7 }],
-  ["Guépard royal", "Acinonyx jubatus (morphe king)", 52, 102, 12.8, 15, 9, "H=0.8 L=1.15 c=#d9a548/#f6ead0 pat=blotches tear legs=1.25", { strideF: 2.6 }],
-  ["Guépard de zoo (Sarah)", "Acinonyx jubatus", 40, 98, 12, 13, 8.5, "H=0.75 L=1.1 c=#d9a548/#f6ead0 pat=spots tear legs=1.25", { strideF: 2.7, note: "100 m en 5,95 s (Cincinnati, 2012)." }],
+  ["Guépard", "Acinonyx jubatus", 50, 104, 13, 15, 9, "H=0.8 L=1.15 c=#d9a548/#f6ead0 pat=spots tear legs=1.25 tail=long", { strideF: 3.2, note: "Pointe mesurée en chasse : 93 km/h (Wilson 2013) ; 104 km/h en sprint record." }],
+  ["Guépard d'Asie", "Acinonyx jubatus venaticus", 42, 96, 12.5, 14, 8.5, "H=0.75 L=1.1 c=#d8ac62/#f3e6cc pat=spots tear legs=1.25", { strideF: 3.2 }],
+  ["Guépard royal", "Acinonyx jubatus (morphe king)", 52, 102, 12.8, 15, 9, "H=0.8 L=1.15 c=#d9a548/#f6ead0 pat=blotches tear legs=1.25", { strideF: 3.2 }],
+  ["Guépard de zoo (Sarah)", "Acinonyx jubatus", 40, 98, 12, 13, 8.5, "H=0.75 L=1.1 c=#d9a548/#f6ead0 pat=spots tear legs=1.25", { strideF: 3.3, note: "100 m en 5,95 s (Cincinnati, 2012)." }],
   ["Lion (mâle)", "Panthera leo", 190, 60, 9.5, 12, 7, "H=1.15 L=1.85 c=#c99a5b/#e8cfa0 mane tail=tuft", { pacing: 0.15 }],
   ["Lionne", "Panthera leo", 126, 64, 10, 13, 7.5, "H=1.0 L=1.6 c=#c99a5b/#ead4a8 tail=tuft" ],
   ["Lion d'Asie", "Panthera leo persica", 160, 58, 9.2, 12, 7, "H=1.05 L=1.75 c=#b89060/#e0c89c mane=short tail=tuft"],

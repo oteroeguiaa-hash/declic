@@ -207,7 +207,16 @@ function cruiseSpeed(r, dRem) {
 // Avance d'un pas de temps dt (s). Retourne le coureur mis à jour.
 export function step(r, dt, distance) {
   const p = r.p;
-  if (p.incapable || r.finished) { r.v = r.finished ? r.v : 0; return r; }
+  if (p.incapable) { r.v = 0; return r; }
+  if (r.finished) {
+    // Après la ligne : décélération progressive (récupération), sans effet sur le classement.
+    const dec = Math.max(1.5, r.v * 0.6);
+    r.a = r.v > 0 ? -dec : 0;
+    r.v = Math.max(0, r.v - dec * dt);
+    r.post = (r.post || 0) + r.v * dt;
+    r.E = Math.min(p.E0, r.E + p.sigma * 0.5 * dt);
+    return r;
+  }
   r.t += dt;
 
   // Cinétique de la VO2 : l'aérobie démarre lentement.
