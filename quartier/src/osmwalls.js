@@ -17,7 +17,7 @@ export class OsmWalls {
 		this.grid = new Map();    // "i,j" -> segments [ax, az, bx, bz, polyIndex | -1]
 	}
 
-	reset() { this.center = null; this.ready = false; this.polys = []; this.grid.clear(); }
+	reset() { this.center = null; this.ready = false; this.polys = []; this.grid.clear(); this.holes = []; }
 
 	maybeLoad() {
 		if ( this.loading ) return;
@@ -64,12 +64,19 @@ export class OsmWalls {
 		}
 	}
 
+	// une bombe a rasé cet endroit : les murs à l'intérieur ne bloquent plus
+	destroy( x, z, r ) { ( this.holes ||= [] ).push( { x, z, r } ); }
+
 	segsNear( x, z ) {
 		const out = new Set();
+		const holes = this.holes || [];
 		const i = Math.floor( x / CELL ), j = Math.floor( z / CELL );
 		for ( let a = i - 1; a <= i + 1; a ++ ) for ( let b = j - 1; b <= j + 1; b ++ ) {
 			const s = this.grid.get( a + ',' + b );
-			if ( s ) for ( const seg of s ) out.add( seg );
+			if ( s ) for ( const seg of s ) {
+				if ( holes.some( ( h ) => Math.hypot( ( seg[ 0 ] + seg[ 2 ] ) / 2 - h.x, ( seg[ 1 ] + seg[ 3 ] ) / 2 - h.z ) < h.r ) ) continue;
+				out.add( seg );
+			}
 		}
 		return out;
 	}

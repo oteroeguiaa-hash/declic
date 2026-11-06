@@ -17,6 +17,7 @@ import { lookupPlace } from './places.js';
 import { CityGen, maskUniforms, MASK_HEAD, MASK_CODE } from './citygen.js';
 import { osmStatus } from './osm.js';
 import { Ambience } from './ambience.js';
+import { Bombs } from './bombs.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
@@ -165,6 +166,7 @@ function goLandscape() {
 // Scène
 // --------------------------------------------------------------------------------------------
 let renderer, scene, camera, tiles, raycaster, weather, reorient, gps, nightCity, streetView, walls, steps, traffic, interior, shops;
+let bombs = null;
 let nearShop = null, currentHint = null, apiKey = '', qualityName = 'haute', city = null, ambience = null, post = null;
 // Réglages par qualité : détail au loin (errorTarget, plus petit = plus net), rayon autour du joueur
 // chargé au détail maximal de Google, résolution max de l'écran.
@@ -382,6 +384,16 @@ function start( key, place, quality ) {
 	city.onStatus = ( m ) => toast( m );
 	osmStatus.onError = () => toast( 'OpenStreetMap ne répond pas, nouvel essai dans un moment…' );
 	ambience = new Ambience();
+	// bombes (mode drone)
+	bombs = new Bombs( scene, { castFirst, groundAt: ( x, z ) => { const h = upwardHits( x, z, player.pos.y + 50, 2000 ); return h.length ? h[ h.length - 1 ].point.y : null; } } );
+	bombs.onImpact = ( p, r ) => {
+		for ( const pile of city.destroy( p, r ) ) bombs.rubble( pile.x, pile.y, pile.z, pile.r );
+		walls.destroy( p.x, p.z, r );
+		traffic.blast( p, r );
+		const d = player.pos.distanceTo( p );
+		bombs.shake = Math.max( bombs.shake, Math.max( 0, 1 - d / 350 ) );
+		ambience.boom( d );
+	};
 	setupPost();
 	shops = new Shops( { ...lifeGeo, Vector3: THREE.Vector3, fake: TEST_TILESET ? () => [ { type: 'node', lat: -8 / 111320, lon: 0, tags: { shop: 'bakery', name: 'Boulangerie d\'essai' } } ] : null } );
 	weather.onTint( ( t ) => traffic.setTint( t ) );
@@ -474,6 +486,7 @@ function teleport( place ) {
 	traffic?.reset();
 	shops?.reset();
 	city?.reset();
+	bombs?.reset();
 	player.vel.set( 0, 0, 0 );
 	player.grounded = false; // pas de gravité tant qu'on n'a pas trouvé le sol
 	spawn.time = 0; spawn.quiet = 0;
@@ -499,6 +512,7 @@ function setupInput() {
 		if ( e.code === 'KeyE' || e.code === 'Enter' ) doAction();
 		if ( interior?.active ) return; // dans un magasin : seulement marcher, regarder, agir
 		if ( e.code === 'KeyF' ) toggleFly();
+		if ( e.code === 'KeyB' ) dropBomb();
 		if ( e.code === 'KeyH' && places.home ) teleport( places.home );
 		if ( e.code === 'KeyP' ) goTo( PLACES[ 0 ] );
 		if ( e.code === 'KeyT' || e.code === 'KeyL' ) togglePlaces();
@@ -535,6 +549,7 @@ function setupInput() {
 	tap( 'act-btn', doAction );
 	$( 'photo-view' ).onclick = () => { $( 'photo-view' ).hidden = true; };
 	tap( 'fly', toggleFly );
+	tap( 'bomb', dropBomb );
 	// bouton heure : Maintenant → 5h → Lever → 10h → 12h → 16h → Coucher → 18h → 22h → Minuit → …
 	tap( 'night', () => {
 		const m = weather.nextTime();
@@ -684,6 +699,12 @@ function openPlaces() {
 	keys.clear();
 }
 function closePlaces() { $( 'places' ).hidden = true; }
+function dropBomb() {
+	if ( ! player.fly ) { toast( 'Les bombes se larguent en mode drone 🚁' ); return; }
+	const v = new THREE.Vector3( 0, 0, - 1 ).applyEuler( new THREE.Euler( 0, player.yaw, 0 ) ).multiplyScalar( Math.min( 30, DRONE * speedMult ) * 0.5 );
+	bombs.drop( player.pos, v );
+}
+
 async function goTo( p ) {
 	toast( 'Recherche de ' + p.name + '…' );
 	const r = await resolvePlace( p );
@@ -702,6 +723,7 @@ function setFly( on ) {
 	player.vel.set( 0, 0, 0 );
 	$( 'fly' ).classList.toggle( 'on', on );
 	$( 'fly' ).textContent = on ? '🚶 Marcher' : '🚁 Drone';
+	$( 'bomb' ).hidden = ! on;
 	$( 'jump' ).textContent = on ? 'Monter' : 'Saut';
 	toast( on ? ( isTouch ? 'Mode drone : le joystick avance, « Monter » pour prendre de la hauteur' : 'Mode drone : Espace monte, C descend' ) : 'Mode marche' );
 }
@@ -954,6 +976,7 @@ function recenterIfFar() {
 	traffic?.reset();
 	shops?.reset();
 	city?.reset();
+	bombs?.reset();
 	weather.setLocation( lat / DEG, lon / DEG );
 }
 
@@ -1148,6 +1171,7 @@ function frame() {
 	camera.position.y += Math.sin( bobPhase * 2 ) * 0.025 * bobAmp;
 	camera.position.addScaledVector( _right.set( Math.cos( player.yaw ), 0, - Math.sin( player.yaw ) ), Math.sin( bobPhase ) * 0.015 * bobAmp );
 	camera.rotation.set( player.pitch, player.yaw, 0, 'YXZ' );
+	if ( bombs.shake > 0.01 ) { const k = bombs.shake * 0.6; camera.position.x += ( Math.random() - 0.5 ) * k; camera.position.y += ( Math.random() - 0.5 ) * k; camera.rotation.z += ( Math.random() - 0.5 ) * k * 0.05; }
 	camera.updateMatrixWorld();
 
 	// à pied on voit à Q.far mètres, en drone trois fois plus loin
@@ -1171,6 +1195,7 @@ function frame() {
 	if ( ! ( speedMult <= 100 && ! ( player.fly && player.pos.y - ( player.groundY ?? player.pos.y ) > 300 ) ) ) { maskUniforms.uMaskOn.value = 0; city.near.visible = false; }
 	else city.update( player.pos, ! player.fly && player.grounded && speedMult <= 10, player.groundY ?? player.pos.y - EYE );
 	ambience.set( { day: 1 - weather.night, rain: weather.now.rain > 0 ? Math.min( 1, weather.now.rain / 3 ) : 0, wind: Math.min( 1, ( weather.now.wind || 10 ) / 40 ), inside: false } );
+	bombs.update( dt );
 	traffic.setNight( THREE.MathUtils.smoothstep( weather.night, 0.3, 0.8 ) );
 	traffic.setLighting( weather.sunDir, 1 - weather.night );
 	traffic.update( dt, player.pos, speedMult > 100 || ( player.fly && player.pos.y - ( player.groundY ?? player.pos.y ) > 250 ) );

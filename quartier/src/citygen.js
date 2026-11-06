@@ -226,6 +226,7 @@ export class CityGen {
 		maskUniforms.uMask.value = this.maskTex;
 		this.maskDirty = false;
 		this.replace = false;
+		this.craters = [];
 		this.items = [];
 		this.center = null;
 		this.loading = false;
@@ -236,7 +237,7 @@ export class CityGen {
 		for ( const g of [ this.group, this.near ] ) { g.traverse( ( o ) => { if ( o.geometry ) o.geometry.dispose(); } ); g.clear(); }
 		maskUniforms.uMaskOn.value = 0;
 		this.maskCenter = null;
-		this.items = []; this.center = null; this.built = 0;
+		this.items = []; this.center = null; this.built = 0; this.craters = [];
 	}
 
 	async load( c ) {
@@ -287,6 +288,7 @@ export class CityGen {
 			const x = it.type === 'tree' ? it.x : it.cx, z = it.type === 'tree' ? it.z : it.cz;
 			const dist = Math.hypot( x - pos.x, z - pos.z );
 			// bâtiment présent chez Google, proche, en mode marche : on le remplace par une version nette
+			if ( it.destroyed ) continue;
 			if ( it.state === 'google' && replace && dist < NEAR() && this.maskCenter && Math.abs( x - this.maskCenter.x ) < 200 && Math.abs( z - this.maskCenter.y ) < 200 ) {
 				let seed = it.id % 2147483646 + 1; const rnd = () => ( seed = seed * 16807 % 2147483647 ) / 2147483647;
 				it.mesh = buildingMesh( it, rnd );
@@ -305,7 +307,7 @@ export class CityGen {
 				it.state = 'done';
 				if ( top - g > 3 ) continue; // l'arbre existe déjà dans la 3D Google
 				let seed = it.id % 2147483646 + 1; const rnd = () => ( seed = seed * 16807 % 2147483647 ) / 2147483647;
-				const t = treeMesh( rnd, autumn ); t.position.set( x, g, z ); this.group.add( t );
+				const t = treeMesh( rnd, autumn ); t.position.set( x, g, z ); this.group.add( t ); it.mesh = t; it.ground = g;
 				continue;
 			}
 			// sol : devant la plus longue façade ; toit : rayon au centre
@@ -327,10 +329,31 @@ export class CityGen {
 			}
 			it.state = 'done';
 			let seed = it.id % 2147483646 + 1; const rnd = () => ( seed = seed * 16807 % 2147483647 ) / 2147483647;
-			this.group.add( buildingMesh( it, rnd ) );
+			it.mesh = buildingMesh( it, rnd );
+			this.group.add( it.mesh );
 			this.built ++;
 			if ( this.built === 3 ) this.onStatus?.( '🏗️ Pas de 3D Google ici : le jeu construit les bâtiments' );
 		}
+	}
+
+	// une bombe : bâtiments et arbres touchés détruits, cratère ; renvoie les tas de gravats à poser
+	destroy( p, r ) {
+		const piles = [];
+		for ( const it of this.items ) {
+			if ( it.destroyed ) continue;
+			const x = it.type === 'tree' ? it.x : it.cx, z = it.type === 'tree' ? it.z : it.cz;
+			const reach = r + ( it.type === 'tree' ? 2 : Math.sqrt( it.area ) * 0.5 );
+			if ( Math.hypot( x - p.x, z - p.z ) > reach ) continue;
+			it.destroyed = true;
+			if ( it.mesh ) { it.mesh.parent?.remove( it.mesh ); it.mesh.traverse( ( o ) => o.geometry?.dispose() ); it.mesh = null; }
+			if ( it.type === 'building' ) {
+				if ( it.ground === null ) it.ground = p.y;
+				piles.push( { x: it.cx, y: it.ground, z: it.cz, r: Math.min( 14, Math.sqrt( it.area ) * 0.55 + 1 ) } );
+			}
+		}
+		this.craters.push( { x: p.x, z: p.z, y: p.y, r: r * 0.9 } );
+		this.maskDirty = true; this.lastMask = 0;
+		return piles;
 	}
 
 	// recentre le masque quand on s'éloigne, retire les remplacements trop loin, redessine si besoin
@@ -352,8 +375,22 @@ export class CityGen {
 			const toPx = ( x, z ) => [ ( x - this.maskCenter.x ) * S + MASK_PX / 2, ( z - this.maskCenter.y ) * S + MASK_PX / 2 ];
 			g.clearRect( 0, 0, MASK_PX, MASK_PX );
 			g.lineJoin = 'round'; g.lineWidth = 2.4 * S; // on déborde un peu : les façades Google dépassent souvent du plan
+			const fillPoly = ( it ) => {
+				const gv = Math.round( THREE.MathUtils.clamp( ( it.ground - this.maskBase + 30 ) / 60, 0, 1 ) * 255 );
+				g.fillStyle = g.strokeStyle = `rgb(255,${ gv },0)`;
+				g.beginPath();
+				it.pts.forEach( ( p, i ) => { const [ px, py ] = toPx( p.x, p.z ); if ( i ) g.lineTo( px, py ); else g.moveTo( px, py ); } );
+				g.closePath(); g.fill(); g.stroke();
+			};
+			// bâtiments détruits et cratères : toujours effacés de la 3D Google
+			for ( const it of this.items ) if ( it.destroyed && it.type === 'building' && it.ground !== null ) fillPoly( it );
+			for ( const c of this.craters ) {
+				const gv = Math.round( THREE.MathUtils.clamp( ( c.y - this.maskBase + 30 ) / 60, 0, 1 ) * 255 );
+				const [ px, py ] = toPx( c.x, c.z );
+				g.fillStyle = `rgb(255,${ gv },0)`; g.beginPath(); g.arc( px, py, c.r * S, 0, 7 ); g.fill();
+			}
 			for ( const it of this.items ) {
-				if ( it.state !== 'replaced' ) continue;
+				if ( it.state !== 'replaced' || ! this.replace || it.destroyed ) continue;
 				const gv = Math.round( THREE.MathUtils.clamp( ( it.ground - this.maskBase + 30 ) / 60, 0, 1 ) * 255 );
 				g.fillStyle = g.strokeStyle = `rgb(255,${ gv },0)`;
 				g.beginPath();
@@ -364,7 +401,8 @@ export class CityGen {
 			maskUniforms.uMaskCenter.value.copy( this.maskCenter );
 			maskUniforms.uMaskBase.value = this.maskBase;
 		}
-		maskUniforms.uMaskOn.value = this.replace ? 1 : 0;
+		if ( this.replace !== this.lastReplace ) { this.lastReplace = this.replace; this.maskDirty = true; }
+		maskUniforms.uMaskOn.value = this.replace || this.craters.length ? 1 : 0;
 	}
 
 }
