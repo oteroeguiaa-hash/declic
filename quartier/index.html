@@ -127,6 +127,10 @@
     <label for="key">Clé Google « Map Tiles API »</label>
     <input id="key" autocomplete="off" spellcheck="false" placeholder="AIza…">
 
+    <label for="ion">Jeton Cesium ion (en Europe : nécessaire pour la 3D)</label>
+    <input id="ion" autocomplete="off" spellcheck="false" placeholder="eyJhbGciOi…">
+    <div class="small">Depuis juillet 2025, Google ne fournit plus la 3D photoréaliste aux comptes européens. Cesium ion la redistribue gratuitement pour un usage perso. Si ce jeton est rempli, il est utilisé pour la 3D ; ta clé Google sert encore pour la carte et les magasins.</div>
+
     <label for="quality">Qualité</label>
     <select id="quality">
       <option value="normale">Normale (téléphone)</option>
@@ -151,6 +155,16 @@
         <li>Google demande d'ajouter un moyen de paiement (compte de facturation). Le quota gratuit mensuel couvre largement des balades perso.</li>
         <li>« API et services » → « Identifiants » → « Créer des identifiants » → <b>Clé API</b>. Copie-la ici.</li>
         <li>Conseillé : restreins la clé à « Map Tiles API » et à l'adresse de ton site.</li>
+      </ol>
+    </details>
+
+    <details open>
+      <summary>Avoir le jeton Cesium ion (3 min, gratuit)</summary>
+      <ol>
+        <li>Va sur <a href="https://ion.cesium.com/signup" target="_blank" rel="noopener">ion.cesium.com</a> et crée un compte (formule gratuite « Community »).</li>
+        <li>Menu <b>Asset Depot</b> → cherche <b>Google Photorealistic 3D Tiles</b> → <b>Add to my assets</b>.</li>
+        <li>Menu <b>Access Tokens</b> → copie le <b>Default Token</b> (il commence par « eyJ »).</li>
+        <li>Colle-le dans la case « Jeton Cesium ion » ci-dessus.</li>
       </ol>
     </details>
 
