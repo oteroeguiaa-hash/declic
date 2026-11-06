@@ -38,6 +38,7 @@ THREE.Mesh.prototype.raycast = function ( rc, hits ) {
 import { TilesRenderer } from '3d-tiles-renderer';
 import {
 	GoogleCloudAuthPlugin,
+	CesiumIonAuthPlugin,
 	GLTFExtensionsPlugin,
 	LoadRegionPlugin,
 	SphereRegion,
@@ -81,6 +82,7 @@ const GRAVITY = 22, JUMP = 7;
 // Écran d'accueil
 // --------------------------------------------------------------------------------------------
 $( 'key' ).value = store.get( 'quartier.key' );
+$( 'ion' ).value = store.get( 'quartier.ion' );
 $( 'home' ).value = store.get( 'quartier.home' );
 $( 'quality' ).value = store.get( 'quartier.quality' ) || 'haute';
 
@@ -123,9 +125,11 @@ for ( const p of PLACES ) $( 'start-place' ).add( new Option( p.name, p.id ) );
 $( 'start-place' ).value = store.get( 'quartier.startPlace' ) || 'parc';
 
 async function launch( where ) {
-	const key = $( 'key' ).value.trim();
-	if ( ! key ) { $( 'msg' ).textContent = 'Il faut une clé Google (voir le mode d\'emploi juste en dessous).'; return; }
+	const key = $( 'key' ).value.trim(), ion = $( 'ion' ).value.trim();
+	if ( ! key && ! ion ) { $( 'msg' ).textContent = 'Il faut une clé Google ou un jeton Cesium ion (voir le mode d\'emploi juste en dessous).'; return; }
 	store.set( 'quartier.key', key );
+	store.set( 'quartier.ion', ion );
+	ionToken = ion;
 	store.set( 'quartier.home', $( 'home' ).value.trim() );
 	store.set( 'quartier.quality', $( 'quality' ).value );
 	store.set( 'quartier.startPlace', $( 'start-place' ).value );
@@ -166,7 +170,7 @@ function goLandscape() {
 // Scène
 // --------------------------------------------------------------------------------------------
 let renderer, scene, camera, tiles, raycaster, weather, reorient, gps, nightCity, streetView, walls, steps, traffic, interior, shops;
-let bombs = null;
+let bombs = null, ionToken = '';
 let nearShop = null, currentHint = null, apiKey = '', qualityName = 'haute', city = null, ambience = null, post = null;
 // Réglages par qualité : détail au loin (errorTarget, plus petit = plus net), rayon autour du joueur
 // chargé au détail maximal de Google, résolution max de l'écran.
@@ -220,7 +224,12 @@ function start( key, place, quality ) {
 	camera = new THREE.PerspectiveCamera( 70, innerWidth / innerHeight, 0.3, Q.far + 200 );
 
 	tiles = new TilesRenderer( TEST_TILESET || undefined );
-	if ( ! TEST_TILESET ) tiles.registerPlugin( new GoogleCloudAuthPlugin( { apiToken: key, autoRefreshToken: true, useRecommendedSettings: false } ) );
+	// 3D photoréaliste Google : directement avec la clé Google, ou via Cesium ion (même 3D Google,
+	// redistribuée par Cesium) : indispensable en Europe, où Google ne la sert plus aux comptes européens
+	if ( ! TEST_TILESET ) {
+		if ( ionToken ) tiles.registerPlugin( new CesiumIonAuthPlugin( { apiToken: ionToken, assetId: 2275207, autoRefreshToken: true, useRecommendedSettings: false } ) );
+		else tiles.registerPlugin( new GoogleCloudAuthPlugin( { apiToken: key, autoRefreshToken: true, useRecommendedSettings: false } ) );
+	}
 	const draco = new DRACOLoader().setDecoderPath( './draco/' );
 	tiles.registerPlugin( new GLTFExtensionsPlugin( { dracoLoader: draco } ) );
 	tiles.registerPlugin( new UnloadTilesPlugin() );
@@ -294,7 +303,10 @@ function start( key, place, quality ) {
 
 	tiles.addEventListener( 'load-error', ( e ) => {
 		const status = e.error?.message || '';
-		if ( /40[0-9]|429|API key|PERMISSION|quota/i.test( status ) ) diagnoseKey( key );
+		if ( /40[0-9]|429|API key|PERMISSION|quota/i.test( status ) ) {
+			if ( ionToken ) showError( 'Cesium ion refuse le jeton (code ' + ( status.match( /\d{3}/ )?.[ 0 ] || '?' ) + '). Vérifie le jeton, et que « Google Photorealistic 3D Tiles » est bien ajouté à « My Assets » sur ion.cesium.com.' );
+			else diagnoseKey( key );
+		}
 	} );
 
 	raycaster = new THREE.Raycaster();
@@ -452,7 +464,8 @@ async function diagnoseKey( key ) {
 	} catch { msg = 'réseau'; }
 	const k = key.slice( 0, 6 ) + '…' + key.slice( - 4 );
 	let fr;
-	if ( /not valid|API_KEY_INVALID/i.test( msg ) ) fr = `La clé ${ k } n'est pas valide (mal copiée ou supprimée). Recopie-la depuis Google Cloud → Identifiants.`;
+	if ( /not available for your account and region|comms\/eea/i.test( msg ) ) fr = 'Google ne fournit plus la 3D photoréaliste aux comptes Google Cloud européens (règle de Google depuis juillet 2025). Ta clé n\'y est pour rien. Solution : un jeton Cesium ion gratuit, qui donne la même 3D Google (mode d\'emploi sur l\'écran d\'accueil, case « Jeton Cesium ion »).';
+	else if ( /not valid|API_KEY_INVALID/i.test( msg ) ) fr = `La clé ${ k } n'est pas valide (mal copiée ou supprimée). Recopie-la depuis Google Cloud → Identifiants.`;
 	else if ( /referer|referrer|REFERRER/i.test( msg ) ) fr = `La clé ${ k } est limitée à certains sites et ce site n'en fait pas partie. Dans Google Cloud → Identifiants → ta clé → « Restrictions relatives aux applications », ajoute : ${ location.origin }/*`;
 	else if ( /has not been used|is disabled|SERVICE_DISABLED/i.test( msg ) ) fr = 'L\'API « Map Tiles API » est désactivée sur ce projet. Google Cloud → API et services → Map Tiles API → Activer.';
 	else if ( /billing|BILLING/i.test( msg ) ) fr = 'La facturation du projet Google Cloud est désactivée ou l\'essai gratuit est terminé. Google Cloud → Facturation : vérifie le compte (et « Passer à un compte payant » si l\'essai est fini).';
