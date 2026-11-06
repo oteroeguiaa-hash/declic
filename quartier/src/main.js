@@ -169,6 +169,20 @@ let nearShop = null, currentHint = null, apiKey = '', qualityName = 'haute', cit
 // Réglages par qualité : détail au loin (errorTarget, plus petit = plus net), rayon autour du joueur
 // chargé au détail maximal de Google, résolution max de l'écran.
 // far = distance de vue à pied (au-delà : brouillard) ; au loin on ne charge donc plus rien d'inutile.
+// --- appareil : sur téléphone, Safari ferme la page si on dépasse sa mémoire (« Un problème est apparu »).
+// On applique donc des limites strictes, et encore plus basses si la dernière partie a planté.
+const MOBILE = /iPhone|iPad|iPod|Android/i.test( navigator.userAgent ) || ( matchMedia( '(pointer: coarse)' ).matches && Math.min( screen.width, screen.height ) < 900 );
+let CRASHED = false;
+try { CRASHED = sessionStorage.getItem( 'quartier.running' ) === '1' || localStorage.getItem( 'quartier.light' ) === '1'; } catch { /* */ }
+const LIGHT = MOBILE && CRASHED; // la partie précédente s'est arrêtée brutalement : mode très léger
+const DEVICE = LIGHT
+	? { bytes: 0.16, minBytes: 0.1, downloads: 6, parse: 1, maxPR: 1.0, region: 1.5, radiusMax: 25, cars: 4, trams: 1, foot: 6, near: 90, windows: 4000, post: false, budget: 0.5 }
+	: MOBILE
+		? { bytes: 0.24, minBytes: 0.15, downloads: 8, parse: 1, maxPR: 1.15, region: 1.0, radiusMax: 35, cars: 7, trams: 1, foot: 10, near: 120, windows: 8000, post: false, budget: 0.7 }
+		: { bytes: 0.6, minBytes: 0.4, downloads: 16, parse: 2, maxPR: 2, region: 0.5, radiusMax: 110, cars: 28, trams: 4, foot: 48, near: 170, windows: 30000, post: true, budget: 1 };
+window.__device = DEVICE;
+const BASE_BUDGET = DEVICE.budget;
+
 const QUALITY = {
 	normale: { error: 12, radius: 40, maxPR: 1.25, minPR: 0.6, cache: 700, far: 1600, msaa: false },
 	haute: { error: 6, radius: 70, maxPR: 1.6, minPR: 0.75, cache: 1100, far: 2400, msaa: 'lowdpi' },
@@ -180,14 +194,15 @@ const player = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), yaw: 0, pit
 // Zones chargées au maximum de détail même hors de l'écran : autour des pieds, et la colonne
 // verticale sous le joueur. Sinon, le sol sous nos pieds (hors champ) reste en basse résolution,
 // décalé de plusieurs dizaines de mètres, et on se retrouve sous la ville.
-const footSphere = new SphereRegion( { errorTarget: 0.5 } );
-const footRay = new RayRegion( { errorTarget: 0.5 } );
+const footSphere = new SphereRegion( { errorTarget: DEVICE.region } );
+const footRay = new RayRegion( { errorTarget: DEVICE.region } );
 const spawn = { time: 0, quiet: 0 };
 
 function start( key, place, quality ) {
 	Q = QUALITY[ quality ] || QUALITY.haute;
 	apiKey = key; qualityName = quality;
 	// L'anticrénelage (MSAA) coûte cher sur les écrans haute densité, où il sert peu.
+	if ( MOBILE ) Q = { ...Q, maxPR: Math.min( Q.maxPR, DEVICE.maxPR ), minPR: Math.min( Q.minPR, 0.6 ), radius: Math.min( Q.radius, DEVICE.radiusMax ), error: Math.max( Q.error, 12 ), far: Math.min( Q.far, 1600 ), msaa: false };
 	const msaa = Q.msaa === true || ( Q.msaa === 'lowdpi' && devicePixelRatio < 1.5 );
 	renderer = new THREE.WebGLRenderer( { antialias: msaa, powerPreference: 'high-performance', stencil: false } );
 	pixelRatio = Math.min( devicePixelRatio, Q.maxPR );
@@ -217,11 +232,26 @@ function start( key, place, quality ) {
 	tiles.errorTarget = Q.error;
 	tiles.lruCache.maxSize = Q.cache;
 	tiles.lruCache.minSize = Math.round( Q.cache * 0.6 );
-	tiles.downloadQueue.maxJobs = 20;
-	tiles.parseQueue.maxJobs = 3;
+	tiles.downloadQueue.maxJobs = DEVICE.downloads;
+	tiles.parseQueue.maxJobs = DEVICE.parse;
 	tiles.loadSiblings = false;          // on va droit au détail de ce qu'on regarde
-	tiles.lruCache.maxBytesSize = ( quality === 'normale' ? 0.45 : 0.9 ) * 2 ** 30;
-	tiles.lruCache.minBytesSize = ( quality === 'normale' ? 0.3 : 0.6 ) * 2 ** 30;
+	tiles.lruCache.maxBytesSize = DEVICE.bytes * 2 ** 30;
+	tiles.lruCache.minBytesSize = DEVICE.minBytes * 2 ** 30;
+	if ( MOBILE ) { tiles.lruCache.maxSize = Math.min( tiles.lruCache.maxSize, 500 ); tiles.lruCache.minSize = Math.min( tiles.lruCache.minSize, 300 ); }
+
+	// si le navigateur perd la carte graphique (mémoire saturée), on prévient et on relance en mode léger
+	renderer.domElement.addEventListener( 'webglcontextlost', ( e ) => {
+		e.preventDefault();
+		try { localStorage.setItem( 'quartier.light', '1' ); } catch { /* */ }
+		showError( 'Le téléphone manque de mémoire : relance automatique en mode léger…' );
+		setTimeout( () => location.reload(), 1500 );
+	} );
+	// repère de plantage : effacé quand on quitte normalement la page
+	try { sessionStorage.setItem( 'quartier.running', '1' ); } catch { /* */ }
+	addEventListener( 'pagehide', () => { try { sessionStorage.removeItem( 'quartier.running' ); } catch { /* */ } } );
+	if ( LIGHT ) setTimeout( () => toast( 'Mode léger activé pour ce téléphone (moins de détails, plus stable)' ), 2500 );
+	// 10 minutes sans souci : la prochaine partie peut réessayer le mode téléphone normal
+	setTimeout( () => { try { localStorage.removeItem( 'quartier.light' ); } catch { /* */ } }, 10 * 60 * 1000 );
 
 	// À chaque morceau de ville reçu : textures nettes même au ras du sol (filtrage anisotrope),
 	// teinte de la météo / de l'heure, index spatial pour les collisions.
@@ -331,7 +361,8 @@ function start( key, place, quality ) {
 			...Array.from( { length: 10 }, ( _, i ) => ( { type: 'node', lat: 24 / 111320, lon: ( -100 + i * 22 ) / 111320 } ) ),
 		] : null,
 	};
-	const counts = { normale: { car: 10, tram: 2, foot: 18 }, haute: { car: 18, tram: 3, foot: 32 }, ultra: { car: 28, tram: 4, foot: 48 } }[ quality ] || { car: 18, tram: 3, foot: 32 };
+	const base = { normale: { car: 10, tram: 2, foot: 18 }, haute: { car: 18, tram: 3, foot: 32 }, ultra: { car: 28, tram: 4, foot: 48 } }[ quality ] || { car: 18, tram: 3, foot: 32 };
+	const counts = { car: Math.min( base.car, DEVICE.cars ), tram: Math.min( base.tram, DEVICE.trams ), foot: Math.min( base.foot, DEVICE.foot ) };
 	traffic = new Traffic( scene, lifeGeo, counts, renderer );
 	// magasins : vrais commerces du quartier, intérieurs fabriqués selon leur type
 	interior = new Interior( renderer );
@@ -955,7 +986,7 @@ const CinemaShader = {
 		}`,
 };
 function setupPost() {
-	if ( qualityName === 'normale' ) { post = null; return; }
+	if ( qualityName === 'normale' || ! DEVICE.post ) { post = null; return; }
 	const rt = new THREE.WebGLRenderTarget( 1, 1, { type: THREE.HalfFloatType, samples: 4 } );
 	const composer = new EffectComposer( renderer, rt );
 	composer.addPass( new RenderPass( scene, camera ) );
@@ -1081,6 +1112,8 @@ function adaptPerformance( rawDt ) {
 	perf.frames ++; perf.time += rawDt;
 	if ( perf.time < 1 ) return;
 	perf.fps = perf.frames / perf.time;
+	// moins de calculs par image (bâtiments, fenêtres) quand ça rame
+	DEVICE.budget = perf.fps < 22 ? BASE_BUDGET * 0.35 : perf.fps < 35 ? BASE_BUDGET * 0.65 : BASE_BUDGET;
 	perf.frames = 0; perf.time = 0;
 	const maxPR = Math.min( devicePixelRatio, Q.maxPR );
 	let changed = false;
