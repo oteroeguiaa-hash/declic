@@ -65,6 +65,19 @@ export class Ambience {
 		s.start( t ); s.stop( t + dur + 0.1 );
 	}
 
+	// détonation : grondement grave qui dure + claquement, plus faible de loin
+	boom( dist ) {
+		if ( ! this.ctx ) return;
+		const c = this.ctx, t = c.currentTime, k = Math.max( 0.08, 1 - dist / 800 );
+		for ( const [ type, f, dur, vol ] of [ [ 'lowpass', 140, 3.5, 0.9 ], [ 'lowpass', 900, 0.6, 0.5 ], [ 'highpass', 2500, 0.15, 0.25 ] ] ) {
+			const s = c.createBufferSource(); s.buffer = this.whiteBuf; s.loop = true;
+			const fl = c.createBiquadFilter(); fl.type = type; fl.frequency.value = f;
+			const g = c.createGain(); const delay = dist / 340;
+			g.gain.setValueAtTime( 0, t + delay ); g.gain.linearRampToValueAtTime( vol * k, t + delay + 0.02 ); g.gain.exponentialRampToValueAtTime( 0.0005, t + delay + dur );
+			s.connect( fl ).connect( g ).connect( this.master ); s.start( t + delay ); s.stop( t + delay + dur + 0.1 );
+		}
+	}
+
 	// gazouillis : quelques notes rapides qui glissent
 	bird() {
 		const c = this.ctx, t0 = c.currentTime, n = 2 + Math.floor( Math.random() * 5 ), base = 2500 + Math.random() * 2500;

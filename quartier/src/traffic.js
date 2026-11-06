@@ -323,6 +323,19 @@ export class Traffic {
 		return true;
 	}
 
+	// explosion : ce qui est dans le souffle disparaît, les passants proches s'enfuient en courant
+	blast( p, r ) {
+		for ( let i = this.agents.length - 1; i >= 0; i -- ) {
+			const a = this.agents[ i ], o = a.obj.position, d = Math.hypot( o.x - p.x, o.z - p.z );
+			if ( d < r ) { this.group.remove( a.obj ); this.agents.splice( i, 1 ); continue; }
+			if ( a.kind === 'foot' && d < 120 ) {
+				const s = a.path.sample( a.s, this.tmp );
+				a.dir = ( ( o.x - p.x ) * s.dx + ( o.z - p.z ) * s.dz ) >= 0 ? 1 : - 1;
+				a.speed = 3.2 + Math.random();
+			}
+		}
+	}
+
 	farFromCenter() {
 		const h = this.geo.here(), c = this.center;
 		return Math.hypot( ( h.lat - c.lat ) * 111320, ( h.lon - c.lon ) * 111320 * Math.cos( h.lat * Math.PI / 180 ) ) > RADIUS * 0.55;
