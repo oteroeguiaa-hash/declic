@@ -294,9 +294,7 @@ function start( key, place, quality ) {
 
 	tiles.addEventListener( 'load-error', ( e ) => {
 		const status = e.error?.message || '';
-		if ( /40[013]|API key|PERMISSION/i.test( status ) ) {
-			showError( 'Google refuse la clé. Vérifie la clé, que « Map Tiles API » est activée sur ce projet et que la facturation est configurée.' );
-		}
+		if ( /40[0-9]|429|API key|PERMISSION|quota/i.test( status ) ) diagnoseKey( key );
 	} );
 
 	raycaster = new THREE.Raycaster();
@@ -439,9 +437,36 @@ function onResize() {
 	tiles.setResolutionFromRenderer( camera, renderer );
 }
 
+// Demande à Google la raison exacte du refus et l'explique en clair (une seule fois)
+let diagnosed = false;
+async function diagnoseKey( key ) {
+	if ( diagnosed ) return;
+	diagnosed = true;
+	let code = 0, msg = '';
+	try {
+		const res = await fetch( 'https://tile.googleapis.com/v1/3dtiles/root.json?key=' + encodeURIComponent( key ) );
+		code = res.status;
+		if ( res.ok ) { diagnosed = false; return; } // la clé marche : simple raté passager
+		const j = await res.json().catch( () => ( {} ) );
+		msg = ( j.error?.message || '' ) + ' ' + ( j.error?.status || '' ) + ' ' + JSON.stringify( j.error?.details || '' );
+	} catch { msg = 'réseau'; }
+	const k = key.slice( 0, 6 ) + '…' + key.slice( - 4 );
+	let fr;
+	if ( /not valid|API_KEY_INVALID/i.test( msg ) ) fr = `La clé ${ k } n'est pas valide (mal copiée ou supprimée). Recopie-la depuis Google Cloud → Identifiants.`;
+	else if ( /referer|referrer|REFERRER/i.test( msg ) ) fr = `La clé ${ k } est limitée à certains sites et ce site n'en fait pas partie. Dans Google Cloud → Identifiants → ta clé → « Restrictions relatives aux applications », ajoute : ${ location.origin }/*`;
+	else if ( /has not been used|is disabled|SERVICE_DISABLED/i.test( msg ) ) fr = 'L\'API « Map Tiles API » est désactivée sur ce projet. Google Cloud → API et services → Map Tiles API → Activer.';
+	else if ( /billing|BILLING/i.test( msg ) ) fr = 'La facturation du projet Google Cloud est désactivée ou l\'essai gratuit est terminé. Google Cloud → Facturation : vérifie le compte (et « Passer à un compte payant » si l\'essai est fini).';
+	else if ( code === 429 || /quota|RESOURCE_EXHAUSTED|rate/i.test( msg ) ) fr = 'Le quota du jour de Google est atteint (trop de chargements aujourd\'hui). Réessaie demain, ou augmente le quota dans Google Cloud → Map Tiles API → Quotas.';
+	else if ( /API_KEY_SERVICE_BLOCKED|blocked/i.test( msg ) ) fr = `La clé ${ k } n'a pas le droit d'utiliser « Map Tiles API ». Google Cloud → Identifiants → ta clé → « Restrictions relatives aux API » : coche Map Tiles API.`;
+	else if ( msg === 'réseau' ) fr = 'Impossible de joindre Google (pas de réseau ?). Réessaie dans un moment.';
+	else fr = `Google refuse la clé ${ k } (code ${ code }).`;
+	showError( fr + ( msg && msg !== 'réseau' ? '\n\nMessage de Google : ' + msg.trim().slice( 0, 220 ) : '' ) );
+}
+
 function showError( text ) {
-	$( 'error' ).textContent = text;
+	$( 'error' ).textContent = text + '\n\n↩ Touche ici pour revenir à l\'accueil (changer la clé).';
 	$( 'error' ).hidden = false;
+	$( 'error' ).onclick = () => location.reload();
 }
 
 // --------------------------------------------------------------------------------------------
