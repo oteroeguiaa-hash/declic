@@ -206,7 +206,7 @@ export const MASK_CODE = `
 		}
 	}
 `;
-const NEAR = 170;      // rayon (m) où les bâtiments Google sont remplacés en mode marche
+const NEAR = () => window.__device?.near ?? 170; // rayon (m) où les bâtiments Google sont remplacés en mode marche
 const MASK_PX = 1024;
 
 export class CityGen {
@@ -280,14 +280,14 @@ export class CityGen {
 			this.reset(); this.load( here );
 		}
 		// quelques vérifications par image, en commençant par ce qui est proche
-		let budget = 14;
+		let budget = Math.round( 14 * ( window.__device?.budget ?? 1 ) );
 		const autumn = new Date().getMonth() >= 9 || new Date().getMonth() <= 1;
 		for ( const it of this.items ) {
 			if ( budget <= 0 ) break;
 			const x = it.type === 'tree' ? it.x : it.cx, z = it.type === 'tree' ? it.z : it.cz;
 			const dist = Math.hypot( x - pos.x, z - pos.z );
 			// bâtiment présent chez Google, proche, en mode marche : on le remplace par une version nette
-			if ( it.state === 'google' && replace && dist < NEAR && this.maskCenter && Math.abs( x - this.maskCenter.x ) < 200 && Math.abs( z - this.maskCenter.y ) < 200 ) {
+			if ( it.state === 'google' && replace && dist < NEAR() && this.maskCenter && Math.abs( x - this.maskCenter.x ) < 200 && Math.abs( z - this.maskCenter.y ) < 200 ) {
 				let seed = it.id % 2147483646 + 1; const rnd = () => ( seed = seed * 16807 % 2147483647 ) / 2147483647;
 				it.mesh = buildingMesh( it, rnd );
 				this.near.add( it.mesh );

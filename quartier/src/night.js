@@ -104,7 +104,7 @@ function windowTexture() {
 }
 
 const WIN_COLORS = [ 0xffcf86, 0xffc070, 0xffdcaa, 0xffe9c8, 0xffb860, 0xffd49a, 0xffe2b8, 0xffc98a, 0xc8dcff ];
-const MAX_WINDOWS = 30000;
+const MAX_WINDOWS = () => window.__device?.windows ?? 30000;
 const BUILD_RADIUS = 420;
 
 function bulbTexture() {
@@ -148,11 +148,11 @@ export class NightCity {
 		this.winMesh = new THREE.InstancedMesh(
 			new THREE.PlaneGeometry( 1, 1 ),
 			new THREE.MeshBasicMaterial( { map: windowTexture(), transparent: true, depthWrite: false, toneMapped: false, fog: true } ),
-			MAX_WINDOWS,
+			MAX_WINDOWS(),
 		);
 		this.winMesh.count = 0;
 		this.winMesh.frustumCulled = false;
-		this.winMesh.instanceColor = new THREE.InstancedBufferAttribute( new Float32Array( MAX_WINDOWS * 3 ), 3 );
+		this.winMesh.instanceColor = new THREE.InstancedBufferAttribute( new Float32Array( MAX_WINDOWS() * 3 ), 3 );
 		this.group.add( this.winMesh );
 		this.winDirty = false;
 		this.timer = 0;
@@ -297,7 +297,7 @@ export class NightCity {
 				for ( let k = 0; k < cols; k ++ ) {
 					const p = rnd() < ( dark ? 0.03 : f === 0 ? 0.12 : 0.3 );
 					const hue = rnd(), level = rnd();
-					if ( ! p || this.winMesh.count >= MAX_WINDOWS ) continue;
+					if ( ! p || this.winMesh.count >= this.winMesh.instanceMatrix.count ) continue;
 					const t = ( k + 0.5 ) * step;
 					m.compose( new THREE.Vector3( a.x + dx * t + nx * 0.35, y, a.z + dz * t + nz * 0.35 ), q, new THREE.Vector3( 1.1, 1.5, 1 ) );
 					this.winMesh.setMatrixAt( this.winMesh.count, m );
@@ -409,8 +409,9 @@ export class NightCity {
 			this.reset();
 			this.load( here );
 		}
-		this.resolve( pos, 30 );
-		this.resolveBuildings( pos, 40 );
+		const k = window.__device?.budget ?? 1;
+		this.resolve( pos, Math.round( 30 * k ) );
+		this.resolveBuildings( pos, Math.round( 40 * k ) );
 		if ( this.winDirty ) {
 			this.winDirty = false;
 			this.winMesh.instanceMatrix.needsUpdate = true;
