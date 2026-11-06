@@ -999,6 +999,28 @@ export function makeShrub(seed = 61) {
   return b.build();
 }
 
+// Plantule du sous-bois : jeune arbre de 0,5 à 1,5 m, quelques grandes feuilles vernissées (attend une trouée pour pousser).
+export function makeSeedling(seed = 63) {
+  const rand = mulberry32(seed);
+  const b = new Builder();
+  const crown = V(0, 0.6, 0);
+  for (let s = 0; s < 3; s++) {
+    const a0 = rand() * 6.283, o = s ? 0.3 + rand() * 0.5 : 0, H = 0.5 + rand() * 1.0;
+    const base = V(Math.cos(a0) * o, -0.05, Math.sin(a0) * o), top = base.clone().add(V((rand() - 0.5) * 0.2, H, (rand() - 0.5) * 0.2));
+    b.tube([base, base.clone().lerp(top, 0.5), top], [0.012, 0.009, 0.005], 3, UV.beechBark, tint(0x6a5a40), null, (k) => [0, k * 0.4]);
+    const n = 4 + Math.floor(rand() * 3);
+    for (let k = 0; k < n; k++) {
+      const t = 0.35 + (k / n) * 0.65, p = base.clone().lerp(top, t), a = k * 2.4 + rand();
+      const d = V(Math.cos(a), 0.25 + rand() * 0.3, Math.sin(a)).normalize();
+      let right = new THREE.Vector3().crossVectors(d, V(0, 1, 0)).normalize();
+      right.applyAxisAngle(d, (rand() - 0.5) * 0.6);
+      const L = 0.35 + rand() * 0.25;
+      b.card(p.clone().addScaledVector(d, L * 0.45), right, d, L * 0.6, L, UV.broad, tint(0xb8d088, 0.75 + rand() * 0.3), crown, 0.6, [0.05, 0.5]);
+    }
+  }
+  return b.build();
+}
+
 // Vitória-régia (Victoria amazonica) : feuille flottante ronde de 1,5 à 2,5 m, bord relevé rouge, nervures en relief.
 export function makeLily(seed = 29) {
   const rand = mulberry32(seed);

@@ -356,7 +356,7 @@ class Game {
     const markSeg = (id, v) => document.querySelectorAll(`#${id} button`).forEach((b) => b.classList.toggle("sel", String(b.dataset.v) === String(v)));
     markSeg("qQuality", settings.quality);
     document.querySelectorAll("#qQuality button").forEach((b) => (b.onclick = () => { this.setSetting("quality", b.dataset.v); markSeg("qQuality", b.dataset.v); $("qReload").classList.toggle("hidden", settings.quality === initialReload.quality); }));
-    const nearT = () => [7, 11, 18.5].reduce((a, b) => (Math.abs(b - this.hours) < Math.abs(a - this.hours) ? b : a));
+    const nearT = () => [6.3, 11, 17.4].reduce((a, b) => (Math.abs(b - this.hours) < Math.abs(a - this.hours) ? b : a));
     markSeg("qTime", nearT());
     document.querySelectorAll("#qTime button").forEach((b) => (b.onclick = () => { this.advanceTime(((+b.dataset.v - this.hours) % 24 + 24) % 24); this.env.forceEnvUpdate(); this.updateHomeInfo(); markSeg("qTime", b.dataset.v); }));
     $("qSound").classList.toggle("on", settings.volume > 0);

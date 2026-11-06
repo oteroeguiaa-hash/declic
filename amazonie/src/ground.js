@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "../vendor/addons/BufferGeometryUtils.js";
 import { mulberry32 } from "./noise.js";
-import { makeGroundCover, makeFern, makeShrub, makeLeafBush, makeLitter, vegUniforms } from "./trees.js";
+import { makeGroundCover, makeFern, makeSeedling, makeLeafBush, makeLitter, vegUniforms } from "./trees.js";
 
 const HASH = `float h21(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }`;
 
@@ -215,7 +215,7 @@ export class Undergrowth {
     const R = quality.undergrowthRadius;
     const cover = mergeGeometries([makeGroundCover(71), (() => { const h = makeGroundCover(72); h.scale(0.75, 2.2, 0.75); h.translate(0, -0.05, 0); return h; })()]);
     const fern = mergeGeometries([makeFern(5), (() => { const f = makeFern(6); f.rotateY(1.1); f.scale(0.8, 1.1, 0.8); f.translate(0.5, 0, 0.3); return f; })()]);
-    const sapling = makeShrub(63);
+    const sapling = mergeGeometries([makeSeedling(63), (() => { const g = makeSeedling(64); g.translate(0.9, 0, 0.6); return g; })()]);
     const litter = makeLitter(91);
     const sage = makeLeafBush(false, 23);
     this.layers = [
@@ -223,9 +223,9 @@ export class Undergrowth {
       new Scatter(scene, world, atlas, cover, { count: Math.round(5000 * k), R, dens: "(0.5 + hm.a * 0.6) * step(0.02, hm.g + hm.a)", sMin: 0.6, sMax: 1.5, cell: 3.0, seed: 11 }),
       // fougères : sous-bois, lisières humides
       new Scatter(scene, world, atlas, fern, { count: Math.round(3600 * k), R: R * 1.1, dens: "smoothstep(0.12, 0.6, hm.a) * 0.85 + bio.b * 0.3 - bio.r * 0.4", sMin: 0.7, sMax: 1.6, cell: 2.5, seed: 12, tint: "vec3(0.95, 1.0, 0.9)" }),
-      // jeunes pousses, ronces, noisetiers : deuxième étage de végétation
+      // plantules et jeunes arbres : deuxième étage de végétation du sous-bois
       new Scatter(scene, world, atlas, sapling, { count: Math.round(1300 * k), R: R * 1.5, dens: "smoothstep(0.15, 0.55, hm.a) * 0.55 * (1.0 - bio.r * 0.7)", sMin: 0.6, sMax: 1.5, cell: 4.0, seed: 13, sway: 0.05 }),
-      // plaines : touffes d'armoise et petits buissons gris-vert, éparpillés
+      // berges dégagées : petits buissons
       new Scatter(scene, world, atlas, sage, { count: Math.round(1600 * k), R: R * 1.6, dens: "smoothstep(0.3, 0.8, bio.g) * 0.35 * (1.0 - hm.a)", sMin: 0.45, sMax: 1.0, cell: 5.0, seed: 15, sway: 0.04, tint: "vec3(0.85, 0.95, 0.8)" }),
       // litière : brindilles, cailloux, pommes de pin
       new Scatter(scene, world, atlas, litter, { count: Math.round(2000 * k), R: Math.min(R, 26), dens: "smoothstep(0.1, 0.5, hm.a) * 0.9 + 0.15", sMin: 0.7, sMax: 1.3, cell: 2.0, seed: 14, sink: 0.01, sway: 0.0 }),
